@@ -2,6 +2,7 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
+.venv*/
 results/*.csv
 results/*.xlsx
 results/normalize/*.cleaned.tsv
