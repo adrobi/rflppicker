@@ -1,0 +1,19 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+results/*.csv
+results/*.xlsx
+results/normalize/*.cleaned.tsv
+results/normalize/*.rejected.tsv
+*.log
+variant4.txt
+
+# Reference genomes are local datasets, not source code. The bundled
+# ARS-UI_Ramb_v2.0.fa is ~2.66 GB and must not be pushed to a normal GitHub repo.
+genoms/*.fa
+genoms/*.fasta
+genoms/*.fna
+genoms/*.fa.fai
+genoms/*.fasta.fai
+genoms/*.fna.fai
