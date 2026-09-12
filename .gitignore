@@ -17,3 +17,9 @@ genoms/*.fna
 genoms/*.fa.fai
 genoms/*.fasta.fai
 genoms/*.fna.fai
+
+# Local build and release artifacts
+build/
+dist/
+release/
+*.spec
