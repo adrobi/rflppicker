@@ -1,13 +1,29 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 .venv/
 .venv*/
-results/*.csv
-results/*.xlsx
-results/normalize/*.cleaned.tsv
-results/normalize/*.rejected.tsv
+
+# Generated application output
+results/*
+!results/.gitkeep
 *.log
+*.tmp
+*.bak
+
+# Local editor and operating-system files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Scratch data and test output
+*_smoke.py
+*_smoke.spec
 variant4.txt
 
 # Reference genomes are local datasets, not source code. The bundled
@@ -18,9 +34,17 @@ genoms/*.fna
 genoms/*.fa.fai
 genoms/*.fasta.fai
 genoms/*.fna.fai
+genoms/*.gzi
+genoms/*.dict
+genoms/*.fa.gz
+genoms/*.fasta.gz
+genoms/*.fna.gz
 
 # Local build and release artifacts
 build/
 dist/
+build_*/
+dist_*/
 release/
 *.spec
+*.zip

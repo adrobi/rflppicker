@@ -1,6 +1,6 @@
-# Qt 6.11 has an ABI/loading regression on some Windows installations.
-# Keep the release build on the stable Qt 6.10 line.
-PyQt6==6.10.2
+# Keep the Windows build on the conservative Qt 6.8 line.  Qt 6.11 has
+# triggered STATUS_ENTRYPOINT_NOT_FOUND in PyQt6 on some Windows setups.
+PyQt6==6.8.1
 pyfaidx>=0.8
 biopython>=1.83
 openpyxl>=3.1

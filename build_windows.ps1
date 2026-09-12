@@ -29,7 +29,23 @@ if (-not $pythonExe) {
 
 & $pythonExe @pythonArgs -m PyInstaller --noconfirm --clean --noupx --onedir --windowed `
   --name RFLP-Picker `
+  --icon (Join-Path $PSScriptRoot 'assets\app_icon.ico') `
+  --collect-all primer3 `
   --runtime-hook rth_qt6_path.py `
   qtprimer3_vis.py
 
-Write-Host "Build complete: $PSScriptRoot\dist\RFLP-Picker\RFLP-Picker.exe"
+$distDir = Join-Path $PSScriptRoot 'dist\RFLP-Picker'
+$namesSource = Join-Path $PSScriptRoot 'names'
+$namesTarget = Join-Path $distDir 'names'
+if (-not (Test-Path -LiteralPath $namesSource)) {
+  throw "Required names directory is missing: $namesSource"
+}
+Copy-Item -LiteralPath $namesSource -Destination $namesTarget -Recurse -Force
+
+# The release archive keeps its instructions on GitHub. Remove documentation
+# files copied from third-party packages so zipping this folder stays clean.
+Get-ChildItem -LiteralPath $distDir -Recurse -File |
+  Where-Object { $_.Name -match '(?i)^readme(?:\..*)?$' } |
+  Remove-Item -Force
+
+Write-Host "Build complete: $distDir\RFLP-Picker.exe"
