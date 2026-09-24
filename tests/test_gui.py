@@ -29,6 +29,28 @@ class GuiTests(unittest.TestCase):
         self.assertEqual((window.result_table.rowCount(), window.result_table.columnCount()), (0, 0))
         window.close()
 
+    def test_joint_controls_summary_and_full_precision_export(self):
+        window = qtprimer3_vis.RFLPPickerGUI()
+        self.addCleanup(window.close)
+        window.use_primer3_chk.setChecked(True)
+        self.assertTrue(window.primer_pairs_spin.isEnabled())
+        window.joint_design_chk.setChecked(False)
+        self.assertFalse(window.primer_pairs_spin.isEnabled())
+        window.joint_design_chk.setChecked(True)
+        window.use_primer3_chk.setChecked(False)
+        self.assertFalse(window.joint_design_chk.isEnabled())
+        header = ['variant', 'mapped_id', 'enzyme', 'site', 'pattern',
+                  'status', 'reason', 'genotype_quality', 'genotype_margin',
+                  'worst_margin', 'bands_ref_ref', 'bands_ref_alt', 'bands_alt_alt']
+        row = ['1:2 A>G', '1', 'EcoRI', 'GAATTC', 'gain/loss', 'ok', 'Model only',
+               'robust', 8.123456789, 5.123456789, '100; 200', '100; 200; 300', '300']
+        window.show_results(header, [row])
+        window.result_table.selectRow(0)
+        self.assertIn('REF/ALT: 100; 200; 300', window.assay_summary.text())
+        self.assertEqual(window._collect_table_data(), (header, [row]))
+        window.show_results([], [])
+        self.assertNotIn('100; 200', window.assay_summary.text())
+
 
 if __name__ == '__main__':
     unittest.main()

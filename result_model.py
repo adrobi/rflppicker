@@ -4,6 +4,21 @@ from PyQt6.QtGui import QColor
 
 
 LABELS = {
+    'assay_rank': 'Ранг для SNP', 'primer_pair_index': 'Пара Primer3 №',
+    'primer_pair_penalty': 'Штраф Primer3', 'pairs_evaluated': 'Проверено пар',
+    'genotype_quality': 'Различимость генотипов',
+    'genotype_margin': 'Оценка различимости (> 1)',
+    'worst_margin': 'Оценка при ухудшении (> 1)',
+    'weakest_genotypes': 'Труднее всего различить',
+    'bands_ref_ref': 'Полосы REF/REF', 'bands_ref_alt': 'Полосы REF/ALT',
+    'bands_alt_alt': 'Полосы ALT/ALT',
+    'worst_bands_ref_ref': 'Полосы REF/REF при ухудшении',
+    'worst_bands_ref_alt': 'Полосы REF/ALT при ухудшении',
+    'worst_bands_alt_alt': 'Полосы ALT/ALT при ухудшении',
+    'visible_band_count': 'Число полос в гетерозиготе',
+    'hidden_ref_count': 'Невидимых фрагментов REF',
+    'hidden_alt_count': 'Невидимых фрагментов ALT',
+    'search_mode': 'Режим поиска', 'scoring_model': 'Модель оценки',
     'variant': 'Вариант', 'mapped_id': 'Контиг', 'enzyme': 'Фермент',
     'site': 'Сайт', 'pattern': 'Паттерн', 'frags_ref': 'Фрагменты REF, п.н.',
     'frags_alt': 'Фрагменты ALT, п.н.', 'diag_delta_bp': 'Различие, п.н.',
@@ -19,6 +34,7 @@ LABELS = {
     'alt': 'ALT', 'details': 'Подробности', 'raw': 'Исходная строка',
 }
 STATUS_LABELS = {
+    'no_discriminating_assay': 'Схема для трёх генотипов не найдена',
     'ok': 'Праймеры подобраны', 'window_only': 'Поиск по окну',
     'no_primers': 'Праймеры не найдены', 'primer3_error': 'Ошибка Primer3',
     'no_enzyme_found': 'Фермент не найден', 'analysis_error': 'Ошибка анализа',

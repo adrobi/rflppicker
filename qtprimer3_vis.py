@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QPushButton, QLabel, QFileDialog, QTableWidget, QTableWidgetItem, QLineEdit, QCheckBox,
     QSpinBox, QDoubleSpinBox, QTextEdit, QProgressBar, QMessageBox, QComboBox, QHeaderView,
-    QSplitter, QGraphicsView, QGraphicsScene, QSizePolicy, QDialog
+    QSplitter, QGraphicsView, QGraphicsScene, QSizePolicy, QDialog, QGroupBox, QScrollArea
 )
 from PyQt6.QtCore import QThread, pyqtSignal, Qt
 from PyQt6 import QtCore
@@ -28,6 +28,7 @@ from openpyxl import Workbook
 import rflp_core as core_impl
 from reporting import export_csv as safe_export_csv, export_excel as safe_export_excel, collect_versions
 import visualization as enhanced_visualization
+from result_model import LABELS
 
 
 class NumericTableItem(QTableWidgetItem):
@@ -35,6 +36,10 @@ class NumericTableItem(QTableWidgetItem):
     def __lt__(self, other):
         left = self.text().strip()
         right = other.text().strip() if other is not None else ""
+        raw_left = self.data(Qt.ItemDataRole.UserRole)
+        raw_right = other.data(Qt.ItemDataRole.UserRole) if other is not None else None
+        if isinstance(raw_left, (int, float)) and isinstance(raw_right, (int, float)):
+            return raw_left < raw_right
         try:
             return float(left) < float(right)
         except (ValueError, TypeError):
@@ -645,266 +650,8 @@ class RFLPCalcThread(QThread):
             self.finished.emit([], [])
 
 
-def run_rflp_gui_mode(params, status_cb=None):
-    flank = params["flank"]
-    min_frag = params["min_frag"]
-    max_frag = params["max_frag"]
-    delta = params["delta"]
-    gain_loss_only = params["gain_loss_only"]
-    max_cuts = params["max_cuts"]
-    suppliers = params["suppliers"]
-    fasta = params["fasta"]
-    input_file = params["input_file"]
-    names2_file = params["names2_file"]
-    use_primer3 = params.get("use_primer3", False)
-    prod_min = params.get("prod_min", 250)
-    prod_max = params.get("prod_max", 600)
-    tm_min = params.get("tm_min", 58.0)
-    tm_max = params.get("tm_max", 62.0)
-    skip_norm = params.get("skip_norm", False)
-    no_save_norm = params.get("no_save_norm", True)
-
-    # ==== 1. НОРМАЛИЗАЦИЯ ВАРИАНТОВ ====
-    cleaned_variants, summary_lines, cleaned_path, rejected_path = normalize_variants_for_rflp(
-        fasta_path=fasta,
-        input_path=input_file,
-        names2_path=names2_file,
-        block_bp=2_000_000,
-        progress_every=100000,
-        status_cb=status_cb,
-        skip_norm=skip_norm,
-        save_files=not no_save_norm,
-    )
-
-    if status_cb:
-        if not skip_norm:
-            if cleaned_path:
-                status_cb(f"[INFO] NORMALIZE: cleaned сохранён в: {cleaned_path}")
-                status_cb(f"[INFO] NORMALIZE: rejected сохранён в: {rejected_path}")
-            else:
-                status_cb("[INFO] NORMALIZE: файлы cleaned/rejected не сохранялись")
-        status_cb(f"[INFO] NORMALIZE: вариантов после шага нормализации: {len(cleaned_variants)}")
-
-    if not cleaned_variants:
-        return [], []
-
-    variants_raw = cleaned_variants
-
-    # ==== 2. ЗАГРУЗКА names2 для RFLP ====
-    names2 = load_names2(names2_file)
-
-    # ==== 3. Подготовка результатов RFLP ====
-    allowed_codes: set[str] = set()
-    if suppliers:
-        allowed_codes = parse_suppliers_arg(",".join(suppliers))
-
-    try:
-        fa = Fasta(fasta, as_raw=True)
-    except Exception as e:
-        msg = f"\n[ERROR] Не удалось открыть FASTA файл: {fasta}: {e}"
-        if status_cb:
-            status_cb(msg)
-        logger.error(msg)
-        return [], []
-
-    out_rows: List[list] = []
-
-    header = [
-        "variant",
-        "mapped_id",
-        "enzyme",
-        "site",
-        "pattern",
-        "frags_ref",
-        "frags_alt",
-        "diag_delta_bp",
-        "amplicon_start",
-        "amplicon_end",
-        "amplicon_len",
-        "snp_offset_in_amplicon",
-        "primers_left",
-        "primers_right",
-        "tm_left",
-        "tm_right",
-        "product_size",
-        "primer3_size",
-        "primer_left_start",
-        "primer_left_len",
-        "primer_right_start",
-        "primer_right_len",
-        "suppliers",
-    ]
-
-    if status_cb:
-        status_cb(f"\n[INFO] RFLP: к анализу передано вариантов: {len(variants_raw)}")
-
-    for chrom, pos, ref, alt in variants_raw:
-        mapped_id = names2.get(chrom, chrom)
-        start = max(1, pos - flank)
-        end = pos + flank
-
-        try:
-            seq_win = str(fa[mapped_id][start - 1 : end])
-        except Exception as e:
-            msg = f"\n[WARN] Не удалось взять {mapped_id}:{start}-{end}: {e}"
-            if status_cb:
-                status_cb(msg)
-            logger.warning(msg)
-            continue
-
-        snp_off = pos - start
-        if snp_off < 0 or snp_off >= len(seq_win):
-            msg = f"\n[WARN] SNP offset вне окна: {chrom}:{pos}"
-            if status_cb:
-                status_cb(msg)
-            logger.warning(msg)
-            continue
-
-        genome_base = seq_win[snp_off].upper()
-        if genome_base not in (ref.upper(), alt.upper()):
-            msg = (
-                f"\n[WARN] REF FASTA не совпал с входом "
-                f"для {chrom}:{pos} ({genome_base} vs {ref})"
-            )
-            if status_cb:
-                status_cb(msg)
-            logger.warning(msg)
-
-        seq_ref_win = (seq_win[:snp_off] + ref + seq_win[snp_off + 1 :]).upper()
-        seq_alt_win = (seq_win[:snp_off] + alt + seq_win[snp_off + 1 :]).upper()
-
-        pres: Optional[dict] = None
-        amp_start0 = 0
-        amp_end0_excl = len(seq_ref_win)
-        amplicon_len = len(seq_ref_win)
-        snp_off_amp = snp_off
-        primers_left = ""
-        primers_right = ""
-        tm_left: Optional[float] = None
-        tm_right: Optional[float] = None
-        p3_size: Optional[int] = None
-        pl_start = pl_len = pr_start = pr_len = None
-
-        if use_primer3 and _PRIMER3_AVAILABLE:
-            pres = primer3_pick(
-                seq_ref_win,
-                snp_off,
-                prod_min,
-                prod_max,
-                tm_min,
-                tm_max,
-            )
-            if pres:
-                primers_left = pres["PRIMER_LEFT_0_SEQUENCE"]
-                primers_right = pres["PRIMER_RIGHT_0_SEQUENCE"]
-                tm_left = float(pres["PRIMER_LEFT_0_TM"])
-                tm_right = float(pres["PRIMER_RIGHT_0_TM"])
-                pl_start, pl_len = pres["PRIMER_LEFT_0"]
-                pr_start, pr_len = pres["PRIMER_RIGHT_0"]
-                p3_size = int(pres["PRIMER_PAIR_0_PRODUCT_SIZE"])
-
-                amp_start0 = int(pl_start)
-                amp_end0_excl = amp_start0 + int(pres["PRIMER_PAIR_0_PRODUCT_SIZE"])
-                amp_start0 = max(0, min(len(seq_ref_win), amp_start0))
-                amp_end0_excl = max(amp_start0, min(len(seq_ref_win), amp_end0_excl))
-
-                amplicon_len = amp_end0_excl - amp_start0
-                snp_off_amp = snp_off - amp_start0
-
-        seq_ref_amp = seq_ref_win[amp_start0:amp_end0_excl]
-        seq_alt_amp = seq_alt_win[amp_start0:amp_end0_excl]
-
-        amplicon_start_genome = start + amp_start0
-        amplicon_end_genome = start + amp_end0_excl - 1
-
-        if allowed_codes:
-            enzymes = [e for e in AllEnzymes if enzyme_supplier_codes(e) & allowed_codes]
-        else:
-            enzymes = list(AllEnzymes)
-
-        hits_here = 0
-
-        for enz in enzymes:
-            cuts_r = cut_positions(enz, seq_ref_amp)
-            cuts_a = cut_positions(enz, seq_alt_amp)
-
-            if len(cuts_r) - 2 > max_cuts or len(cuts_a) - 2 > max_cuts:
-                continue
-
-            fr_r = frag_lengths(cuts_r)
-            fr_a = frag_lengths(cuts_a)
-
-            if (fr_r and (min(fr_r) < min_frag or max(fr_r) > max_frag)) or (
-                fr_a and (min(fr_a) < min_frag or max(fr_a) > max_frag)
-            ):
-                continue
-
-            if gain_loss_only and len(cuts_r) == len(cuts_a):
-                continue
-
-            if not any_diag_delta(fr_r, fr_a, delta):
-                continue
-
-            patt = "gain/loss" if (len(cuts_r) != len(cuts_a)) else "shift"
-            site = enzyme_site_string(enz)
-
-            row = [
-                f"{chrom}:{pos} {ref}>{alt}",
-                mapped_id,
-                enz.__name__,
-                site,
-                patt,
-                frags_to_str(fr_r),
-                frags_to_str(fr_a),
-                int(delta),
-                int(amplicon_start_genome),
-                int(amplicon_end_genome),
-                int(amplicon_len),
-                int(snp_off_amp),
-                primers_left,
-                primers_right,
-                (round(tm_left, 3) if tm_left is not None else None),
-                (round(tm_right, 3) if tm_right is not None else None),
-                int(amplicon_len),
-                (int(p3_size) if p3_size is not None else None),
-                (int(pl_start) if pl_start is not None else None),
-                (int(pl_len) if pl_len is not None else None),
-                (int(pr_start) if pr_start is not None else None),
-                (int(pr_len) if pr_len is not None else None),
-                enzyme_suppliers_human(enz),
-            ]
-            out_rows.append(row)
-            hits_here += 1
-
-        if hits_here == 0:
-            row = [
-                f"{chrom}:{pos} {ref}>{alt}",
-                mapped_id,
-                "",
-                "",
-                "no_enzyme_found",
-                "",
-                "",
-                int(delta),
-                int(amplicon_start_genome),
-                int(amplicon_end_genome),
-                int(amplicon_len),
-                int(snp_off_amp),
-                primers_left,
-                primers_right,
-                (round(tm_left, 3) if tm_left is not None else None),
-                (round(tm_right, 3) if tm_right is not None else None),
-                int(amplicon_len),
-                (int(p3_size) if p3_size is not None else None),
-                (int(pl_start) if pl_start is not None else None),
-                (int(pl_len) if pl_len is not None else None),
-                (int(pr_start) if pr_start is not None else None),
-                (int(pr_len) if pr_len is not None else None),
-                "",
-            ]
-            out_rows.append(row)
-
-    return header, out_rows
+def run_rflp_gui_mode(params, status_cb=None, **kwargs):
+    return core_impl.run_rflp_gui_mode(params, status_cb=status_cb, **kwargs)
 
 
 def _safe_int(s: object) -> Optional[int]:
@@ -1613,7 +1360,7 @@ class RFLPVisualizationDialog(QDialog):
 class RFLPPickerGUI(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("RFLP QGUI Picker")
+        self.setWindowTitle("RFLP Picker 1.1 — совместный подбор")
 
         self.setWindowIcon(QIcon(":/icons/app_icon.ico"))
 
@@ -1744,6 +1491,50 @@ class RFLPPickerGUI(QMainWindow):
 
         self.supplier_checks = supplier_widgets
 
+        design_box = QGroupBox('Совместный подбор и различимость генотипов')
+        design_grid = QGridLayout(design_box)
+        self.joint_design_chk = QCheckBox('Подбирать праймеры и фермент совместно')
+        self.joint_design_chk.setChecked(True)
+        self.joint_design_chk.setToolTip('Отключите для сравнения с поиском по первой паре Primer3.')
+        design_grid.addWidget(self.joint_design_chk, 0, 0, 1, 4)
+        self.primer_pairs_spin = QSpinBox()
+        self.primer_pairs_spin.setRange(1, 100)
+        self.primer_pairs_spin.setValue(10)
+        self.top_results_spin = QSpinBox()
+        self.top_results_spin.setRange(0, 10000)
+        self.top_results_spin.setValue(10)
+        self.top_results_spin.setSpecialValueText('Все')
+        self.gel_bp_spin = QDoubleSpinBox()
+        self.gel_bp_spin.setRange(0.1, 1000)
+        self.gel_bp_spin.setValue(10)
+        self.gel_pct_spin = QDoubleSpinBox()
+        self.gel_pct_spin.setRange(0, 100)
+        self.gel_pct_spin.setValue(3)
+        self.gel_stress_spin = QDoubleSpinBox()
+        self.gel_stress_spin.setRange(1, 5)
+        self.gel_stress_spin.setSingleStep(0.1)
+        self.gel_stress_spin.setValue(1.5)
+        controls = [('Пар Primer3 на SNP:', self.primer_pairs_spin),
+                    ('Результатов на SNP:', self.top_results_spin),
+                    ('Разрешение, п.н.:', self.gel_bp_spin),
+                    ('Разрешение, %:', self.gel_pct_spin),
+                    ('Ухудшение разрешения, ×:', self.gel_stress_spin)]
+        for i, (label, widget) in enumerate(controls):
+            row, col = 1 + i // 2, (i % 2) * 2
+            design_grid.addWidget(QLabel(label), row, col)
+            design_grid.addWidget(widget, row, col + 1)
+        note = QLabel('Модель полос без учёта яркости. Различие должно превышать максимум '
+                      'из порога в п.н. и процента длины. Параметры требуют проверки на вашем геле.')
+        note.setWordWrap(True)
+        design_grid.addWidget(note, 4, 0, 1, 4)
+        self.min_frag_spin.setToolTip('В совместном поиске — нижняя граница видимых полос. '
+                                     'В поиске по одной паре/окну — ограничение на каждый фрагмент.')
+        self.max_frag_spin.setToolTip('В совместном поиске — верхняя граница видимых полос. '
+                                     'В поиске по одной паре/окну — ограничение на каждый фрагмент.')
+        self.use_primer3_chk.toggled.connect(self._update_design_controls)
+        self.joint_design_chk.toggled.connect(self._update_design_controls)
+        self._update_design_controls()
+
         btn_row = QHBoxLayout()
         self.run_btn = QPushButton("Запуск анализа")
         self.cancel_btn = QPushButton("Отмена")
@@ -1754,10 +1545,8 @@ class RFLPPickerGUI(QMainWindow):
         btn_row.addWidget(self.cancel_btn)
         btn_row.addWidget(self.export_csv_btn)
         btn_row.addWidget(self.export_xlsx_btn)
-        left_layout.addLayout(btn_row)
 
         self.progress = QProgressBar()
-        left_layout.addWidget(self.progress)
 
         # правая часть: лог
         self.status_log = QTextEdit()
@@ -1780,12 +1569,24 @@ class RFLPPickerGUI(QMainWindow):
 
         log_norm_layout.addWidget(self.status_log)
         log_norm_layout.addLayout(norm_layout)
+        log_norm_layout.addWidget(design_box)
 
-        top_layout.addWidget(left_panel, stretch=4)
+        settings_scroll = QScrollArea()
+        settings_scroll.setWidgetResizable(True)
+        settings_scroll.setWidget(left_panel)
+        left_column = QVBoxLayout()
+        left_column.addWidget(settings_scroll)
+        left_column.addLayout(btn_row)
+        left_column.addWidget(self.progress)
+        top_layout.addLayout(left_column, stretch=4)
         top_layout.addLayout(log_norm_layout, stretch=2)
 
         # ===== низ: фильтры + таблица + визуализация праймеров =====
         bottom_layout = QVBoxLayout()
+        self.assay_summary = QLabel('Выберите результат: здесь появятся оценка и полосы трёх генотипов.')
+        self.assay_summary.setWordWrap(True)
+        self.assay_summary.setTextFormat(Qt.TextFormat.PlainText)
+        bottom_layout.addWidget(self.assay_summary)
 
         filter_layout = QHBoxLayout()
         filter_layout.addWidget(QLabel("Фермент:"))
@@ -1814,8 +1615,8 @@ class RFLPPickerGUI(QMainWindow):
 
         bottom_layout.addWidget(self.result_table)
 
-        main_layout.addLayout(top_layout, stretch=2)
-        main_layout.addLayout(bottom_layout, stretch=5)
+        main_layout.addLayout(top_layout, stretch=4)
+        main_layout.addLayout(bottom_layout, stretch=3)
 
         central.setLayout(main_layout)
         self.setCentralWidget(central)
@@ -1911,6 +1712,12 @@ class RFLPPickerGUI(QMainWindow):
             tb = traceback.format_exc()
             self.log_msg(f"[ERROR] Ошибка при выборе файла:\n{tb}", "error")
 
+    def _update_design_controls(self):
+        self.joint_design_chk.setEnabled(self.use_primer3_chk.isChecked())
+        joint = self.use_primer3_chk.isChecked() and self.joint_design_chk.isChecked()
+        self.primer_pairs_spin.setEnabled(joint)
+        self.top_results_spin.setEnabled(joint)
+
     def run_calc(self):
         try:
             fasta_selected = self.fasta_combo.currentText()
@@ -1939,6 +1746,12 @@ class RFLPPickerGUI(QMainWindow):
                 "prod_max": int(self.prod_max_spin.value()),
                 "tm_min": float(self.tm_min_spin.value()),
                 "tm_max": float(self.tm_max_spin.value()),
+                "joint_design": self.joint_design_chk.isChecked(),
+                "primer_pairs": self.primer_pairs_spin.value(),
+                "top_results": self.top_results_spin.value(),
+                "gel_resolution_bp": self.gel_bp_spin.value(),
+                "gel_resolution_pct": self.gel_pct_spin.value(),
+                "gel_stress_factor": self.gel_stress_spin.value(),
                 "skip_norm": self.skip_norm_chk.isChecked(),
                 "no_save_norm": self.no_save_norm_chk.isChecked(),
             }
@@ -2001,6 +1814,7 @@ class RFLPPickerGUI(QMainWindow):
 
     def show_results(self, header, rows):
         try:
+            self.assay_summary.setText('Выберите результат: оценка > 1 означает различимость в модели полос.')
             self.progress.setRange(0, 1)
             self.run_btn.setEnabled(True)
             self.cancel_btn.setEnabled(False)
@@ -2038,13 +1852,26 @@ class RFLPPickerGUI(QMainWindow):
                 return
 
             self.result_table.setColumnCount(len(header))
-            self.result_table.setHorizontalHeaderLabels(header)
+            self.result_table.setHorizontalHeaderLabels([LABELS.get(name, name) for name in header])
+            for c, name in enumerate(header):
+                self.result_table.horizontalHeaderItem(c).setToolTip(LABELS.get(name, name))
+            table_header = self.result_table.horizontalHeader()
+            for position, name in enumerate(('variant', 'enzyme', 'assay_rank',
+                                              'genotype_quality', 'worst_margin',
+                                              'genotype_margin', 'primer_pair_index')):
+                if name in self.col_index:
+                    logical = self.col_index[name]
+                    table_header.moveSection(table_header.visualIndex(logical), position)
+                    self.result_table.setColumnWidth(logical, 150 if position > 2 else 120)
             self.result_table.setRowCount(len(rows))
 
             self.result_table.setSortingEnabled(False)
             for r, row in enumerate(rows):
                 for c, val in enumerate(row):
-                    item = NumericTableItem("" if val is None else str(val))
+                    display = f'{val:.4f}'.rstrip('0').rstrip('.') if isinstance(val, float) else str(val)
+                    item = NumericTableItem('' if val is None else display)
+                    item.setData(Qt.ItemDataRole.UserRole, val)
+                    item.setToolTip(f'{LABELS.get(header[c], header[c])}: {val if val is not None else "—"}')
                     self.result_table.setItem(r, c, item)
 
                 pattern_val = str(rows[r][4]) if len(rows[r]) > 4 else ""
@@ -2127,6 +1954,7 @@ class RFLPPickerGUI(QMainWindow):
         try:
             selected = self.result_table.selectedItems()
             if not selected:
+                self.assay_summary.setText('Выберите результат: оценка > 1 означает различимость в модели полос.')
                 self._current_vis_payload = None
                 self._current_vis_error = ""
                 self.open_vis_btn.setEnabled(False)
@@ -2135,9 +1963,20 @@ class RFLPPickerGUI(QMainWindow):
                 return
 
             row = selected[0].row()
+            self.assay_summary.setText(self._table_cell(row, 'reason'))
+            if 'genotype_quality' in self.col_index:
+                quality = self._table_cell(row, 'genotype_quality')
+                if quality:
+                    self.assay_summary.setText(
+                        f"{self._table_cell(row, 'reason')}. "
+                        f"Оценка: {self._table_cell(row, 'genotype_margin')}; "
+                        f"при ухудшении: {self._table_cell(row, 'worst_margin')}.\n"
+                        f"Полосы REF/REF: {self._table_cell(row, 'bands_ref_ref') or 'нет'} | "
+                        f"REF/ALT: {self._table_cell(row, 'bands_ref_alt') or 'нет'} | "
+                        f"ALT/ALT: {self._table_cell(row, 'bands_alt_alt') or 'нет'}")
             status_col = self.col_index.get("status")
             row_status = self.result_table.item(row, status_col).text() if status_col is not None and self.result_table.item(row, status_col) else ""
-            if row_status in ("no_primers", "primer3_error"):
+            if row_status in ("no_primers", "primer3_error", "no_discriminating_assay", "analysis_error"):
                 self._current_vis_payload = None
                 self._current_vis_error = self._table_cell(row, "reason") or "Визуализация недоступна: праймеры не подобраны."
                 self.open_vis_btn.setEnabled(False)
@@ -2280,33 +2119,18 @@ class RFLPPickerGUI(QMainWindow):
         if rows == 0 or cols == 0:
             return [], []
 
-        header = []
-        for c in range(cols):
-            hitem = self.result_table.horizontalHeaderItem(c)
-            header.append(hitem.text() if hitem else f"col_{c}")
-
+        header = list(self.out_header)
         data = []
         any_visible = False
         for r in range(rows):
             if self.result_table.isRowHidden(r):
                 continue
             any_visible = True
-            row_vals = []
-            for c in range(cols):
-                item = self.result_table.item(r, c)
-                value = item.text() if item else ""
-                if header[c] in {"pos", "amplicon_start", "amplicon_end", "amplicon_len", "snp_offset_in_amplicon", "primer3_size", "primer_left_start", "primer_left_len", "primer_right_start", "primer_right_len", "product_size", "delta_threshold_bp", "diag_delta_bp"}:
-                    try:
-                        value = int(value)
-                    except (ValueError, TypeError):
-                        pass
-                elif header[c] in {"tm_left", "tm_right"}:
-                    try:
-                        value = float(value)
-                    except (ValueError, TypeError):
-                        pass
-                row_vals.append(value)
-            data.append(row_vals)
+            data.append([
+                self.result_table.item(r, c).data(Qt.ItemDataRole.UserRole)
+                if self.result_table.item(r, c) is not None else None
+                for c in range(cols)
+            ])
 
         if not any_visible:
             return [], []
@@ -2339,7 +2163,8 @@ class RFLPPickerGUI(QMainWindow):
             path = os.path.join(results_dir, filename)
 
             safe_export_excel(path, header, data, metadata={
-                "app_version": "1.0.0",
+                "app_version": "1.1.0",
+                "scoring_model": core_impl.MODEL_VERSION,
                 "run_timestamp": datetime.now().isoformat(timespec="seconds"),
                 "genome_path": (self.last_params or {}).get("fasta", ""),
                 "parameters": self.last_params,
