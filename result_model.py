@@ -30,6 +30,7 @@ LABELS = {
     'primer_left_len': 'Длина L', 'primer_right_start': 'Начало R',
     'primer_right_len': 'Длина R', 'suppliers': 'Поставщики', 'status': 'Статус',
     'reason': 'Пояснение', 'delta_threshold_bp': 'Порог Δ, п.н.',
+    'isoschizomers': 'Изошизомеры',
     'line': 'Строка', 'chrom': 'Хромосома', 'pos': 'Позиция', 'ref': 'REF',
     'alt': 'ALT', 'details': 'Подробности', 'raw': 'Исходная строка',
 }

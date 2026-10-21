@@ -214,6 +214,20 @@ class RFLPPickerGUI(QMainWindow):
 
         self.supplier_checks = supplier_widgets
 
+        recommended = core_impl.RECOMMENDED_PARAMS
+        checks_box = QGroupBox('Отбор и проверки')
+        self.checks_grid = QGridLayout(checks_box)
+        self.commercial_chk = QCheckBox('Только продаваемые ферменты')
+        self.commercial_chk.setChecked(recommended['commercial_only'])
+        self.commercial_chk.setToolTip('Ферменты, для которых в REBASE указан хотя бы один поставщик.')
+        self.group_iso_chk = QCheckBox('Объединять изошизомеры')
+        self.group_iso_chk.setChecked(recommended['group_isoschizomers'])
+        self.group_iso_chk.setToolTip('Одна строка на сайт узнавания для SNP: лучшая схема, '
+                                      'остальные ферменты с тем же сайтом — в столбце «Изошизомеры».')
+        self.checks_grid.addWidget(self.commercial_chk, 0, 0)
+        self.checks_grid.addWidget(self.group_iso_chk, 0, 1)
+        left_layout.addWidget(checks_box)
+
         design_box = QGroupBox('Совместный подбор и различимость генотипов')
         design_grid = QGridLayout(design_box)
         self.joint_design_chk = QCheckBox('Подбирать праймеры и фермент совместно')
@@ -435,44 +449,48 @@ class RFLPPickerGUI(QMainWindow):
         self.primer_pairs_spin.setEnabled(joint)
         self.top_results_spin.setEnabled(joint)
 
+    def collect_params(self) -> dict:
+        base_dir = get_base_dir()
+        fasta_selected = self.fasta_combo.currentText()
+        names_selected = self.names_combo.currentText()
+        return {
+            "flank": int(self.flank_spin.value()),
+            "min_frag": int(self.min_frag_spin.value()),
+            "max_frag": int(self.max_frag_spin.value()),
+            "delta": int(self.delta_spin.value()),
+            "gain_loss_only": self.gloss_chk.isChecked(),
+            "max_cuts": int(self.max_cuts_spin.value()),
+            "suppliers": [
+                cb.text().split(":", 1)[1].strip()
+                for cb in self.supplier_checks
+                if cb.isChecked()
+            ],
+            "fasta": os.path.join(base_dir, "genoms", fasta_selected),
+            "input_file": self.input_file.text(),
+            "names2_file": (os.path.join(base_dir, "names", names_selected) if names_selected else ""),
+            "use_primer3": self.use_primer3_chk.isChecked() and _PRIMER3_AVAILABLE,
+            "prod_min": int(self.prod_min_spin.value()),
+            "prod_max": int(self.prod_max_spin.value()),
+            "tm_min": float(self.tm_min_spin.value()),
+            "tm_max": float(self.tm_max_spin.value()),
+            "joint_design": self.joint_design_chk.isChecked(),
+            "primer_pairs": self.primer_pairs_spin.value(),
+            "top_results": self.top_results_spin.value(),
+            "gel_resolution_bp": self.gel_bp_spin.value(),
+            "gel_resolution_pct": self.gel_pct_spin.value(),
+            "gel_stress_factor": self.gel_stress_spin.value(),
+            "skip_norm": self.skip_norm_chk.isChecked(),
+            "no_save_norm": self.no_save_norm_chk.isChecked(),
+            "commercial_only": self.commercial_chk.isChecked(),
+            "group_isoschizomers": self.group_iso_chk.isChecked(),
+        }
+
     def run_calc(self):
         try:
-            fasta_selected = self.fasta_combo.currentText()
-            names_selected = self.names_combo.currentText()
-            if not fasta_selected:
+            if not self.fasta_combo.currentText():
                 QMessageBox.warning(self, "Ошибка", "Не выбран FASTA файл")
                 return
-            base_dir = get_base_dir()
-            params = {
-                "flank": int(self.flank_spin.value()),
-                "min_frag": int(self.min_frag_spin.value()),
-                "max_frag": int(self.max_frag_spin.value()),
-                "delta": int(self.delta_spin.value()),
-                "gain_loss_only": self.gloss_chk.isChecked(),
-                "max_cuts": int(self.max_cuts_spin.value()),
-                "suppliers": [
-                    cb.text().split(":", 1)[1].strip()
-                    for cb in self.supplier_checks
-                    if cb.isChecked()
-                ],
-                "fasta": os.path.join(base_dir, "genoms", fasta_selected),
-                "input_file": self.input_file.text(),
-                "names2_file": (os.path.join(base_dir, "names", names_selected) if names_selected else ""),
-                "use_primer3": self.use_primer3_chk.isChecked() and _PRIMER3_AVAILABLE,
-                "prod_min": int(self.prod_min_spin.value()),
-                "prod_max": int(self.prod_max_spin.value()),
-                "tm_min": float(self.tm_min_spin.value()),
-                "tm_max": float(self.tm_max_spin.value()),
-                "joint_design": self.joint_design_chk.isChecked(),
-                "primer_pairs": self.primer_pairs_spin.value(),
-                "top_results": self.top_results_spin.value(),
-                "gel_resolution_bp": self.gel_bp_spin.value(),
-                "gel_resolution_pct": self.gel_pct_spin.value(),
-                "gel_stress_factor": self.gel_stress_spin.value(),
-                "skip_norm": self.skip_norm_chk.isChecked(),
-                "no_save_norm": self.no_save_norm_chk.isChecked(),
-            }
-
+            params = self.collect_params()
             errors = core_impl.validate_params(params)
             if errors:
                 QMessageBox.warning(self, "Проверьте параметры", "\n".join(f"• {e}" for e in errors))

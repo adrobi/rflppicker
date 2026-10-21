@@ -45,6 +45,13 @@ def build_parser():
     search.add_argument('--suppliers', type=lambda s: [t.strip() for t in s.split(',') if t.strip()],
                         help='Поставщики через запятую: коды REBASE (N,E) или названия')
 
+    choice = parser.add_argument_group('отбор и проверки')
+    choice.add_argument('--commercial-only', dest='commercial_only', action=argparse.BooleanOptionalAction,
+                        help='Только ферменты, у которых в REBASE есть поставщик')
+    choice.add_argument('--group-isoschizomers', dest='group_isoschizomers',
+                        action=argparse.BooleanOptionalAction,
+                        help='Одна строка на сайт узнавания; остальные ферменты — в столбце isoschizomers')
+
     primers = parser.add_argument_group('праймеры и совместный подбор')
     primers.add_argument('--primer3', dest='use_primer3', action=argparse.BooleanOptionalAction,
                          help='Подбирать праймеры Primer3 (--no-primer3 — поиск по окну)')

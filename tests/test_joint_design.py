@@ -114,5 +114,45 @@ class JointDesignTests(unittest.TestCase):
         self.assertEqual(design.call_args.args[0]['SEQUENCE_TARGET'], [199, 1])
 
 
+
+class SiteGroupingTests(unittest.TestCase):
+    """MspI, HpaII, HapII, BsiSI and the unsold neoschizomer Sth302II share CCGG."""
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        rng = random.Random(5)
+        while True:
+            seq = ''.join(rng.choice('ACGT') for _ in range(400))
+            seq = seq[:197] + 'CCGG' + seq[201:]
+            if seq.count('CCGG') == 1:
+                break
+        (root / 'toy.fa').write_text('>1\n' + seq + '\n')
+        (root / 'v.tsv').write_text('chrom\tpos\tref\talt\n1\t199\tC\tT\n')
+        self.params = dict(core.DEFAULT_PARAMS, fasta=str(root / 'toy.fa'), input_file=str(root / 'v.tsv'),
+                           use_primer3=False, flank=500)
+        self.enzymes = [e for e in core.AllEnzymes if e.site == 'CCGG']
+
+    def run_design(self, **overrides):
+        with patch.object(core, 'AllEnzymes', self.enzymes):
+            header, rows = core.run_rflp_gui_mode(dict(self.params, **overrides))
+        return [dict(zip(header, row)) for row in rows]
+
+    def test_one_row_per_site_with_commercial_representative(self):
+        self.assertEqual(len(self.enzymes), 5)
+        self.assertEqual(len(self.run_design()), 5)
+        (row,) = self.run_design(group_isoschizomers=True)
+        self.assertEqual(row['enzyme'], 'MspI')
+        self.assertEqual(row['isoschizomers'], 'BsiSI; HapII; HpaII; Sth302II')
+        self.assertEqual(row['frags_ref'], '198+202')
+
+    def test_commercial_filter(self):
+        rows = self.run_design(commercial_only=True)
+        self.assertEqual(sorted(r['enzyme'] for r in rows), ['BsiSI', 'HapII', 'HpaII', 'MspI'])
+        (row,) = self.run_design(commercial_only=True, group_isoschizomers=True)
+        self.assertEqual(row['isoschizomers'], 'BsiSI; HapII; HpaII')
+
+
 if __name__ == '__main__':
     unittest.main()

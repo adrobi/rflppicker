@@ -22,9 +22,10 @@ DEFAULT_PARAMS = dict(
     tm_min=58.0, tm_max=62.0, joint_design=True, primer_pairs=10, top_results=10,
     gel_resolution_bp=10.0, gel_resolution_pct=3.0, gel_stress_factor=1.5,
     skip_norm=False, no_save_norm=True,
+    commercial_only=False, group_isoschizomers=False,
 )
 # Settings chosen from the validation on published assays (GUI and CLI default).
-RECOMMENDED_PARAMS = dict(DEFAULT_PARAMS)
+RECOMMENDED_PARAMS = dict(DEFAULT_PARAMS, commercial_only=True, group_isoschizomers=True)
 
 
 class AnalysisCancelled(Exception):
@@ -685,6 +686,35 @@ def enzyme_site_string(enzyme) -> str:
         return ""
 
 
+_IUPAC_COMPLEMENT = str.maketrans('ACGTRYKMSWBDHVN', 'TGCAYRMKSWVHDBN')
+
+
+def site_key(enzyme) -> str:
+    """Recognition site independent of the strand it is written on."""
+    site = enzyme_site_string(enzyme).upper()
+    return min(site, site.translate(_IUPAC_COMPLEMENT)[::-1])
+
+
+def group_by_site(hits: list) -> list:
+    """Keep one hit per recognition site; the others are listed as isoschizomers.
+
+    ``hits`` carry the enzyme class in ``_enz``. A site is represented by a
+    commercially available enzyme when there is one (a neoschizomer cutting
+    a base further may score marginally higher), then by the best score, then
+    by the number of suppliers. The result is in rank order.
+    """
+    groups = {}
+    for hit in hits:
+        groups.setdefault((hit.get('design'), site_key(hit['_enz'])), []).append(hit)
+    grouped = []
+    for members in groups.values():
+        keep = min(members, key=lambda h: (not h['_enz'].suppl, rank_key(h)[:4],
+                                           -len(h['_enz'].suppl), rank_key(h)[4:]))
+        others = sorted({h['enzyme'] for h in members} - {keep['enzyme']})
+        grouped.append(dict(keep, isoschizomers='; '.join(others)))
+    return sorted(grouped, key=rank_key)
+
+
 def enzyme_suppliers_human(enzyme) -> str:
     names = set()
     try:
@@ -760,6 +790,8 @@ ASSAY_HEADER = [
     'worst_bands_ref_alt', 'worst_bands_alt_alt', 'visible_band_count',
     'hidden_ref_count', 'hidden_alt_count', 'search_mode', 'scoring_model',
 ]
+# Added after v1.1.0; appended so that the v1.1.0 columns keep their order.
+V12_HEADER = ['isoschizomers']
 
 
 def _primer_candidates(pres, sequence, snp_off):
@@ -797,7 +829,8 @@ def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, 
     params = dict(params)
     for key, value in dict(joint_design=True, primer_pairs=10, top_results=10,
                            gel_resolution_bp=10.0, gel_resolution_pct=3.0,
-                           gel_stress_factor=1.5).items():
+                           gel_stress_factor=1.5, commercial_only=False,
+                           group_isoschizomers=False).items():
         params.setdefault(key, value)
     errors = validate_params(params)
     if errors:
@@ -809,7 +842,8 @@ def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, 
     counters = report.setdefault('summary', {})
     counters.update(pairs_evaluated=0, enzyme_evaluations=0, enzyme_errors=0,
                     ambiguous_templates=0, genotype_rejected=0, candidates=0,
-                    variants_with_candidates=0, variants_with_robust_candidates=0)
+                    variants_with_candidates=0, variants_with_robust_candidates=0,
+                    candidate_sites=0)
 
     def check_cancel():
         if cancel_cb and cancel_cb():
@@ -824,7 +858,7 @@ def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, 
         save_files=not params.get('no_save_norm', True), report=report,
         progress_cb=progress_cb, cancel_cb=cancel_cb,
     )
-    header = BASE_HEADER + ASSAY_HEADER
+    header = BASE_HEADER + ASSAY_HEADER + V12_HEADER
     out_rows = []
     if not cleaned:
         counters['rows'] = 0
@@ -835,11 +869,20 @@ def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, 
     codes = parse_suppliers_arg(','.join(params.get('suppliers', [])))
     enzymes = sorted((e for e in AllEnzymes if not codes or enzyme_supplier_codes(e) & codes),
                      key=lambda e: e.__name__)
+    if params['commercial_only']:
+        # REBASE lists at least one commercial supplier.
+        enzymes = [e for e in enzymes if e.suppl]
     names = load_names2(params.get('names2_file', ''))
     if status_cb:
         status_cb(f'[INFO] Поиск: {mode}; SNP: {len(cleaned)}; ферментов: {len(enzymes)}')
         status_cb('[INFO] Оценка полос: модель присутствия, полная рестрикция; '
                   'яркость и специфичность ПЦР по всему геному не оцениваются.')
+        options = [label for key, label in (
+            ('commercial_only', 'только продаваемые ферменты'),
+            ('group_isoschizomers', 'изошизомеры объединены (одна строка на сайт)'),
+        ) if params[key]]
+        if options:
+            status_cb('[INFO] Отбор: ' + '; '.join(options))
 
     def append_record(record):
         out_rows.append([record.get(key) for key in header])
@@ -933,7 +976,7 @@ def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, 
                     }[scores['genotype_quality']]
                     if not use_primer3:
                         reason = 'Оценка окна без подобранных праймеров. ' + reason
-                    hits.append(dict(record, **scores, enzyme=enz.__name__,
+                    hits.append(dict(record, **scores, enzyme=enz.__name__, _enz=enz,
                                      site=enzyme_site_string(enz),
                                      pattern='gain/loss' if len(cr) != len(ca) else 'shift',
                                      frags_ref=frags_to_str(fr), frags_alt=frags_to_str(fal),
@@ -944,6 +987,9 @@ def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, 
             counters['genotype_rejected'] += local_genotype_rejected
             hits.sort(key=rank_key)
             counters['candidates'] += len(hits)
+            counters['candidate_sites'] += len({site_key(h['_enz']) for h in hits})
+            if params['group_isoschizomers']:
+                hits = group_by_site(hits)
             counters['variants_with_candidates'] += bool(hits)
             counters['variants_with_robust_candidates'] += any(h['genotype_quality'] == 'robust' for h in hits)
             # Limit only joint search. The one-pair/window baselines retain all hits.

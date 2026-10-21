@@ -52,5 +52,14 @@ class GuiTests(unittest.TestCase):
         self.assertNotIn('100; 200', window.assay_summary.text())
 
 
+    def test_defaults_are_the_recommended_parameters(self):
+        window = qtprimer3_vis.RFLPPickerGUI()
+        self.addCleanup(window.close)
+        params = window.collect_params()
+        for key, value in qtprimer3_vis.core_impl.RECOMMENDED_PARAMS.items():
+            if key != 'names2_file':
+                self.assertEqual(params[key], value, key)
+
+
 if __name__ == '__main__':
     unittest.main()

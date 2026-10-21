@@ -9,7 +9,9 @@ that must not alter results (refactoring, speed-ups)::
 
 Every tree is imported in its own process.  For each dataset and parameter
 profile the canonical JSON of the header, rows and report (summary counters,
-rejected variants, parameters) must match byte for byte; the log and progress
+rejected variants, parameters) is compared: ``same`` means byte-identical,
+``extended`` that the candidate only appends columns and report fields while
+every baseline value is unchanged; anything else fails.  The log and progress
 calls are compared separately.  Inputs are copied into ``--work`` so that no
 index or result file is written next to the baseline tree.
 """
@@ -47,6 +49,28 @@ PROFILES = {
 
 def sha256_text(text):
     return hashlib.sha256(text.encode('utf-8')).hexdigest()
+
+
+def _canon(value):
+    return json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+
+def _extends(base, cand):
+    """cand equals base, except that dictionaries may have additional keys."""
+    if isinstance(base, dict):
+        return isinstance(cand, dict) and all(k in cand and _extends(v, cand[k]) for k, v in base.items())
+    if isinstance(base, list):
+        return (isinstance(cand, list) and len(base) == len(cand)
+                and all(_extends(b, c) for b, c in zip(base, cand)))
+    return _canon(base) == _canon(cand)
+
+
+def compatible(base, cand):
+    """Only appended columns and new report fields: every baseline value is unchanged."""
+    n = len(base['header'])
+    return (cand['header'][:n] == base['header'] and len(cand['rows']) == len(base['rows'])
+            and all(_canon(c[:n]) == _canon(b) for b, c in zip(base['rows'], cand['rows']))
+            and base['error'] == cand['error'] and _extends(base['report'], cand['report']))
 
 
 # ---------------------------------------------------------------- worker side
@@ -219,8 +243,13 @@ def main():
     for case in cases:
         b, c = results['baseline', case['name']], results['candidate', case['name']]
         same, same_log = b['result_sha256'] == c['result_sha256'], b['log_sha256'] == c['log_sha256']
-        failed += not same
-        report.append(dict(case=case['name'], rows=b['rows'], identical=same, identical_log=same_log,
+        if same:
+            verdict = 'same'
+        else:
+            load = lambda label: json.loads((work / label / f"{case['name']}.result.json").read_text(encoding='utf-8'))  # noqa: E731
+            verdict = 'extended' if compatible(load('baseline'), load('candidate')) else 'DIFFERS'
+        failed += verdict == 'DIFFERS'
+        report.append(dict(case=case['name'], rows=b['rows'], result=verdict, identical_log=same_log,
                            baseline_seconds=b['elapsed_seconds'], candidate_seconds=c['elapsed_seconds'],
                            result_sha256=b['result_sha256'] if same else None))
     (work / 'comparison.json').write_text(json.dumps(dict(trees={k: str(v) for k, v in trees.items()},
@@ -228,10 +257,11 @@ def main():
     print(f"\n{'case':32s} {'rows':>6s} {'result':>9s} {'log':>9s} {'baseline':>9s} {'candidate':>9s} {'speed-up':>8s}")
     for r in report:
         speed = r['baseline_seconds'] / max(r['candidate_seconds'], 1e-9)
-        print(f"{r['case']:32s} {r['rows']:6d} {'same' if r['identical'] else 'DIFFERS':>9s} "
+        print(f"{r['case']:32s} {r['rows']:6d} {r['result']:>9s} "
               f"{'same' if r['identical_log'] else 'differs':>9s} {r['baseline_seconds']:8.1f}s "
               f"{r['candidate_seconds']:8.1f}s {speed:7.1f}x")
-    print(f"\n{len(report) - failed}/{len(report)} cases identical")
+    print(f"\n{len(report) - failed}/{len(report)} cases match the baseline "
+          "(same: byte-identical; extended: only new columns/report fields)")
     return 1 if failed else 0
 
 
