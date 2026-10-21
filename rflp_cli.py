@@ -53,6 +53,9 @@ def build_parser():
                         help='Одна строка на сайт узнавания; остальные ферменты — в столбце isoschizomers')
     choice.add_argument('--snp-end-distance', dest='snp_end_distance', type=int, metavar='BP',
                         help='SNP не ближе BP п.н. к каждому концу ампликона (0 — не ограничивать)')
+    choice.add_argument('--exclude-primer-sites', dest='exclude_primer_sites',
+                        action=argparse.BooleanOptionalAction,
+                        help='Исключать схемы, где праймер сам содержит сайт фермента')
 
     primers = parser.add_argument_group('праймеры и совместный подбор')
     primers.add_argument('--primer3', dest='use_primer3', action=argparse.BooleanOptionalAction,

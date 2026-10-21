@@ -235,6 +235,12 @@ class RFLPPickerGUI(QMainWindow):
                                           'должно быть не меньше мин. фрагмента. Не действует в поиске по окну.')
         self.checks_grid.addWidget(QLabel('SNP не ближе к краю ампликона, п.н.:'), 1, 0)
         self.checks_grid.addWidget(self.end_distance_spin, 1, 1)
+        self.primer_site_chk = QCheckBox('Исключать сайт фермента в праймере')
+        self.primer_site_chk.setChecked(recommended['exclude_primer_sites'])
+        self.primer_site_chk.setToolTip('Сайт внутри праймера есть в продукте при любом аллеле, а разрез '
+                                        'у самого конца ДНК ненадёжен. Найденные сайты показаны в столбце '
+                                        '«Сайт в праймере».')
+        self.checks_grid.addWidget(self.primer_site_chk, 2, 0, 1, 2)
         left_layout.addWidget(checks_box)
 
         design_box = QGroupBox('Совместный подбор и различимость генотипов')
@@ -493,6 +499,7 @@ class RFLPPickerGUI(QMainWindow):
             "commercial_only": self.commercial_chk.isChecked(),
             "group_isoschizomers": self.group_iso_chk.isChecked(),
             "snp_end_distance": self.end_distance_spin.value(),
+            "exclude_primer_sites": self.primer_site_chk.isChecked(),
         }
 
     def run_calc(self):

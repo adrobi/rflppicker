@@ -23,10 +23,11 @@ DEFAULT_PARAMS = dict(
     gel_resolution_bp=10.0, gel_resolution_pct=3.0, gel_stress_factor=1.5,
     skip_norm=False, no_save_norm=True,
     commercial_only=False, group_isoschizomers=False, snp_end_distance=0,
+    exclude_primer_sites=False,
 )
 # Settings chosen from the validation on published assays (GUI and CLI default).
 RECOMMENDED_PARAMS = dict(DEFAULT_PARAMS, commercial_only=True, group_isoschizomers=True,
-                          snp_end_distance=100)
+                          snp_end_distance=100, exclude_primer_sites=True)
 
 
 class AnalysisCancelled(Exception):
@@ -667,6 +668,21 @@ def snp_site_enzymes(enzymes, seq: str, altseq: str, off: int) -> list:
     return found
 
 
+def primer_site_label(enzyme, amplicon: str, left_len, right_len) -> str:
+    """Which primers contain a whole recognition site of the enzyme.
+
+    Such a site is in every product whatever the allele, and cutting that
+    close to a DNA end is unreliable. ``amplicon`` is the product top strand,
+    so the right primer is searched as its binding site.
+    """
+    found = []
+    if left_len and enzyme.compsite.search(amplicon, 0, left_len):
+        found.append('left')
+    if right_len and enzyme.compsite.search(amplicon, len(amplicon) - right_len):
+        found.append('right')
+    return '; '.join(found)
+
+
 def diagnostic_delta(fr1: List[int], fr2: List[int]) -> int:
     """Symmetric nearest-band distance used for the Δ threshold."""
     if not fr1 or not fr2:
@@ -800,7 +816,7 @@ ASSAY_HEADER = [
     'hidden_ref_count', 'hidden_alt_count', 'search_mode', 'scoring_model',
 ]
 # Added after v1.1.0; appended so that the v1.1.0 columns keep their order.
-V12_HEADER = ['isoschizomers']
+V12_HEADER = ['isoschizomers', 'primer_site']
 
 
 def _primer_candidates(pres, sequence, snp_off):
@@ -839,7 +855,8 @@ def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, 
     for key, value in dict(joint_design=True, primer_pairs=10, top_results=10,
                            gel_resolution_bp=10.0, gel_resolution_pct=3.0,
                            gel_stress_factor=1.5, commercial_only=False,
-                           group_isoschizomers=False, snp_end_distance=0).items():
+                           group_isoschizomers=False, snp_end_distance=0,
+                           exclude_primer_sites=False).items():
         params.setdefault(key, value)
     errors = validate_params(params)
     if errors:
@@ -852,7 +869,7 @@ def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, 
     counters.update(pairs_evaluated=0, enzyme_evaluations=0, enzyme_errors=0,
                     ambiguous_templates=0, genotype_rejected=0, candidates=0,
                     variants_with_candidates=0, variants_with_robust_candidates=0,
-                    candidate_sites=0, pairs_near_end=0)
+                    candidate_sites=0, pairs_near_end=0, excluded_primer_site=0)
 
     def check_cancel():
         if cancel_cb and cancel_cb():
@@ -889,6 +906,7 @@ def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, 
         options = [label for key, label in (
             ('commercial_only', 'только продаваемые ферменты'),
             ('group_isoschizomers', 'изошизомеры объединены (одна строка на сайт)'),
+            ('exclude_primer_sites', 'без сайта фермента в праймерах'),
         ) if params[key]]
         if use_primer3 and params['snp_end_distance']:
             options.append(f"SNP не ближе {params['snp_end_distance']} п.н. к концам ампликона")
@@ -997,11 +1015,17 @@ def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, 
                     }[scores['genotype_quality']]
                     if not use_primer3:
                         reason = 'Оценка окна без подобранных праймеров. ' + reason
+                    primer_site = primer_site_label(enz, refamp, pair.get('primer_left_len'),
+                                                    pair.get('primer_right_len'))
+                    if primer_site and params['exclude_primer_sites']:
+                        counters['excluded_primer_site'] += 1
+                        continue
                     hits.append(dict(record, **scores, enzyme=enz.__name__, _enz=enz,
                                      site=enzyme_site_string(enz),
                                      pattern='gain/loss' if len(cr) != len(ca) else 'shift',
                                      frags_ref=frags_to_str(fr), frags_alt=frags_to_str(fal),
                                      diag_delta_bp=actual_delta, suppliers=enzyme_suppliers_human(enz),
+                                     primer_site=primer_site,
                                      status='ok' if use_primer3 else 'window_only', reason=reason))
             counters['enzyme_errors'] += local_errors
             counters['ambiguous_templates'] += local_ambiguous

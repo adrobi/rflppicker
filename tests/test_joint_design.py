@@ -118,6 +118,23 @@ class JointDesignTests(unittest.TestCase):
         self.assertEqual(design.call_args.args[0]['SEQUENCE_TARGET'], [137, 125])
         self.assertEqual(design.call_args.args[1]['PRIMER_MIN_SIZE'], core.PRIMER_MIN_SIZE)
 
+    def test_site_inside_primer_is_flagged_and_can_be_excluded(self):
+        # A second EcoRI site inside the left primer of pair 1 (bases 150-169).
+        self.seq = self.seq[:152] + 'GAATTC' + self.seq[158:]
+        self.fasta.write_text('>1\n' + self.seq + '\n')
+        header, rows, report = self.run_design()
+        by_pair = {r['primer_pair_index']: r for r in (dict(zip(header, row)) for row in rows)}
+        self.assertEqual((by_pair[1]['primer_site'], by_pair[2]['primer_site']), ('left', ''))
+        header, rows, report = self.run_design(exclude_primer_sites=True)
+        self.assertEqual([dict(zip(header, row))['primer_pair_index'] for row in rows], [2])
+        self.assertEqual(report['summary']['excluded_primer_site'], 1)
+
+    def test_primer_site_label_searches_the_right_binding_site(self):
+        amplicon = 'GAATTCAAAAAAAAAAAAAAAAAAAACCCCCCCCCCCCGGGAATTCTT'
+        self.assertEqual(core.primer_site_label(EcoRI, amplicon, 20, 10), 'left; right')
+        self.assertEqual(core.primer_site_label(EcoRI, amplicon, 5, 7), '')
+        self.assertEqual(core.primer_site_label(EcoRI, amplicon, None, None), '')
+
     def test_snp_end_distance_with_real_primer3(self):
         rng = random.Random(11)
         seq = ''.join(rng.choice('ACGT') for _ in range(1001))
