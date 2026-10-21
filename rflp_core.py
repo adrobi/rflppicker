@@ -12,6 +12,20 @@ from Bio.Seq import Seq
 from Bio.Restriction import AllEnzymes
 from assay_scoring import GelModel, MODEL_VERSION, score_genotypes, rank_key
 
+APP_VERSION = "1.1.0"
+
+# Analysis defaults of the GUI. Options added after v1.1.0 are off here, so a
+# parameter set written for v1.1.0 reproduces its results.
+DEFAULT_PARAMS = dict(
+    names2_file='', flank=300, min_frag=80, max_frag=800, delta=25, max_cuts=3,
+    gain_loss_only=False, suppliers=[], use_primer3=True, prod_min=250, prod_max=600,
+    tm_min=58.0, tm_max=62.0, joint_design=True, primer_pairs=10, top_results=10,
+    gel_resolution_bp=10.0, gel_resolution_pct=3.0, gel_stress_factor=1.5,
+    skip_norm=False, no_save_norm=True,
+)
+# Settings chosen from the validation on published assays (GUI and CLI default).
+RECOMMENDED_PARAMS = dict(DEFAULT_PARAMS)
+
 
 class AnalysisCancelled(Exception):
     """Raised when a running analysis is cancelled by the caller."""

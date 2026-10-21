@@ -880,7 +880,7 @@ class RFLPPickerGUI(QMainWindow):
             path = os.path.join(results_dir, filename)
 
             safe_export_excel(path, header, data, metadata={
-                "app_version": "1.1.0",
+                "app_version": core_impl.APP_VERSION,
                 "scoring_model": core_impl.MODEL_VERSION,
                 "run_timestamp": datetime.now().isoformat(timespec="seconds"),
                 "genome_path": (self.last_params or {}).get("fasta", ""),
