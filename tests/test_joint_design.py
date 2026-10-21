@@ -135,6 +135,56 @@ class JointDesignTests(unittest.TestCase):
         self.assertEqual(core.primer_site_label(EcoRI, amplicon, 5, 7), '')
         self.assertEqual(core.primer_site_label(EcoRI, amplicon, None, None), '')
 
+    def write_vcf(self, records, compress=False):
+        text = '##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n'
+        text += ''.join(f'{c}\t{p}\t.\t{r}\t{a}\t.\t.\t.\n' for c, p, r, a in records)
+        path = self.root / ('known.vcf.gz' if compress else 'known.vcf')
+        if compress:
+            import gzip
+            with gzip.open(path, 'wt') as stream:
+                stream.write(text)
+        else:
+            path.write_text(text)
+        return str(path)
+
+    def test_background_vcf_loading(self):
+        records = [('chr1', 50, 'A', 'G'), ('chr1', 150, 'C', 'T,<DEL>'), ('chr1', 999, 'A', 'T'),
+                   ('2', 60, 'G', '*'), ('2', 61, 'GA', 'G'), ('3', 10, 'A', 'C')]
+        for compress in (False, True):
+            found, count = core.load_background_variants(
+                self.write_vcf(records, compress), {'1': [(40, 200)], '2': [(1, 100)]}, {'chr1': '1'})
+            self.assertEqual(count, 6)
+            self.assertEqual(found, {'1': [(50, 'A', ('G',)), (150, 'C', ('T',))], '2': [(61, 'GA', ('G',))]})
+
+    def test_variant_site_changes(self):
+        amplicon = 'AAAAGAATTCAAAAAAAAAA'
+        self.assertTrue(core.variant_changes_sites(EcoRI, amplicon, 8, 'T', 'A', 10))    # destroys GAATTC
+        self.assertFalse(core.variant_changes_sites(EcoRI, amplicon, 15, 'A', 'C', 10))  # far from the site
+        self.assertTrue(core.variant_changes_sites(EcoRI, 'AAAAGAATTAAAAAAA', 9, 'A', 'C', 10))  # creates it
+        self.assertFalse(core.variant_changes_sites(EcoRI, amplicon, 15, 'A', 'AC', 10))  # 1 bp shift
+        self.assertTrue(core.variant_changes_sites(EcoRI, amplicon, 15, 'A', 'A' + 'C' * 12, 10))
+
+    def test_background_variants_in_primers_and_sites(self):
+        mismatch = 'A' if self.seq[299] != 'A' else 'C'
+        vcf = self.write_vcf([('1', 100, self.seq[99], 'N'.replace('N', 'A' if self.seq[99] != 'A' else 'C')),
+                              ('1', 200, 'A', 'G'), ('1', 202, 'T', 'A'), ('1', 300, mismatch, 'G')])
+        report = {}
+        with patch.object(core, 'AllEnzymes', [EcoRI]), \
+                patch.object(core, 'primer3_pick', return_value=self.primer_result()) as pick:
+            header, rows = core.run_rflp_gui_mode(dict(self.params, background_vcf=vcf), report=report)
+        self.assertEqual(pick.call_args.kwargs['excluded_regions'], [(99, 1), (201, 1)])
+        records = {r['primer_pair_index']: r for r in (dict(zip(header, row)) for row in rows)}
+        self.assertEqual((records[1]['background_variants'], records[2]['background_variants']), (1, 2))
+        self.assertEqual(records[1]['background_site_variants'], '202 T>A')
+        self.assertEqual(report['summary']['background_variants_loaded'], 4)
+        self.assertEqual(report['summary']['background_ref_mismatch'], 1)
+        with patch.object(core, 'AllEnzymes', [EcoRI]), \
+                patch.object(core, 'primer3_pick', return_value=self.primer_result()):
+            header, rows = core.run_rflp_gui_mode(dict(self.params, background_vcf=vcf,
+                                                       exclude_background_sites=True), report=report)
+        self.assertEqual(dict(zip(header, rows[0]))['status'], 'no_discriminating_assay')
+        self.assertEqual(report['summary']['excluded_background_site'], 2)
+
     def test_soft_masked_repeats_are_not_at_primer_3_ends(self):
         rng = random.Random(23)
         seq = ''.join(rng.choice('ACGT') for _ in range(1001))

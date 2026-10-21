@@ -1,5 +1,7 @@
 import sys
+import bisect
 import csv
+import gzip
 import os
 import re
 import logging
@@ -24,10 +26,12 @@ DEFAULT_PARAMS = dict(
     skip_norm=False, no_save_norm=True,
     commercial_only=False, group_isoschizomers=False, snp_end_distance=0,
     exclude_primer_sites=False, mask_repeats=False,
+    background_vcf='', exclude_background_sites=False,
 )
 # Settings chosen from the validation on published assays (GUI and CLI default).
 RECOMMENDED_PARAMS = dict(DEFAULT_PARAMS, commercial_only=True, group_isoschizomers=True,
-                          snp_end_distance=100, exclude_primer_sites=True, mask_repeats=True)
+                          snp_end_distance=100, exclude_primer_sites=True, mask_repeats=True,
+                          exclude_background_sites=True)
 
 
 class AnalysisCancelled(Exception):
@@ -40,8 +44,8 @@ def validate_params(params: dict) -> list[str]:
     for key in required:
         if not str(params.get(key, '')).strip():
             errors.append(f"Не задан параметр: {key}")
-    for key in ('fasta', 'input_file'):
-        value = str(params.get(key, '')).strip()
+    for key in ('fasta', 'input_file', 'background_vcf'):
+        value = str(params.get(key, '') or '').strip()
         if value and not os.path.isfile(value):
             errors.append(f"Файл не найден ({key}): {value}")
     for lo, hi, label in (('min_frag', 'max_frag', 'размер фрагмента'),
@@ -683,6 +687,77 @@ def primer_site_label(enzyme, amplicon: str, left_len, right_len) -> str:
     return '; '.join(found)
 
 
+def load_background_variants(path: str, regions: Dict[str, list], names: Optional[dict] = None,
+                             cancel_cb=None) -> Tuple[Dict[str, list], int]:
+    """Known variants of a VCF (plain or gzip) that lie inside ``regions``.
+
+    ``regions`` maps FASTA contigs to 1-based inclusive ``(start, end)``
+    windows. VCF contig names are translated with ``names`` (the chromosome
+    names file) when listed there. Symbolic and missing ALT alleles are
+    skipped. Returns ``{contig: [(pos, REF, (ALT, ...)), ...]}`` sorted by
+    position and the number of VCF records read.
+    """
+    merged = {}
+    for contig, spans in regions.items():
+        out = []
+        for start, end in sorted(spans):
+            if out and start <= out[-1][1] + 1:
+                out[-1][1] = max(out[-1][1], end)
+            else:
+                out.append([start, end])
+        merged[contig] = ([a for a, _ in out], [b for _, b in out])
+    names = names or {}
+    found = {contig: [] for contig in regions}
+    with open(path, 'rb') as probe:
+        opener = gzip.open if probe.read(2) == b'\x1f\x8b' else open
+    records = 0
+    with opener(path, 'rt', encoding='utf-8', errors='replace') as stream:
+        for line in stream:
+            if line.startswith('#'):
+                continue
+            records += 1
+            if cancel_cb and records % 200_000 == 0 and cancel_cb():
+                raise AnalysisCancelled()
+            fields = line.split('\t', 5)
+            if len(fields) < 5:
+                continue
+            contig = names.get(fields[0], fields[0])
+            spans = merged.get(contig)
+            if spans is None:
+                continue
+            try:
+                pos = int(fields[1])
+            except ValueError:
+                continue
+            i = bisect.bisect_right(spans[0], pos) - 1
+            if i < 0 or pos > spans[1][i]:
+                continue
+            ref = fields[3].upper()
+            alts = tuple(a for a in fields[4].upper().split(',') if a and set(a) <= set('ACGTN'))
+            if alts and set(ref) <= set('ACGTN'):
+                found[contig].append((pos, ref, alts))
+    for items in found.values():
+        items.sort()
+    return found, records
+
+
+def variant_changes_sites(enzyme, amplicon: str, q: int, ref: str, alt: str, resolution_bp: float) -> bool:
+    """Whether replacing ``amplicon[q:q + len(ref)]`` by ``alt`` may change the digest.
+
+    Substitutions: compared exactly through the site matches covering the
+    change (the remaining matches are identical). Indels: conservatively true
+    if a site touches the change or the length shift reaches the resolution.
+    """
+    size = enzyme.size
+    variant = amplicon[:q] + alt + amplicon[q + len(ref):]
+    lo = max(0, q - size + 2)
+    ref_hits = [(m.start(), m.lastgroup) for m in enzyme.compsite.finditer(' ' + amplicon, lo, q + len(ref) + size)]
+    var_hits = [(m.start(), m.lastgroup) for m in enzyme.compsite.finditer(' ' + variant, lo, q + len(alt) + size)]
+    if len(ref) == len(alt):
+        return ref_hits != var_hits
+    return bool(ref_hits or var_hits) or abs(len(alt) - len(ref)) >= resolution_bp
+
+
 def diagnostic_delta(fr1: List[int], fr2: List[int]) -> int:
     """Symmetric nearest-band distance used for the Δ threshold."""
     if not fr1 or not fr2:
@@ -766,11 +841,13 @@ def primer3_pick(
     num_return: int = 1,
     target_flank: int = 0,
     lowercase_masking: bool = False,
+    excluded_regions: Optional[list] = None,
 ) -> Optional[dict]:
     """Pick PCR primers flanking ``[snp_off - target_flank, snp_off + target_flank]``.
 
     With ``lowercase_masking`` the soft-masked (lower-case) bases of ``amplicon``
-    may not be at a primer's 3' end.
+    may not be at a primer's 3' end. Primers never overlap ``excluded_regions``
+    (``[start0, length]`` pairs, e.g. known variants).
     """
     primer3_pick.last_error = ""
     if not _PRIMER3_AVAILABLE:
@@ -778,6 +855,8 @@ def primer3_pick(
         return None
     seq_args = {"SEQUENCE_TEMPLATE": amplicon,
                 "SEQUENCE_TARGET": [snp_off - target_flank, 2 * target_flank + 1]}
+    if excluded_regions:
+        seq_args["SEQUENCE_EXCLUDED_REGION"] = [list(region) for region in excluded_regions]
     global_args = {
         "PRIMER_TASK": "pick_pcr_primers",
         "PRIMER_NUM_RETURN": num_return,
@@ -823,7 +902,8 @@ ASSAY_HEADER = [
     'hidden_ref_count', 'hidden_alt_count', 'search_mode', 'scoring_model',
 ]
 # Added after v1.1.0; appended so that the v1.1.0 columns keep their order.
-V12_HEADER = ['isoschizomers', 'primer_site', 'repeat_pct']
+V12_HEADER = ['isoschizomers', 'primer_site', 'repeat_pct', 'background_variants',
+              'background_site_variants']
 
 
 def _primer_candidates(pres, sequence, snp_off):
@@ -863,7 +943,8 @@ def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, 
                            gel_resolution_bp=10.0, gel_resolution_pct=3.0,
                            gel_stress_factor=1.5, commercial_only=False,
                            group_isoschizomers=False, snp_end_distance=0,
-                           exclude_primer_sites=False, mask_repeats=False).items():
+                           exclude_primer_sites=False, mask_repeats=False,
+                           background_vcf='', exclude_background_sites=False).items():
         params.setdefault(key, value)
     errors = validate_params(params)
     if errors:
@@ -876,7 +957,9 @@ def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, 
     counters.update(pairs_evaluated=0, enzyme_evaluations=0, enzyme_errors=0,
                     ambiguous_templates=0, genotype_rejected=0, candidates=0,
                     variants_with_candidates=0, variants_with_robust_candidates=0,
-                    candidate_sites=0, pairs_near_end=0, excluded_primer_site=0)
+                    candidate_sites=0, pairs_near_end=0, excluded_primer_site=0,
+                    background_variants_loaded=0, background_ref_mismatch=0,
+                    excluded_background_site=0)
 
     def check_cancel():
         if cancel_cb and cancel_cb():
@@ -915,7 +998,8 @@ def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, 
             ('group_isoschizomers', 'изошизомеры объединены (одна строка на сайт)'),
             ('exclude_primer_sites', 'без сайта фермента в праймерах'),
             ('mask_repeats', 'повторы (строчные буквы FASTA) не на 3′-концах праймеров'),
-        ) if params[key]]
+            ('exclude_background_sites', 'без фоновых вариантов, меняющих разрезы'),
+        ) if params[key] and (key != 'exclude_background_sites' or params['background_vcf'])]
         if use_primer3 and params['snp_end_distance']:
             options.append(f"SNP не ближе {params['snp_end_distance']} п.н. к концам ампликона")
         if options:
@@ -923,6 +1007,18 @@ def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, 
 
     def append_record(record):
         out_rows.append([record.get(key) for key in header])
+
+    background = None
+    if params['background_vcf']:
+        regions = {}
+        for chrom, pos, _, _ in cleaned:
+            regions.setdefault(names.get(chrom, chrom), []).append(
+                (pos - params['flank'], pos + params['flank']))
+        background, records = load_background_variants(params['background_vcf'], regions, names, cancel_cb)
+        counters['background_variants_loaded'] = sum(map(len, background.values()))
+        if status_cb:
+            status_cb(f"[INFO] Фоновые варианты: {counters['background_variants_loaded']} в окнах SNP "
+                      f"из {records} записей VCF")
 
     # Always release the FASTA handle, including cancellation and exceptions.
     fa = Fasta(params['fasta'], as_raw=True)
@@ -947,6 +1043,18 @@ def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, 
                 append_record(dict(base, status='analysis_error', reason='REF не совпадает с FASTA'))
                 continue
             altseq = seq[:off] + alt + seq[off + 1:]
+            # Known variants of the window (offsets), except a record of the SNP itself.
+            known = []
+            if background is not None:
+                items = background.get(mapped_id, [])
+                for p, r, alts in items[bisect.bisect_left(items, (start,)):bisect.bisect_left(items, (end + 1,))]:
+                    q = p - start
+                    if p + len(r) - 1 > end or p <= pos < p + len(r):
+                        continue
+                    if seq[q:q + len(r)] != r:
+                        counters['background_ref_mismatch'] += 1
+                        continue
+                    known.append((q, r, alts))
             # The remaining enzymes give equal REF/ALT fragments in every amplicon,
             # i.e. Δ = 0, which is below any threshold (delta >= 1).
             site_enzymes = snp_site_enzymes(enzymes, seq, altseq, off)
@@ -962,7 +1070,8 @@ def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, 
                                     params['tm_min'], params['tm_max'],
                                     num_return=params['primer_pairs'] if joint else 1,
                                     target_flank=max(0, end_distance - PRIMER_MIN_SIZE),
-                                    lowercase_masking=mask)
+                                    lowercase_masking=mask,
+                                    excluded_regions=[(q, len(r)) for q, r, _ in known])
                 if not pres:
                     error = primer3_pick.last_error
                     append_record(dict(base, status='primer3_error' if error else 'no_primers',
@@ -1035,12 +1144,22 @@ def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, 
                     if primer_site and params['exclude_primer_sites']:
                         counters['excluded_primer_site'] += 1
                         continue
+                    inside = [(q - a, r, alts) for q, r, alts in known if a <= q and q + len(r) <= b]
+                    changing = sorted({f'{start + a + q} {r}>{x}' for q, r, alts in inside for x in alts
+                                       if any(variant_changes_sites(enz, amp, q, r, x, model.resolution_bp)
+                                              for amp in (refamp, altamp))},
+                                      key=lambda text: int(text.split()[0]))
+                    if changing and params['exclude_background_sites']:
+                        counters['excluded_background_site'] += 1
+                        continue
                     hits.append(dict(record, **scores, enzyme=enz.__name__, _enz=enz,
                                      site=enzyme_site_string(enz),
                                      pattern='gain/loss' if len(cr) != len(ca) else 'shift',
                                      frags_ref=frags_to_str(fr), frags_alt=frags_to_str(fal),
                                      diag_delta_bp=actual_delta, suppliers=enzyme_suppliers_human(enz),
                                      primer_site=primer_site,
+                                     background_variants=len(inside) if background is not None else None,
+                                     background_site_variants='; '.join(changing),
                                      status='ok' if use_primer3 else 'window_only', reason=reason))
             counters['enzyme_errors'] += local_errors
             counters['ambiguous_templates'] += local_ambiguous

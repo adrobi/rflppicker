@@ -246,6 +246,19 @@ class RFLPPickerGUI(QMainWindow):
         self.mask_chk.setToolTip('Строчные буквы FASTA (повторы в геномах NCBI/Ensembl) не допускаются '
                                  'на 3′-конце праймера. Доля повторов в ампликоне — столбец «Повторы, %».')
         self.checks_grid.addWidget(self.mask_chk, 3, 0, 1, 2)
+        self.checks_grid.addWidget(QLabel('VCF известных вариантов (необязательно):'), 4, 0, 1, 2)
+        self.background_vcf = QLineEdit(recommended['background_vcf'])
+        self.background_vcf.setPlaceholderText('VCF или VCF.gz с вариантами популяции/породы')
+        self.background_vcf.setToolTip('Праймеры не ставятся на известные варианты; схемы, где соседние '
+                                       'варианты меняют разрезы или длины полос, отмечаются. Названия '
+                                       'хромосом VCF переводятся файлом соответствий.')
+        btn_vcf = QPushButton('Выбрать VCF')
+        btn_vcf.clicked.connect(self.select_vcf)
+        self.checks_grid.addWidget(self.background_vcf, 5, 0)
+        self.checks_grid.addWidget(btn_vcf, 5, 1)
+        self.background_chk = QCheckBox('Исключать схемы, где фоновые варианты меняют разрезы')
+        self.background_chk.setChecked(recommended['exclude_background_sites'])
+        self.checks_grid.addWidget(self.background_chk, 6, 0, 1, 2)
         left_layout.addWidget(checks_box)
 
         design_box = QGroupBox('Совместный подбор и различимость генотипов')
@@ -463,6 +476,13 @@ class RFLPPickerGUI(QMainWindow):
             tb = traceback.format_exc()
             self.log_msg(f"[ERROR] Ошибка при выборе файла:\n{tb}", "error")
 
+    def select_vcf(self):
+        path, _ = QFileDialog.getOpenFileName(self, "VCF известных вариантов", "",
+                                              "VCF (*.vcf *.vcf.gz *.gz);;Все файлы (*)")
+        if path:
+            self.background_vcf.setText(path)
+            self.log_msg(f"Выбран VCF фоновых вариантов: {path}")
+
     def _update_design_controls(self):
         self.joint_design_chk.setEnabled(self.use_primer3_chk.isChecked())
         joint = self.use_primer3_chk.isChecked() and self.joint_design_chk.isChecked()
@@ -506,6 +526,8 @@ class RFLPPickerGUI(QMainWindow):
             "snp_end_distance": self.end_distance_spin.value(),
             "exclude_primer_sites": self.primer_site_chk.isChecked(),
             "mask_repeats": self.mask_chk.isChecked(),
+            "background_vcf": self.background_vcf.text().strip(),
+            "exclude_background_sites": self.background_chk.isChecked(),
         }
 
     def run_calc(self):

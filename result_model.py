@@ -31,6 +31,8 @@ LABELS = {
     'primer_right_len': 'Длина R', 'suppliers': 'Поставщики', 'status': 'Статус',
     'reason': 'Пояснение', 'delta_threshold_bp': 'Порог Δ, п.н.',
     'isoschizomers': 'Изошизомеры', 'primer_site': 'Сайт в праймере', 'repeat_pct': 'Повторы, %',
+    'background_variants': 'Известных вариантов в ампликоне',
+    'background_site_variants': 'Варианты, меняющие разрезы/полосы',
     'line': 'Строка', 'chrom': 'Хромосома', 'pos': 'Позиция', 'ref': 'REF',
     'alt': 'ALT', 'details': 'Подробности', 'raw': 'Исходная строка',
 }

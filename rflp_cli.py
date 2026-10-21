@@ -58,6 +58,12 @@ def build_parser():
                         help='Исключать схемы, где праймер сам содержит сайт фермента')
     choice.add_argument('--mask-repeats', dest='mask_repeats', action=argparse.BooleanOptionalAction,
                         help='Повторы (строчные буквы soft-mask FASTA) не на 3′-концах праймеров')
+    choice.add_argument('--background-vcf', dest='background_vcf', metavar='FILE',
+                        help='VCF/VCF.gz известных вариантов: праймеры их избегают, влияние на разрезы '
+                             'отмечается (названия хромосом — через --names)')
+    choice.add_argument('--exclude-background-sites', dest='exclude_background_sites',
+                        action=argparse.BooleanOptionalAction,
+                        help='Исключать схемы, где фоновые варианты меняют разрезы или длины полос')
 
     primers = parser.add_argument_group('праймеры и совместный подбор')
     primers.add_argument('--primer3', dest='use_primer3', action=argparse.BooleanOptionalAction,
@@ -93,8 +99,9 @@ def params_from_args(args):
     if args.save_norm is not None:
         params['no_save_norm'] = not args.save_norm
     params.update(fasta=str(Path(args.fasta).resolve()), input_file=str(Path(args.variants).resolve()))
-    if params['names2_file']:
-        params['names2_file'] = str(Path(params['names2_file']).resolve())
+    for key in ('names2_file', 'background_vcf'):
+        if params[key]:
+            params[key] = str(Path(params[key]).resolve())
     return params
 
 
