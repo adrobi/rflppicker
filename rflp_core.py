@@ -22,10 +22,11 @@ DEFAULT_PARAMS = dict(
     tm_min=58.0, tm_max=62.0, joint_design=True, primer_pairs=10, top_results=10,
     gel_resolution_bp=10.0, gel_resolution_pct=3.0, gel_stress_factor=1.5,
     skip_norm=False, no_save_norm=True,
-    commercial_only=False, group_isoschizomers=False,
+    commercial_only=False, group_isoschizomers=False, snp_end_distance=0,
 )
 # Settings chosen from the validation on published assays (GUI and CLI default).
-RECOMMENDED_PARAMS = dict(DEFAULT_PARAMS, commercial_only=True, group_isoschizomers=True)
+RECOMMENDED_PARAMS = dict(DEFAULT_PARAMS, commercial_only=True, group_isoschizomers=True,
+                          snp_end_distance=100)
 
 
 class AnalysisCancelled(Exception):
@@ -56,7 +57,7 @@ def validate_params(params: dict) -> list[str]:
     for key, default, low, high in (
         ('primer_pairs', 10, 1, 100), ('top_results', 10, 0, 10000),
         ('flank', 300, 1, 100000), ('max_cuts', 3, 0, 100),
-        ('delta', 25, 1, 100000),
+        ('delta', 25, 1, 100000), ('snp_end_distance', 0, 0, 5000),
     ):
         value = params.get(key, default)
         if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
@@ -736,6 +737,9 @@ def enzyme_suppliers_human(enzyme) -> str:
 
 
 # ====== primer3 обёртка ======
+PRIMER_MIN_SIZE = 18  # Primer3 default; stated explicitly when a wider target relies on it
+
+
 def primer3_pick(
     amplicon: str,
     snp_off: int,
@@ -744,12 +748,15 @@ def primer3_pick(
     tm_min: float,
     tm_max: float,
     num_return: int = 1,
+    target_flank: int = 0,
 ) -> Optional[dict]:
+    """Pick PCR primers flanking ``[snp_off - target_flank, snp_off + target_flank]``."""
     primer3_pick.last_error = ""
     if not _PRIMER3_AVAILABLE:
         primer3_pick.last_error = "Модуль Primer3 недоступен"
         return None
-    seq_args = {"SEQUENCE_TEMPLATE": amplicon, "SEQUENCE_TARGET": [snp_off, 1]}
+    seq_args = {"SEQUENCE_TEMPLATE": amplicon,
+                "SEQUENCE_TARGET": [snp_off - target_flank, 2 * target_flank + 1]}
     global_args = {
         "PRIMER_TASK": "pick_pcr_primers",
         "PRIMER_NUM_RETURN": num_return,
@@ -759,6 +766,8 @@ def primer3_pick(
         "PRIMER_PRODUCT_SIZE_RANGE": [[prod_min, prod_max]],
         "PRIMER_EXPLAIN_FLAG": 1,
     }
+    if target_flank:
+        global_args["PRIMER_MIN_SIZE"] = PRIMER_MIN_SIZE
     try:
         if _PRIMER3_USE_NEW:
             res = primer3.bindings.design_primers(seq_args, global_args)
@@ -830,7 +839,7 @@ def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, 
     for key, value in dict(joint_design=True, primer_pairs=10, top_results=10,
                            gel_resolution_bp=10.0, gel_resolution_pct=3.0,
                            gel_stress_factor=1.5, commercial_only=False,
-                           group_isoschizomers=False).items():
+                           group_isoschizomers=False, snp_end_distance=0).items():
         params.setdefault(key, value)
     errors = validate_params(params)
     if errors:
@@ -843,7 +852,7 @@ def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, 
     counters.update(pairs_evaluated=0, enzyme_evaluations=0, enzyme_errors=0,
                     ambiguous_templates=0, genotype_rejected=0, candidates=0,
                     variants_with_candidates=0, variants_with_robust_candidates=0,
-                    candidate_sites=0)
+                    candidate_sites=0, pairs_near_end=0)
 
     def check_cancel():
         if cancel_cb and cancel_cb():
@@ -881,6 +890,8 @@ def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, 
             ('commercial_only', 'только продаваемые ферменты'),
             ('group_isoschizomers', 'изошизомеры объединены (одна строка на сайт)'),
         ) if params[key]]
+        if use_primer3 and params['snp_end_distance']:
+            options.append(f"SNP не ближе {params['snp_end_distance']} п.н. к концам ампликона")
         if options:
             status_cb('[INFO] Отбор: ' + '; '.join(options))
 
@@ -909,11 +920,17 @@ def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, 
             # The remaining enzymes give equal REF/ALT fragments in every amplicon,
             # i.e. Δ = 0, which is below any threshold (delta >= 1).
             site_enzymes = snp_site_enzymes(enzymes, seq, altseq, off)
+            end_distance = params['snp_end_distance'] if use_primer3 else 0
+            if end_distance and not end_distance <= off < len(seq) - end_distance:
+                append_record(dict(base, status='no_primers',
+                                   reason=f'SNP ближе {end_distance} п.н. к краю окна; увеличьте фланг'))
+                continue
             if use_primer3:
                 check_cancel()
                 pres = primer3_pick(seq, off, params['prod_min'], params['prod_max'],
                                     params['tm_min'], params['tm_max'],
-                                    num_return=params['primer_pairs'] if joint else 1)
+                                    num_return=params['primer_pairs'] if joint else 1,
+                                    target_flank=max(0, end_distance - PRIMER_MIN_SIZE))
                 if not pres:
                     error = primer3_pick.last_error
                     append_record(dict(base, status='primer3_error' if error else 'no_primers',
@@ -924,6 +941,10 @@ def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, 
                 except (KeyError, TypeError, ValueError) as exc:
                     append_record(dict(base, status='primer3_error', reason=str(exc)))
                     continue
+                # Guaranteed by the Primer3 target; kept as an explicit check.
+                near = [p for p in pairs if min(off - p['start0'], p['end0'] - 1 - off) < end_distance]
+                counters['pairs_near_end'] += len(near)
+                pairs = [p for p in pairs if p not in near]
             else:
                 pairs = [dict(start0=0, end0=len(seq))]
             base['pairs_evaluated'] = len(pairs) if use_primer3 else 0

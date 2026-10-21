@@ -226,6 +226,15 @@ class RFLPPickerGUI(QMainWindow):
                                       'остальные ферменты с тем же сайтом — в столбце «Изошизомеры».')
         self.checks_grid.addWidget(self.commercial_chk, 0, 0)
         self.checks_grid.addWidget(self.group_iso_chk, 0, 1)
+        self.end_distance_spin = QSpinBox()
+        self.end_distance_spin.setRange(0, 1000)
+        self.end_distance_spin.setValue(recommended['snp_end_distance'])
+        self.end_distance_spin.setSpecialValueText('Не ограничивать')
+        self.end_distance_spin.setToolTip('Primer3 ставит SNP не ближе заданного числа п.н. к каждому концу '
+                                          'ампликона, чтобы диагностический фрагмент был видим. Значение '
+                                          'должно быть не меньше мин. фрагмента. Не действует в поиске по окну.')
+        self.checks_grid.addWidget(QLabel('SNP не ближе к краю ампликона, п.н.:'), 1, 0)
+        self.checks_grid.addWidget(self.end_distance_spin, 1, 1)
         left_layout.addWidget(checks_box)
 
         design_box = QGroupBox('Совместный подбор и различимость генотипов')
@@ -483,6 +492,7 @@ class RFLPPickerGUI(QMainWindow):
             "no_save_norm": self.no_save_norm_chk.isChecked(),
             "commercial_only": self.commercial_chk.isChecked(),
             "group_isoschizomers": self.group_iso_chk.isChecked(),
+            "snp_end_distance": self.end_distance_spin.value(),
         }
 
     def run_calc(self):

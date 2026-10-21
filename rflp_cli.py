@@ -51,6 +51,8 @@ def build_parser():
     choice.add_argument('--group-isoschizomers', dest='group_isoschizomers',
                         action=argparse.BooleanOptionalAction,
                         help='Одна строка на сайт узнавания; остальные ферменты — в столбце isoschizomers')
+    choice.add_argument('--snp-end-distance', dest='snp_end_distance', type=int, metavar='BP',
+                        help='SNP не ближе BP п.н. к каждому концу ампликона (0 — не ограничивать)')
 
     primers = parser.add_argument_group('праймеры и совместный подбор')
     primers.add_argument('--primer3', dest='use_primer3', action=argparse.BooleanOptionalAction,

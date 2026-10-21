@@ -112,6 +112,32 @@ class JointDesignTests(unittest.TestCase):
             core.primer3_pick(self.seq, 199, 200, 500, 58, 62, num_return=12)
         self.assertEqual(design.call_args.args[1]['PRIMER_NUM_RETURN'], 12)
         self.assertEqual(design.call_args.args[0]['SEQUENCE_TARGET'], [199, 1])
+        self.assertNotIn('PRIMER_MIN_SIZE', design.call_args.args[1])
+        with patch.object(core, '_PRIMER3_AVAILABLE', True), patch.object(core, '_PRIMER3_USE_NEW', True), patch.object(core.primer3.bindings, 'design_primers', return_value=self.primer_result()) as design:
+            core.primer3_pick(self.seq, 199, 200, 500, 58, 62, target_flank=62)
+        self.assertEqual(design.call_args.args[0]['SEQUENCE_TARGET'], [137, 125])
+        self.assertEqual(design.call_args.args[1]['PRIMER_MIN_SIZE'], core.PRIMER_MIN_SIZE)
+
+    def test_snp_end_distance_with_real_primer3(self):
+        rng = random.Random(11)
+        seq = ''.join(rng.choice('ACGT') for _ in range(1001))
+        self.fasta.write_text('>1\n' + seq + '\n')
+        Path(self.params['input_file']).write_text(f'chrom\tpos\tref\talt\n1\t501\t{seq[500]}\tN\n'.replace(
+            'N', 'A' if seq[500] != 'A' else 'C'))
+        params = dict(self.params, prod_min=250, prod_max=600, tm_min=55, tm_max=65, primer_pairs=10,
+                      snp_end_distance=100, flank=500)
+        report = {}
+        header, rows = core.run_rflp_gui_mode(params, report=report)
+        pairs = {(r['amplicon_len'], r['snp_offset_in_amplicon']) for r in (dict(zip(header, x)) for x in rows)
+                 if r['primers_left']}
+        self.assertTrue(pairs)
+        for length, offset in pairs:
+            self.assertGreaterEqual(min(offset, length - 1 - offset), 100)
+        self.assertEqual(report['summary']['pairs_near_end'], 0)
+        header, rows = core.run_rflp_gui_mode(dict(params, flank=80))
+        row = dict(zip(header, rows[0]))
+        self.assertEqual(row['status'], 'no_primers')
+        self.assertIn('увеличьте фланг', row['reason'])
 
 
 
