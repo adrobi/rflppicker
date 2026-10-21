@@ -1,14 +1,19 @@
-import csv
+import random
+import re
 import tempfile
 import unittest
 from pathlib import Path
 
+from Bio.Restriction import AllEnzymes
+
 from rflp_core import (
     AnalysisCancelled,
+    cut_positions,
     diagnostic_delta,
     normalize_variants_for_rflp,
     parse_input,
     run_rflp_gui_mode,
+    snp_site_enzymes,
 )
 
 
@@ -63,6 +68,35 @@ class CoreTests(unittest.TestCase):
                           tm_min=50, tm_max=70, skip_norm=False, no_save_norm=True)
             with self.assertRaises(AnalysisCancelled):
                 run_rflp_gui_mode(params, cancel_cb=lambda: True)
+
+    def test_site_patterns_have_fixed_width(self):
+        # snp_site_enzymes relies on every site being a look-ahead of enz.size bases.
+        lookahead = re.compile(r'\(\?=\(\?P<\w+>((?:\[[A-Z]+\]|[A-Z.])+)\)\)')
+        for enz in AllEnzymes:
+            parts = enz.compsite.pattern.split('|')
+            self.assertIn(len(parts), (1, 2), enz)
+            for part in parts:
+                match = lookahead.fullmatch(part)
+                self.assertIsNotNone(match, (enz, part))
+                self.assertEqual(len(re.findall(r'\[[A-Z]+\]|[A-Z.]', match.group(1))), enz.size, enz)
+
+    def test_enzymes_without_snp_site_cut_both_alleles_equally(self):
+        rng = random.Random(7)
+        enzymes = sorted(AllEnzymes, key=lambda e: e.__name__)
+        for _ in range(6):
+            seq = ''.join(rng.choice('ACGT') for _ in range(90))
+            off = rng.choice([0, 1, 5, 45, 84, 89])
+            altseq = seq[:off] + rng.choice([b for b in 'ACGT' if b != seq[off]]) + seq[off + 1:]
+            found = set(snp_site_enzymes(enzymes, seq, altseq, off))
+            self.assertTrue(found)
+            amplicons = {(0, len(seq)), (off, off + 1), (max(0, off - 1), min(len(seq), off + 2)),
+                         (rng.randint(0, off), rng.randint(off + 1, len(seq)))}
+            for enz in enzymes:
+                if enz in found:
+                    continue
+                for a, b in amplicons:
+                    self.assertEqual(cut_positions(enz, seq[a:b]), cut_positions(enz, altseq[a:b]),
+                                     (enz, seq, off, a, b))
 
 
 if __name__ == '__main__':

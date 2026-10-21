@@ -153,6 +153,8 @@ UTF-8 с BOM поддерживается. Некорректные строки
 `resources_rc.py` — ресурсы Qt; `genoms/` и `names/` — исходные данные.
 `assay_scoring.py` — модель полос и максиминное ранжирование;
 `benchmark_design.py` — сравнение режимов с контрольными суммами данных;
+`visualization.py` — окно схемы ампликона с экспортом;
+`tools/regression.py` — сравнение результатов двух версий программы;
 `examples/` — явно синтетический пример для проверки работоспособности.
 
 ## Проверка
@@ -162,4 +164,14 @@ UTF-8 с BOM поддерживается. Некорректные строки
 ```powershell
 python -m unittest discover -s tests -v
 python -m py_compile qtprimer3_vis.py rflp_core.py reporting.py result_model.py
+```
+
+Изменения, которые не должны менять результаты (рефакторинг, ускорение),
+сверяются с выпуском v1.1.0: каждая версия запускается в отдельном процессе,
+а заголовок, строки и отчёт сравниваются побайтно.
+
+```powershell
+git worktree add ..\rflp-v1.1.0 v1.1.0
+python tools\regression.py --baseline ..\rflp-v1.1.0 --work ..\regression `
+  --dataset sheep=genome.fa,variants.tsv --random 100 --jobs 8
 ```

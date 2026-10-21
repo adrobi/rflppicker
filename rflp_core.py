@@ -1,14 +1,10 @@
 import sys
-import io
 import csv
 import os
-import csv
 import re
-import traceback
 import logging
 import math
 from typing import List, Dict, Tuple, Optional
-from collections import namedtuple
 from datetime import datetime
 
 from pyfaidx import Fasta
@@ -173,9 +169,6 @@ def enzyme_supplier_codes(e) -> set[str]:
     return codes
 
 
-Variant = namedtuple("Variant", "chrom pos ref alt mapped_id")
-
-
 def load_names2(path: str) -> Dict[str, str]:
     m: Dict[str, str] = {}
     try:
@@ -323,7 +316,7 @@ class FastaBlockCache:
     держим в памяти один континг и окно [blk_start, blk_end] (1-based, включительно).
     """
 
-    def __init__(self, fasta_path: str, block_bp: int = 2_000_000):
+    def __init__(self, fasta_path: str, block_bp: int = 100_000):
         self.fa = Fasta(
             fasta_path,
             as_raw=True,
@@ -372,7 +365,7 @@ def normalize_variants_for_rflp(
     fasta_path: str,
     input_path: str,
     names2_path: Optional[str],
-    block_bp: int = 2_000_000,
+    block_bp: int = 100_000,
     progress_every: int = 100000,
     status_cb=None,
     skip_norm: bool = False,
@@ -638,12 +631,24 @@ def frags_to_str(frags: List[int]) -> str:
     return "+".join(str(x) for x in frags) if frags else ""
 
 
-def any_diag_delta(fr1: List[int], fr2: List[int], delta: int) -> bool:
-    s1 = sorted(fr1)
-    s2 = sorted(fr2)
-    if len(s1) != len(s2):
-        return True
-    return any(abs(a - b) >= delta for a, b in zip(s1, s2))
+def snp_site_enzymes(enzymes, seq: str, altseq: str, off: int) -> list:
+    """Enzymes with a recognition site covering the SNP in REF or ALT.
+
+    Bio.Restriction finds sites with fixed-width look-ahead patterns over
+    ``' ' + sequence``.  A site that does not cover the SNP is therefore found
+    identically in both alleles of every amplicon containing the SNP, so an
+    enzyme without such a site always gives equal REF/ALT fragments (Δ = 0)
+    and cannot become a candidate.  The searched context keeps the leading
+    space: a site starting with N may match it at the start of an amplicon.
+    """
+    ref_data, alt_data = ' ' + seq, ' ' + altseq
+    found = []
+    for enz in enzymes:
+        # Window positions whose sites cover data index off + 1.
+        lo, hi = max(0, off - enz.size + 2), off + enz.size + 1
+        if enz.compsite.search(ref_data, lo, hi) or enz.compsite.search(alt_data, lo, hi):
+            found.append(enz)
+    return found
 
 
 def diagnostic_delta(fr1: List[int], fr2: List[int]) -> int:
@@ -799,7 +804,7 @@ def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, 
 
     cleaned, _, _, _ = normalize_variants_for_rflp(
         fasta_path=params['fasta'], input_path=params['input_file'],
-        names2_path=params.get('names2_file', ''), block_bp=2_000_000,
+        names2_path=params.get('names2_file', ''), block_bp=100_000,
         progress_every=100000, status_cb=status_cb,
         skip_norm=params.get('skip_norm', False),
         save_files=not params.get('no_save_norm', True), report=report,
@@ -844,6 +849,9 @@ def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, 
                 append_record(dict(base, status='analysis_error', reason='REF не совпадает с FASTA'))
                 continue
             altseq = seq[:off] + alt + seq[off + 1:]
+            # The remaining enzymes give equal REF/ALT fragments in every amplicon,
+            # i.e. Δ = 0, which is below any threshold (delta >= 1).
+            site_enzymes = snp_site_enzymes(enzymes, seq, altseq, off)
             if use_primer3:
                 check_cancel()
                 pres = primer3_pick(seq, off, params['prod_min'], params['prod_max'],
@@ -876,9 +884,9 @@ def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, 
                 record.update(amplicon_start=start + a, amplicon_end=start + b - 1,
                               amplicon_len=b - a, product_size=b - a,
                               snp_offset_in_amplicon=off - a)
-                for enz in enzymes:
+                counters['enzyme_evaluations'] += len(enzymes)
+                for enz in site_enzymes:
                     check_cancel()
-                    counters['enzyme_evaluations'] += 1
                     try:
                         cr, ca = cut_positions(enz, refamp), cut_positions(enz, altamp)
                     except Exception as exc:
