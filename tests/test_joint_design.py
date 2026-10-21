@@ -135,6 +135,32 @@ class JointDesignTests(unittest.TestCase):
         self.assertEqual(core.primer_site_label(EcoRI, amplicon, 5, 7), '')
         self.assertEqual(core.primer_site_label(EcoRI, amplicon, None, None), '')
 
+    def test_soft_masked_repeats_are_not_at_primer_3_ends(self):
+        rng = random.Random(23)
+        seq = ''.join(rng.choice('ACGT') for _ in range(1001))
+        raw = seq[:380] + seq[380:480].lower() + seq[480:520] + seq[520:620].lower() + seq[620:]
+        self.fasta.write_text('>1\n' + raw + '\n')
+        alt = 'A' if seq[500] != 'A' else 'C'
+        Path(self.params['input_file']).write_text(f'chrom\tpos\tref\talt\n1\t501\t{seq[500]}\t{alt}\n')
+        params = dict(self.params, prod_min=250, prod_max=600, tm_min=55, tm_max=65, primer_pairs=10,
+                      flank=500, top_results=0, mask_repeats=True)
+        log = []
+        header, rows = core.run_rflp_gui_mode(params, status_cb=log.append)
+        records = [dict(zip(header, row)) for row in rows if dict(zip(header, row))['primers_left']]
+        self.assertTrue(records)
+        for r in records:
+            a = r['amplicon_start'] - 1
+            left_end = a + r['primer_left_len'] - 1
+            right_end = r['amplicon_end'] - r['primer_right_len']  # 3' end of the right primer (0-based)
+            self.assertTrue(raw[left_end].isupper() and raw[right_end].isupper(), r['variant'])
+            span = raw[a:r['amplicon_end']]
+            self.assertEqual(r['repeat_pct'], round(100 * sum(c.islower() for c in span) / len(span), 1))
+        self.assertFalse(any('soft-mask' in line for line in log))
+        self.fasta.write_text('>1\n' + seq + '\n')
+        log = []
+        core.run_rflp_gui_mode(params, status_cb=log.append)
+        self.assertTrue(any('без soft-mask' in line for line in log))
+
     def test_snp_end_distance_with_real_primer3(self):
         rng = random.Random(11)
         seq = ''.join(rng.choice('ACGT') for _ in range(1001))

@@ -241,6 +241,11 @@ class RFLPPickerGUI(QMainWindow):
                                         'у самого конца ДНК ненадёжен. Найденные сайты показаны в столбце '
                                         '«Сайт в праймере».')
         self.checks_grid.addWidget(self.primer_site_chk, 2, 0, 1, 2)
+        self.mask_chk = QCheckBox('Учитывать повторы (soft-mask FASTA)')
+        self.mask_chk.setChecked(recommended['mask_repeats'])
+        self.mask_chk.setToolTip('Строчные буквы FASTA (повторы в геномах NCBI/Ensembl) не допускаются '
+                                 'на 3′-конце праймера. Доля повторов в ампликоне — столбец «Повторы, %».')
+        self.checks_grid.addWidget(self.mask_chk, 3, 0, 1, 2)
         left_layout.addWidget(checks_box)
 
         design_box = QGroupBox('Совместный подбор и различимость генотипов')
@@ -500,6 +505,7 @@ class RFLPPickerGUI(QMainWindow):
             "group_isoschizomers": self.group_iso_chk.isChecked(),
             "snp_end_distance": self.end_distance_spin.value(),
             "exclude_primer_sites": self.primer_site_chk.isChecked(),
+            "mask_repeats": self.mask_chk.isChecked(),
         }
 
     def run_calc(self):

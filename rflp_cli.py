@@ -56,6 +56,8 @@ def build_parser():
     choice.add_argument('--exclude-primer-sites', dest='exclude_primer_sites',
                         action=argparse.BooleanOptionalAction,
                         help='Исключать схемы, где праймер сам содержит сайт фермента')
+    choice.add_argument('--mask-repeats', dest='mask_repeats', action=argparse.BooleanOptionalAction,
+                        help='Повторы (строчные буквы soft-mask FASTA) не на 3′-концах праймеров')
 
     primers = parser.add_argument_group('праймеры и совместный подбор')
     primers.add_argument('--primer3', dest='use_primer3', action=argparse.BooleanOptionalAction,

@@ -23,11 +23,11 @@ DEFAULT_PARAMS = dict(
     gel_resolution_bp=10.0, gel_resolution_pct=3.0, gel_stress_factor=1.5,
     skip_norm=False, no_save_norm=True,
     commercial_only=False, group_isoschizomers=False, snp_end_distance=0,
-    exclude_primer_sites=False,
+    exclude_primer_sites=False, mask_repeats=False,
 )
 # Settings chosen from the validation on published assays (GUI and CLI default).
 RECOMMENDED_PARAMS = dict(DEFAULT_PARAMS, commercial_only=True, group_isoschizomers=True,
-                          snp_end_distance=100, exclude_primer_sites=True)
+                          snp_end_distance=100, exclude_primer_sites=True, mask_repeats=True)
 
 
 class AnalysisCancelled(Exception):
@@ -765,8 +765,13 @@ def primer3_pick(
     tm_max: float,
     num_return: int = 1,
     target_flank: int = 0,
+    lowercase_masking: bool = False,
 ) -> Optional[dict]:
-    """Pick PCR primers flanking ``[snp_off - target_flank, snp_off + target_flank]``."""
+    """Pick PCR primers flanking ``[snp_off - target_flank, snp_off + target_flank]``.
+
+    With ``lowercase_masking`` the soft-masked (lower-case) bases of ``amplicon``
+    may not be at a primer's 3' end.
+    """
     primer3_pick.last_error = ""
     if not _PRIMER3_AVAILABLE:
         primer3_pick.last_error = "Модуль Primer3 недоступен"
@@ -784,6 +789,8 @@ def primer3_pick(
     }
     if target_flank:
         global_args["PRIMER_MIN_SIZE"] = PRIMER_MIN_SIZE
+    if lowercase_masking:
+        global_args["PRIMER_LOWERCASE_MASKING"] = 1
     try:
         if _PRIMER3_USE_NEW:
             res = primer3.bindings.design_primers(seq_args, global_args)
@@ -816,7 +823,7 @@ ASSAY_HEADER = [
     'hidden_ref_count', 'hidden_alt_count', 'search_mode', 'scoring_model',
 ]
 # Added after v1.1.0; appended so that the v1.1.0 columns keep their order.
-V12_HEADER = ['isoschizomers', 'primer_site']
+V12_HEADER = ['isoschizomers', 'primer_site', 'repeat_pct']
 
 
 def _primer_candidates(pres, sequence, snp_off):
@@ -856,7 +863,7 @@ def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, 
                            gel_resolution_bp=10.0, gel_resolution_pct=3.0,
                            gel_stress_factor=1.5, commercial_only=False,
                            group_isoschizomers=False, snp_end_distance=0,
-                           exclude_primer_sites=False).items():
+                           exclude_primer_sites=False, mask_repeats=False).items():
         params.setdefault(key, value)
     errors = validate_params(params)
     if errors:
@@ -907,6 +914,7 @@ def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, 
             ('commercial_only', 'только продаваемые ферменты'),
             ('group_isoschizomers', 'изошизомеры объединены (одна строка на сайт)'),
             ('exclude_primer_sites', 'без сайта фермента в праймерах'),
+            ('mask_repeats', 'повторы (строчные буквы FASTA) не на 3′-концах праймеров'),
         ) if params[key]]
         if use_primer3 and params['snp_end_distance']:
             options.append(f"SNP не ближе {params['snp_end_distance']} п.н. к концам ампликона")
@@ -918,13 +926,17 @@ def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, 
 
     # Always release the FASTA handle, including cancellation and exceptions.
     fa = Fasta(params['fasta'], as_raw=True)
+    masked_windows = 0
     try:
         for vi, (chrom, pos, ref, alt) in enumerate(cleaned, 1):
             check_cancel()
             mapped_id = names.get(chrom, chrom)
             start = max(1, pos - params['flank'])
             end = min(len(fa[mapped_id]), pos + params['flank'])
-            seq = str(fa[mapped_id][start - 1:end]).upper()
+            # Soft-masked FASTA: lower case marks repeats; the analysis uses upper case.
+            raw = str(fa[mapped_id][start - 1:end])
+            seq = raw.upper()
+            masked_windows += raw != seq
             off = pos - start
             base = dict(variant=f'{chrom}:{pos} {ref}>{alt}', mapped_id=mapped_id,
                         enzyme='', site='', pattern='no_enzyme_found',
@@ -945,10 +957,12 @@ def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, 
                 continue
             if use_primer3:
                 check_cancel()
-                pres = primer3_pick(seq, off, params['prod_min'], params['prod_max'],
+                mask = params['mask_repeats']
+                pres = primer3_pick(raw if mask else seq, off, params['prod_min'], params['prod_max'],
                                     params['tm_min'], params['tm_max'],
                                     num_return=params['primer_pairs'] if joint else 1,
-                                    target_flank=max(0, end_distance - PRIMER_MIN_SIZE))
+                                    target_flank=max(0, end_distance - PRIMER_MIN_SIZE),
+                                    lowercase_masking=mask)
                 if not pres:
                     error = primer3_pick.last_error
                     append_record(dict(base, status='primer3_error' if error else 'no_primers',
@@ -979,7 +993,8 @@ def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, 
                 record = dict(base, **{k: v for k, v in pair.items() if k not in ('start0', 'end0')})
                 record.update(amplicon_start=start + a, amplicon_end=start + b - 1,
                               amplicon_len=b - a, product_size=b - a,
-                              snp_offset_in_amplicon=off - a)
+                              snp_offset_in_amplicon=off - a,
+                              repeat_pct=round(100 * sum(c.islower() for c in raw[a:b]) / (b - a), 1))
                 counters['enzyme_evaluations'] += len(enzymes)
                 for enz in site_enzymes:
                     check_cancel()
@@ -1056,5 +1071,8 @@ def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, 
                 progress_cb(vi, len(cleaned))
     finally:
         fa.close()
+    if params['mask_repeats'] and use_primer3 and not masked_windows and status_cb:
+        status_cb('[WARN] В окнах SNP нет строчных букв: FASTA без soft-mask, '
+                  'маскирование повторов не действует.')
     counters['rows'] = len(out_rows)
     return header, out_rows
