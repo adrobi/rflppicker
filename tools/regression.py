@@ -3,7 +3,7 @@
 Typical use: compare the working copy with the v1.1.0 release before a change
 that must not alter results (refactoring, speed-ups)::
 
-    git worktree add ../rflp-v1.1.0 v1.1.0
+    git worktree add ../rflp-v1.1.0 42ad9e5   # release v1.1.0
     python tools/regression.py --baseline ../rflp-v1.1.0 --work ../regression \
         --dataset sheep=genome.fa,variants.tsv --random 100 --jobs 8
 

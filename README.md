@@ -210,7 +210,7 @@ python -m py_compile qtprimer3_vis.py rflp_core.py reporting.py result_model.py
 а заголовок, строки и отчёт сравниваются побайтно.
 
 ```powershell
-git worktree add ..\rflp-v1.1.0 v1.1.0
+git worktree add ..\rflp-v1.1.0 42ad9e5
 python tools\regression.py --baseline ..\rflp-v1.1.0 --work ..\regression `
   --dataset sheep=genome.fa,variants.tsv --random 100 --jobs 8
 ```
