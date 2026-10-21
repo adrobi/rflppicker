@@ -64,6 +64,10 @@ def build_parser():
     choice.add_argument('--exclude-background-sites', dest='exclude_background_sites',
                         action=argparse.BooleanOptionalAction,
                         help='Исключать схемы, где фоновые варианты меняют разрезы или длины полос')
+    choice.add_argument('--dcaps', choices=('off', 'fallback', 'always'),
+                        help='Праймеры с несовпадением (dCAPS): fallback — только если нет robust-схемы')
+    choice.add_argument('--dcaps-mismatches', dest='dcaps_mismatches', type=int, choices=(1, 2),
+                        help='Наибольшее число несовпадений в праймере dCAPS')
 
     primers = parser.add_argument_group('праймеры и совместный подбор')
     primers.add_argument('--primer3', dest='use_primer3', action=argparse.BooleanOptionalAction,

@@ -52,6 +52,11 @@ class GuiTests(unittest.TestCase):
         self.assertNotIn('100; 200', window.assay_summary.text())
 
 
+    def test_dcaps_primers_are_drawn_into_the_product(self):
+        self.assertEqual(qtprimer3_vis.overlay_primers('AAAACCCCGGGG', 'AAtA', 'cCCC'), 'AATACCCCGGGG')
+        self.assertEqual(qtprimer3_vis.overlay_primers('acgtACGT', '', ''), 'ACGTACGT')
+        self.assertEqual(qtprimer3_vis.overlay_primers('ACGT', 'ACGTA', ''), 'ACGT')
+
     def test_defaults_are_the_recommended_parameters(self):
         window = qtprimer3_vis.RFLPPickerGUI()
         self.addCleanup(window.close)

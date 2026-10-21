@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from Bio.Restriction import EcoRI
+from Bio.Restriction import EcoRI, TaqI
 from Bio.Seq import Seq
 import rflp_core as core
 from reporting import export_csv, export_excel
@@ -232,6 +232,75 @@ class JointDesignTests(unittest.TestCase):
         self.assertEqual(row['status'], 'no_primers')
         self.assertIn('увеличьте фланг', row['reason'])
 
+
+
+class DcapsTests(unittest.TestCase):
+    """SNP C>T followed by CCA: a C>G mismatch two bases into a right primer makes TCGA (TaqI) in ALT."""
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name)
+        rng = random.Random(31)
+        while True:
+            seq = ''.join(rng.choice('ACGT') for _ in range(601))
+            seq = seq[:299] + 'GCCCA' + seq[304:]   # SNP at 0-based 300 (C), then C C A
+            if 'TCGA' not in seq:
+                break
+        self.seq = seq
+        (self.root / 'toy.fa').write_text('>1\n' + seq + '\n')
+        (self.root / 'v.tsv').write_text('chrom\tpos\tref\talt\n1\t301\tC\tT\n')
+        self.params = dict(core.DEFAULT_PARAMS, fasta=str(self.root / 'toy.fa'), input_file=str(self.root / 'v.tsv'),
+                           flank=300, prod_min=120, prod_max=300, tm_min=55, tm_max=65, delta=10, top_results=0)
+
+    def test_mismatch_sets_and_description(self):
+        sets = core.dcaps_mismatch_sets([TaqI], self.seq, 300, 'C', 'T', 1)
+        self.assertIn(TaqI, sets[('right', ((302, 'G'),))])
+        self.assertTrue(all(len(changes) == 1 for _, changes in sets))
+        self.assertEqual(core.describe_mismatches(self.seq, 300, 'right', ((302, 'G'),)), "right 3'-2 G>C")
+        self.assertEqual(core.describe_mismatches('AAAATC', 5, 'left', ((3, 'G'),)), "left 3'-2 A>G")
+
+    def test_mismatch_primer_length_and_blocking(self):
+        template = self.seq[:302] + 'G' + self.seq[303:]
+        start, primer = core.dcaps_primer(template, 300, 'right', 55, 65)
+        self.assertEqual(start, 301)
+        self.assertEqual(primer, core.revcomp(template[301:301 + len(primer)]))
+        self.assertTrue(55 <= core.primer3.bindings.calc_tm(primer) <= 65)
+        self.assertIsNone(core.dcaps_primer(template, 300, 'right', 55, 65, blocked=[(305, 1)]))
+
+    def test_dcaps_assay_with_real_primer3(self):
+        report = {}
+        with patch.object(core, 'AllEnzymes', [TaqI]):
+            header, rows = core.run_rflp_gui_mode(dict(self.params, dcaps='always'), report=report)
+        hits = [dict(zip(header, row)) for row in rows if dict(zip(header, row))['enzyme']]
+        self.assertTrue(hits)
+        self.assertGreater(report['summary']['dcaps_candidates'], 0)
+        for hit in hits:
+            self.assertEqual((hit['design'], hit['primer_mismatches'], hit['primer_site']), ('dCAPS', "right 3'-2 G>C", ''))
+            self.assertEqual(sum(c.islower() for c in hit['primers_right']), 1)
+            self.assertIn('в аллеле ALT', hit['reason'])
+            # The product carries the mismatch: rebuild it from the genome and the primers.
+            a, b = hit['amplicon_start'] - 1, hit['amplicon_end']
+            right = core.revcomp(hit['primers_right'].upper())
+            product = self.seq[a:b - len(right)] + right
+            alt_product = product[:300 - a] + 'T' + product[301 - a:]
+            self.assertEqual(core.frags_to_str(core.frag_lengths(core.cut_positions(TaqI, product))), hit['frags_ref'])
+            self.assertEqual(core.frags_to_str(core.frag_lengths(core.cut_positions(TaqI, alt_product))), hit['frags_alt'])
+        with patch.object(core, 'AllEnzymes', [TaqI]):
+            header, rows = core.run_rflp_gui_mode(dict(self.params, dcaps='off'))
+        self.assertEqual(dict(zip(header, rows[0]))['status'], 'no_discriminating_assay')
+
+    def test_fallback_only_without_robust_natural_assay(self):
+        natural = self.seq[:300] + 'TCGA' + self.seq[304:]   # REF already has a natural TaqI site
+        (self.root / 'toy.fa').write_text('>1\n' + natural + '\n')
+        (self.root / 'v.tsv').write_text('chrom\tpos\tref\talt\n1\t301\tT\tC\n')
+        report = {}
+        with patch.object(core, 'AllEnzymes', [TaqI]):
+            header, rows = core.run_rflp_gui_mode(dict(self.params, dcaps='fallback'), report=report)
+        records = [dict(zip(header, row)) for row in rows]
+        self.assertTrue(any(r['genotype_quality'] == 'robust' for r in records))
+        self.assertEqual(report['summary']['dcaps_snps'], 0)
+        self.assertEqual({r['design'] for r in records}, {'natural'})
 
 
 class SiteGroupingTests(unittest.TestCase):

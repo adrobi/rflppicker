@@ -18,7 +18,7 @@ import resources_rc
 from pyfaidx import Fasta
 
 import rflp_core as core_impl
-from rflp_core import _PRIMER3_AVAILABLE, _PRIMER3_IMPORT_ERROR, _SUPPLIER_CANON, get_base_dir, logger
+from rflp_core import _PRIMER3_AVAILABLE, _PRIMER3_IMPORT_ERROR, _SUPPLIER_CANON, get_base_dir, logger, revcomp
 from reporting import export_csv as safe_export_csv, export_excel as safe_export_excel
 from result_model import LABELS
 from visualization import RFLPVisualizationDialog
@@ -78,6 +78,19 @@ def _safe_int(s: object) -> Optional[int]:
         return int(float(t))
     except Exception:
         return None
+
+
+def overlay_primers(amplicon: str, left: str, right: str) -> str:
+    """The PCR product: primer sequences replace the genome at both ends.
+
+    Identical for ordinary primers; a dCAPS primer carries its mismatches
+    (lower case in the table) into the product, so cuts are drawn correctly.
+    """
+    product = amplicon.upper()
+    left, right = (left or '').strip().upper(), revcomp((right or '').strip().upper())
+    if len(left) + len(right) <= len(product):
+        product = left + product[len(left):len(product) - len(right)] + right
+    return product
 
 
 class RFLPPickerGUI(QMainWindow):
@@ -259,6 +272,22 @@ class RFLPPickerGUI(QMainWindow):
         self.background_chk = QCheckBox('Исключать схемы, где фоновые варианты меняют разрезы')
         self.background_chk.setChecked(recommended['exclude_background_sites'])
         self.checks_grid.addWidget(self.background_chk, 6, 0, 1, 2)
+        self.dcaps_combo = QComboBox()
+        for label, value in (('Не проектировать', 'off'), ('Если нет robust-схемы', 'fallback'),
+                             ('Для каждого SNP', 'always')):
+            self.dcaps_combo.addItem(label, value)
+        self.dcaps_combo.setCurrentIndex(self.dcaps_combo.findData(recommended['dcaps']))
+        self.dcaps_combo.setToolTip('dCAPS: праймер упирается 3′-концом в SNP, а 1–2 несовпадения рядом с '
+                                    '3′-концом создают сайт фермента только в одном аллеле. Различие полос '
+                                    '≈ длине праймера: нужны короткие продукты и, возможно, меньший порог Δ.')
+        self.dcaps_mm_spin = QSpinBox()
+        self.dcaps_mm_spin.setRange(1, 2)
+        self.dcaps_mm_spin.setValue(recommended['dcaps_mismatches'])
+        self.dcaps_mm_spin.setToolTip('Наибольшее число несовпадений в праймере dCAPS.')
+        self.checks_grid.addWidget(QLabel('Праймеры с несовпадением (dCAPS):'), 7, 0)
+        self.checks_grid.addWidget(self.dcaps_combo, 7, 1)
+        self.checks_grid.addWidget(QLabel('Несовпадений в праймере dCAPS, до:'), 8, 0)
+        self.checks_grid.addWidget(self.dcaps_mm_spin, 8, 1)
         left_layout.addWidget(checks_box)
 
         design_box = QGroupBox('Совместный подбор и различимость генотипов')
@@ -528,6 +557,8 @@ class RFLPPickerGUI(QMainWindow):
             "mask_repeats": self.mask_chk.isChecked(),
             "background_vcf": self.background_vcf.text().strip(),
             "exclude_background_sites": self.background_chk.isChecked(),
+            "dcaps": self.dcaps_combo.currentData(),
+            "dcaps_mismatches": self.dcaps_mm_spin.value(),
         }
 
     def run_calc(self):
@@ -833,6 +864,8 @@ class RFLPPickerGUI(QMainWindow):
         try:
             # pyfaidx: end в срезе является end-exclusive, поэтому подаём amp_end как inclusive
             amplicon_seq = str(self.fa_view[mapped_id][amp_start - 1 : amp_end])
+            amplicon_seq = overlay_primers(amplicon_seq, self._table_cell(row, "primers_left"),
+                                           self._table_cell(row, "primers_right"))
         except Exception as e:
             return None, f"Не удалось получить последовательность из FASTA: {mapped_id}:{amp_start}-{amp_end}\n{e}"
 

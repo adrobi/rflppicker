@@ -33,6 +33,7 @@ LABELS = {
     'isoschizomers': 'Изошизомеры', 'primer_site': 'Сайт в праймере', 'repeat_pct': 'Повторы, %',
     'background_variants': 'Известных вариантов в ампликоне',
     'background_site_variants': 'Варианты, меняющие разрезы/полосы',
+    'design': 'Тип схемы', 'primer_mismatches': 'Несовпадения в праймере',
     'line': 'Строка', 'chrom': 'Хромосома', 'pos': 'Позиция', 'ref': 'REF',
     'alt': 'ALT', 'details': 'Подробности', 'raw': 'Исходная строка',
 }
