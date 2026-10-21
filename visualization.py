@@ -15,7 +15,7 @@ from PyQt6.QtSvg import QSvgGenerator
 from PyQt6.QtWidgets import (
     QApplication, QDialog, QFileDialog, QGraphicsScene, QGraphicsView,
     QHBoxLayout, QLabel, QMessageBox, QPushButton, QSizePolicy, QSplitter,
-    QTextEdit, QVBoxLayout, QWidget,
+    QTabWidget, QTextEdit, QVBoxLayout, QWidget,
 )
 
 from rflp_core import cut_positions, revcomp
@@ -492,45 +492,14 @@ class PrimerGraphicPanel(QWidget):
         """Save the whole scene, independently of zoom/pan. Return the saved path."""
         if not self._seq_ref:
             raise ValueError("Сначала выберите результат для визуализации.")
-        if not math.isfinite(float(scale)) or not 0.5 <= scale <= 8:
-            raise ValueError("Масштаб экспорта должен быть от 0.5 до 8.")
-        rect = self.scene.sceneRect()
-        image = QtGui.QImage(math.ceil(rect.width() * scale), math.ceil(rect.height() * scale), QtGui.QImage.Format.Format_ARGB32)
-        image.fill(QtGui.QColor(self._colors()["background"]))
-        painter = QtGui.QPainter(image)
-        painter.setRenderHints(self.view.renderHints())
-        try:
-            self.scene.render(painter, QtCore.QRectF(0, 0, image.width(), image.height()), rect)
-        finally:
-            painter.end()
-        if not image.save(str(path), "PNG"):
-            raise OSError(f"Не удалось сохранить PNG: {path}")
-        return str(path)
+        return save_scene_png(self.scene, path, self._colors()["background"], self.view.renderHints(), scale)
 
     def export_svg(self, path):
         if not self._seq_ref:
             raise ValueError("Сначала выберите результат для визуализации.")
-        output = QtCore.QFile(str(path))
-        if not output.open(QtCore.QIODevice.OpenModeFlag.WriteOnly):
-            raise OSError(f"Не удалось сохранить SVG: {output.errorString()}")
-        generator = QSvgGenerator()
-        generator.setOutputDevice(output)
-        rect = self.scene.sceneRect()
-        generator.setSize(rect.size().toSize())
-        generator.setViewBox(rect)
-        generator.setTitle("RFLP · REF / ALT")
-        generator.setDescription("Ампликон, праймеры 5′→3′, SNP и разрезы рестриктазы. Координаты генома 1-based; разрезы — п.н. от начала ампликона.")
-        painter = QtGui.QPainter()
-        try:
-            if not painter.begin(generator):
-                raise OSError(f"Не удалось начать экспорт SVG: {path}")
-            painter.setRenderHints(self.view.renderHints())
-            self.scene.render(painter, rect, rect)
-        finally:
-            if painter.isActive():
-                painter.end()
-            output.close()
-        return str(path)
+        return save_scene_svg(self.scene, path, "RFLP · REF / ALT",
+                              "Ампликон, праймеры 5′→3′, SNP и разрезы рестриктазы. Координаты генома 1-based; "
+                              "разрезы — п.н. от начала ампликона.", self.view.renderHints())
 
     def _export_dialog(self, extension):
         payload = self._last_payload or {}
@@ -548,6 +517,202 @@ class PrimerGraphicPanel(QWidget):
             self.status_label.setText(f"Сохранено: {path}")
 
 
+LADDER_BP = (50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 800, 1000, 1500, 2000)
+
+
+def gel_lanes(frags_ref, frags_alt, product):
+    """Lanes of the virtual gel as ``(label, [(length, amount), ...])``.
+
+    The amount of DNA in a band is its mass relative to the whole product:
+    length / product per copy, summed over equal lengths; each allele of a
+    heterozygote contributes half. Complete digestion, as in the band model.
+    """
+    def lane(*alleles):
+        amounts = {}
+        for fragments in alleles:
+            for length in fragments:
+                amounts[length] = amounts.get(length, 0.0) + length / product / len(alleles)
+        return sorted(amounts.items(), reverse=True)
+
+    return [("Без фермента", [(product, 1.0)]), ("REF/REF", lane(frags_ref)),
+            ("REF/ALT", lane(frags_ref, frags_alt)), ("ALT/ALT", lane(frags_alt))]
+
+
+def save_scene_png(scene, path, background, hints, scale=2.0):
+    if not math.isfinite(float(scale)) or not 0.5 <= scale <= 8:
+        raise ValueError("Масштаб экспорта должен быть от 0.5 до 8.")
+    rect = scene.sceneRect()
+    image = QtGui.QImage(math.ceil(rect.width() * scale), math.ceil(rect.height() * scale), QtGui.QImage.Format.Format_ARGB32)
+    image.fill(QtGui.QColor(background))
+    painter = QtGui.QPainter(image)
+    painter.setRenderHints(hints)
+    try:
+        scene.render(painter, QtCore.QRectF(0, 0, image.width(), image.height()), rect)
+    finally:
+        painter.end()
+    if not image.save(str(path), "PNG"):
+        raise OSError(f"Не удалось сохранить PNG: {path}")
+    return str(path)
+
+
+def save_scene_svg(scene, path, title, description, hints):
+    output = QtCore.QFile(str(path))
+    if not output.open(QtCore.QIODevice.OpenModeFlag.WriteOnly):
+        raise OSError(f"Не удалось сохранить SVG: {output.errorString()}")
+    generator = QSvgGenerator()
+    generator.setOutputDevice(output)
+    rect = scene.sceneRect()
+    generator.setSize(rect.size().toSize())
+    generator.setViewBox(rect)
+    generator.setTitle(title)
+    generator.setDescription(description)
+    painter = QtGui.QPainter()
+    try:
+        if not painter.begin(generator):
+            raise OSError(f"Не удалось начать экспорт SVG: {path}")
+        painter.setRenderHints(hints)
+        scene.render(painter, rect, rect)
+    finally:
+        if painter.isActive():
+            painter.end()
+        output.close()
+    return str(path)
+
+
+class GelPanel(QWidget):
+    """Virtual agarose gel of the three genotypes, drawn from the band model.
+
+    Migration is linear in log(length); brightness follows the DNA amount of
+    each band. Fragments outside the visible range of the model are faint.
+    This illustrates the prediction; it does not simulate a particular gel.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._lanes = []
+        self._title = ""
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 12, 16, 12)
+        self.scene = QGraphicsScene(self)
+        self.view = DiagramView(self.scene, self)
+        toolbar = QHBoxLayout()
+        self.fit_btn = PrimerGraphicPanel._button("Вписать", "Показать весь гель", self.view.fit_diagram)
+        toolbar.addWidget(self.fit_btn)
+        toolbar.addStretch()
+        self.export_png_btn = PrimerGraphicPanel._button("Сохранить PNG", "Гель в высоком разрешении", lambda: self._export_dialog("png"))
+        self.export_svg_btn = PrimerGraphicPanel._button("Сохранить SVG", "Векторный рисунок геля", lambda: self._export_dialog("svg"))
+        toolbar.addWidget(self.export_png_btn)
+        toolbar.addWidget(self.export_svg_btn)
+        layout.addLayout(toolbar)
+        layout.addWidget(self.view, 1)
+        self.show_message("Выберите результат в таблице, чтобы увидеть ожидаемые полосы.")
+
+    def _text_color(self):
+        return "#e6edf5" if self.palette().color(QtGui.QPalette.ColorRole.Base).lightness() < 128 else "#233247"
+
+    def _text(self, x, y, text, size=10, bold=False, color=None, width=None):
+        item = self.scene.addText(str(text), QtGui.QFont("Segoe UI", size))
+        font = item.font()
+        font.setBold(bold)
+        item.setFont(font)
+        item.setDefaultTextColor(QtGui.QColor(color or self._text_color()))
+        if width is not None:
+            item.setTextWidth(width)
+        item.setPos(x, y)
+        return item
+
+    def _set_enabled(self, available):
+        for button in (self.fit_btn, self.export_png_btn, self.export_svg_btn):
+            button.setEnabled(available)
+
+    def show_message(self, message):
+        self._lanes = []
+        self.scene.clear()
+        self.scene.setSceneRect(0, 0, 900, 700)
+        self._text(40, 300, message, 13, True, width=820)
+        self._set_enabled(False)
+        self.view.fit_diagram()
+
+    def render(self, frags_ref, frags_alt, product, variant="", enzyme="", min_visible=80, max_visible=800):
+        if not product or product <= 0:
+            self.show_message("Длина продукта неизвестна.")
+            return
+        self._lanes = gel_lanes(frags_ref, frags_alt, product)
+        self._title = f"{variant} · {enzyme}".strip(" ·")
+        self.scene.clear()
+        self.scene.setSceneRect(0, 0, 900, 700)
+        lengths = [length for _, bands in self._lanes for length, _ in bands]
+        low = max(10.0, min(min(lengths), 50) * 0.8)
+        high = max(600.0, product * 1.3)
+        top, bottom, left, right = 95.0, 560.0, 110.0, 860.0
+
+        def y_at(length):
+            return top + (math.log10(high) - math.log10(length)) / (math.log10(high) - math.log10(low)) * (bottom - top)
+
+        self._text(30, 12, self._title or "Виртуальный гель", 16, True, width=840)
+        self._text(30, 44, f"Продукт {product} п.н. · видимые фрагменты {min_visible}–{max_visible} п.н. · "
+                           f"полная рестрикция", 10, width=840)
+        self.scene.addRect(left, top - 25, right - left, bottom - top + 45, QtGui.QPen(Qt.PenStyle.NoPen),
+                           QtGui.QBrush(QtGui.QColor("#1d2126")))
+        lanes = [("M", [(size, None) for size in LADDER_BP if low <= size <= high])] + self._lanes
+        width = (right - left) / len(lanes)
+        band = QtGui.QColor("#f2f7ff")
+        for index, (label, bands) in enumerate(lanes):
+            x = left + index * width + width * 0.14
+            w = width * 0.72
+            self.scene.addRect(x, top - 18, w, 7, QtGui.QPen(QtGui.QColor("#5b6670")), QtGui.QBrush(QtGui.QColor("#0d0f12")))
+            caption = self._text(x - 8, bottom + 24, label, 10, True, width=w + 16)
+            caption.setToolTip(label)
+            listed = []
+            for length, amount in bands:
+                y = y_at(length)
+                if amount is None:  # ladder
+                    color = QtGui.QColor("#b9c3cc")
+                    self._text(left - 58, y - 11, str(length), 9, color=None)
+                    tip = f"Маркер: {length} п.н."
+                else:
+                    visible = min_visible <= length <= max_visible
+                    color = QtGui.QColor(band)
+                    color.setAlpha(int(70 + 185 * min(1.0, amount * 1.6)) if visible else 45)
+                    tip = f"{label}: {length} п.н., доля ДНК {amount:.0%}" + ("" if visible else " — вне видимого диапазона")
+                    listed.append(str(length) if visible else f"({length})")
+                item = self.scene.addRect(x, y - 3, w, 6, QtGui.QPen(Qt.PenStyle.NoPen), QtGui.QBrush(color))
+                item.setToolTip(tip)
+            if listed:
+                summary = self._text(x - 8, bottom + 66, " + ".join(listed), 9, width=w + 16)
+                summary.setToolTip(" + ".join(listed) + " п.н.")
+        self._text(30, 650, "Схема по модели программы: яркость пропорциональна массе фрагмента, у гетерозиготы — "
+                            "по половине каждого аллеля; в скобках и бледно — фрагменты вне видимого диапазона.",
+                   9, width=840)
+        self._set_enabled(True)
+        self.view.fit_diagram()
+
+    def export_png(self, path, scale=2.0):
+        if not self._lanes:
+            raise ValueError("Сначала выберите результат для визуализации.")
+        return save_scene_png(self.scene, path, "#ffffff" if self._text_color() != "#e6edf5" else "#18212d",
+                              self.view.renderHints(), scale)
+
+    def export_svg(self, path):
+        if not self._lanes:
+            raise ValueError("Сначала выберите результат для визуализации.")
+        return save_scene_svg(self.scene, path, "Виртуальный гель RFLP",
+                              "Ожидаемые полосы REF/REF, REF/ALT и ALT/ALT по модели RFLP Picker.",
+                              self.view.renderHints())
+
+    def _export_dialog(self, extension):
+        name = re.sub(r"[^\w.-]+", "_", f"gel_{self._title}").strip("_")
+        path, _ = QFileDialog.getSaveFileName(self, "Сохранить гель", f"{name}.{extension}", f"{extension.upper()} (*.{extension})")
+        if not path:
+            return
+        if not Path(path).suffix:
+            path += f".{extension}"
+        try:
+            (self.export_png if extension == "png" else self.export_svg)(path)
+        except (OSError, ValueError) as error:
+            QMessageBox.warning(self, "Экспорт геля", str(error))
+
+
 class RFLPVisualizationDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -557,7 +722,11 @@ class RFLPVisualizationDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 12)
         self.panel = PrimerGraphicPanel(self)
-        layout.addWidget(self.panel, 1)
+        self.gel = GelPanel(self)
+        self.tabs = QTabWidget(self)
+        self.tabs.addTab(self.panel, "Карта ампликона")
+        self.tabs.addTab(self.gel, "Виртуальный гель")
+        layout.addWidget(self.tabs, 1)
         row = QHBoxLayout()
         row.addStretch()
         self.close_btn = QPushButton("Закрыть")
@@ -569,8 +738,20 @@ class RFLPVisualizationDialog(QDialog):
 
     def show_payload(self, payload: Optional[dict], message_if_empty: str = ""):
         if payload:
+            payload = dict(payload)
+            gel = payload.pop("gel", None) or {}
             self.panel.render(**payload)
-        elif message_if_empty:
-            self.panel.show_message(message_if_empty)
+            panel = self.panel
+            if panel._seq_alt is None or not panel._seq_ref:
+                self.gel.show_message("Гель недоступен: нет последовательности ALT (см. карту ампликона).")
+                return
+            fragments = [[b - a for a, b in zip(cuts, cuts[1:])] for cuts in (panel._cuts_ref, panel._cuts_alt)]
+            self.gel.render(*fragments, len(panel._seq_ref), payload.get("variant_str", ""),
+                            payload.get("enzyme_name", ""), **gel)
         else:
-            self.panel.show_empty()
+            message = message_if_empty or "Выберите результат в таблице, чтобы увидеть ожидаемые полосы."
+            if message_if_empty:
+                self.panel.show_message(message_if_empty)
+            else:
+                self.panel.show_empty()
+            self.gel.show_message(message)

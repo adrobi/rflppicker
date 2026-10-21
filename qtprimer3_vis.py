@@ -894,6 +894,8 @@ class RFLPPickerGUI(QMainWindow):
             pattern=pattern,
             frags_ref=frags_ref,
             frags_alt=frags_alt,
+            gel=dict(min_visible=(self.last_params or {}).get("min_frag", 80),
+                     max_visible=(self.last_params or {}).get("max_frag", 800)),
         )
 
         return payload, ""
