@@ -96,7 +96,7 @@ def overlay_primers(amplicon: str, left: str, right: str) -> str:
 class RFLPPickerGUI(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("RFLP Picker 1.1 — совместный подбор")
+        self.setWindowTitle(f"RFLP Picker {core_impl.APP_VERSION} — совместный подбор")
 
         self.setWindowIcon(QIcon(":/icons/app_icon.ico"))
 

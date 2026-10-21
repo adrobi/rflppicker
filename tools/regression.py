@@ -165,6 +165,9 @@ def build_cases(args, work):
             if not local.exists():
                 shutil.copyfile(fasta, local)
             fasta = local
+        # Index once here: parallel workers would otherwise race to write the .fai.
+        from pyfaidx import Fasta
+        Fasta(str(fasta)).close()
         local_variants = inputs / f'{name}.tsv'
         shutil.copyfile(variants, local_variants)
         datasets.append((name, fasta, local_variants, names_file))
