@@ -1,4 +1,5 @@
 import os
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -129,10 +130,59 @@ class MainWindowTests(unittest.TestCase):
 
     def test_export_into_locked_file_warns(self):          # Review Focus 4
         self.run_with(FIXED_OUTPUT)
+        target = write_text(self.tmp, 'x.xlsx', 'open in Excel')
         with patch('reporting.export_excel', side_effect=PermissionError()), \
                 patch.object(QMessageBox, 'warning') as warn:
-            self.assertIsNone(self.window.export('all', os.path.join(self.tmp, 'x.xlsx')))
+            self.assertIsNone(self.window.export('all', target))
         self.assertIn('Файл занят другой программой', warn.call_args[0][2])
+
+    def test_export_into_a_write_protected_folder_says_so(self):
+        self.run_with(FIXED_OUTPUT)
+        with patch('reporting.export_excel', side_effect=PermissionError()), \
+                patch.object(QMessageBox, 'warning') as warn:
+            self.assertIsNone(self.window.export('all', os.path.join(self.tmp, 'new.xlsx')))
+        self.assertIn('Нет доступа к папке', warn.call_args[0][2])
+
+    def test_export_survives_an_uncreatable_results_folder(self):
+        self.run_with(FIXED_OUTPUT)
+        with patch.object(self.window, '_default_path', side_effect=PermissionError(13, 'denied')), \
+                patch.object(QMessageBox, 'warning') as warn:
+            self.assertIsNone(self.window.export('all'))
+        self.assertIn('Нет доступа к папке', warn.call_args[0][2])
+
+    def test_export_survives_unexpected_errors(self):
+        self.run_with(FIXED_OUTPUT)
+        with patch('reporting.export_excel', side_effect=ValueError('bad cell')), \
+                patch.object(QMessageBox, 'warning') as warn:
+            self.assertIsNone(self.window.export('all', os.path.join(self.tmp, 'x.xlsx')))
+        self.assertIn('bad cell', warn.call_args[0][2])
+        self.assertIn('ValueError', self.window.log.text.toPlainText())
+
+    def test_exception_hook_logs_instead_of_aborting(self):
+        previous = sys.excepthook
+        self.addCleanup(setattr, sys, 'excepthook', previous)
+        qtprimer3_vis.install_exception_hook(self.window)
+        try:
+            raise RuntimeError('slot failed')
+        except RuntimeError as exc:
+            with patch.object(QMessageBox, 'critical'):
+                sys.excepthook(type(exc), exc, exc.__traceback__)
+        self.assertIn('slot failed', self.window.status_message.text())
+        self.assertIn('Traceback', self.window.log.text.toPlainText())
+
+    def test_launch_panel_starts_expanded(self):
+        self.settings.set_value('launch_collapsed', True)
+        window = qtprimer3_vis.RFLPPickerGUI(self.settings, ThemeController(self.app, 'light'))
+        self.addCleanup(window.close)
+        self.assertFalse(window.launch.is_collapsed())
+
+    def test_launch_stays_open_when_every_snp_is_an_error(self):
+        rejected = [{'chrom': c, 'pos': p, 'ref': r, 'alt': a, 'reason': 'bad_chrom', 'details': 'x'}
+                    for c, p, r, a in (('11', 37525128, 'C', 'G'), ('1', 41250567, 'A', 'C'),
+                                       ('1', 91308651, 'C', 'T'), ('12', 880121, 'A', 'G'))]
+        self.run_with((HEADER, [], {'rejected': rejected}))
+        self.assertEqual(self.window.list.model.counts()['error'], 4)
+        self.assertFalse(self.window.launch.is_collapsed())
 
     def test_theme_menu_switches_mode_and_is_saved(self):
         self.window.set_theme_mode('dark')

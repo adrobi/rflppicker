@@ -19,7 +19,9 @@ from app_settings import AppSettings
 from details_panel import DetailsPanel
 from launch_panel import LaunchPanel
 from snp_list import SnpListView
-from snp_summary import STATUS_ORDER, STATUS_TITLES, build_summaries, excel_sheets, read_input_records, results_table
+from snp_summary import (
+    ERROR, STATUS_ORDER, STATUS_TITLES, build_summaries, excel_sheets, read_input_records, results_table,
+)
 from theme import MODE_TITLES, MODES, ThemeController
 
 LAUNCH_WIDTH = 300
@@ -157,11 +159,13 @@ class RFLPPickerGUI(QMainWindow):
         geometry = self.settings.value('geometry')
         if isinstance(geometry, str):
             self.restoreGeometry(QByteArray.fromBase64(geometry.encode()))
-        collapsed = self.settings.value('launch_collapsed', False) is True
-        self.launch.set_collapsed(collapsed)
+        # A new session has no results yet, so «Запуск» always starts open.
+        self.launch.set_collapsed(False)
         sizes = self.settings.value('splitter_sizes')
         if isinstance(sizes, list) and len(sizes) == 3 and all(isinstance(x, int) for x in sizes):
-            self.splitter.setSizes(sizes)
+            rest = max(0, sum(sizes) - max(sizes[0], LAUNCH_WIDTH))
+            ratio = sizes[1] / max(1, sizes[1] + sizes[2])
+            self.splitter.setSizes([max(sizes[0], LAUNCH_WIDTH), round(rest * ratio), rest - round(rest * ratio)])
         else:
             rest = max(600, self.width() - LAUNCH_WIDTH)
             self.splitter.setSizes([LAUNCH_WIDTH, rest * 55 // 100, rest * 45 // 100])
@@ -176,7 +180,6 @@ class RFLPPickerGUI(QMainWindow):
         self.launch.save_settings()
         self.settings.set_value('theme_mode', self.theme.mode)
         self.settings.set_value('splitter_sizes', self.splitter.sizes())
-        self.settings.set_value('launch_collapsed', self.launch.is_collapsed())
         self.settings.set_value('geometry', bytes(self.saveGeometry().toBase64()).decode())
         if self.worker is not None:
             self.worker.requestInterruption()
@@ -262,8 +265,10 @@ class RFLPPickerGUI(QMainWindow):
         counts = self.list.model.counts()
         parts = [f'{STATUS_TITLES[s].lower()} {counts[s]}' for s in STATUS_ORDER if counts[s]]
         self.status_message.setText(f"Готово: {len(self.summaries)} SNP · {', '.join(parts)}")
-        self.launch.set_collapsed(True)
-        self._on_collapse_toggled(True)
+        if counts[ERROR] < len(self.summaries):
+            # When every SNP is a data error, the fix (file, genome, names) is in «Запуск»: keep it open.
+            self.launch.set_collapsed(True)
+            self._on_collapse_toggled(True)
 
     # ----- export -----
     def _default_path(self, extension: str) -> str:
@@ -277,10 +282,11 @@ class RFLPPickerGUI(QMainWindow):
             QMessageBox.information(self, 'Выгрузка', 'Сначала выполните расчёт.')
             return None
         interactive = path is None
-        path = path or self._default_path('csv' if kind == 'csv' else 'xlsx')
-        summaries = self.list.shown_summaries() if kind == 'shown' else self.list.model.summaries()
-        table_header, table_rows = results_table(summaries, self.header, self.rows)
+        folder = os.path.dirname(path) if path else os.path.join(core.get_base_dir(), 'results')
         try:
+            path = path or self._default_path('csv' if kind == 'csv' else 'xlsx')
+            summaries = self.list.shown_summaries() if kind == 'shown' else self.list.model.summaries()
+            table_header, table_rows = results_table(summaries, self.header, self.rows)
             if kind == 'csv':
                 reporting.export_csv(path, table_header, table_rows)
             else:
@@ -292,10 +298,17 @@ class RFLPPickerGUI(QMainWindow):
                 }, rejected=self.report.get('rejected', []),
                     extra_sheets=excel_sheets(summaries, self.params.get('dcaps', 'off')))
         except PermissionError:
-            QMessageBox.warning(self, 'Выгрузка', 'Файл занят другой программой. Закройте его и повторите выгрузку.')
+            if path and os.path.exists(path):
+                message = 'Файл занят другой программой. Закройте его и повторите выгрузку.'
+            else:
+                message = f'Нет доступа к папке {folder}. Запустите программу из папки, куда разрешена запись.'
+            QMessageBox.warning(self, 'Выгрузка', message)
             return None
-        except OSError as exc:
-            QMessageBox.warning(self, 'Выгрузка', str(exc))
+        except Exception as exc:
+            # Never let an export error close the window with the user's choices.
+            self.log.append(traceback.format_exc())
+            core.logger.error(traceback.format_exc())
+            QMessageBox.warning(self, 'Выгрузка', f'Не удалось сохранить: {exc}')
             return None
         self.status_message.setText(f'Сохранено: {path}')
         if interactive:
@@ -307,11 +320,24 @@ class RFLPPickerGUI(QMainWindow):
         self.details.show_summary(summary, self.params.get('dcaps', 'off'))
 
 
+def install_exception_hook(window: RFLPPickerGUI) -> None:
+    """Log unexpected errors instead of letting PyQt abort the process (and lose the results)."""
+    def hook(exc_type, exc, tb):
+        text = ''.join(traceback.format_exception(exc_type, exc, tb))
+        core.logger.error(text)
+        window.log.append(text)
+        window.status_message.setText(f'Ошибка: {exc}. Подробности — в журнале.')
+        QMessageBox.critical(window, 'Ошибка', f'{exc}\n\nПодробности — в окне «Журнал».')
+
+    sys.excepthook = hook
+
+
 def main() -> None:
     if not core._PRIMER3_AVAILABLE:
         core.logger.warning(f'primer3 недоступен, ошибка импорта: {core._PRIMER3_IMPORT_ERROR}')
     app = QApplication(sys.argv)
     window = RFLPPickerGUI()
+    install_exception_hook(window)
     window.show()
     sys.exit(app.exec())
 

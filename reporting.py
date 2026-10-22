@@ -119,8 +119,12 @@ def _excel_value(value: Any) -> Any:
         raise ValueError("Excel cannot preserve non-finite numeric values")
     elif value is not None and not isinstance(value, (str, int, float, bool, Decimal, date, time)):
         value = str(value)
-    if isinstance(value, str) and len(value) > _EXCEL_MAX_STRING:
-        raise ValueError(f"Excel text exceeds the {_EXCEL_MAX_STRING}-character cell limit")
+    if isinstance(value, str):
+        # Control characters (e.g. Ctrl-Z from old Windows tools) are not allowed in XLSX cells.
+        from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
+        value = ILLEGAL_CHARACTERS_RE.sub("", value)
+        if len(value) > _EXCEL_MAX_STRING:
+            raise ValueError(f"Excel text exceeds the {_EXCEL_MAX_STRING}-character cell limit")
     return value
 
 

@@ -80,6 +80,22 @@ class DetailsPanelTests(unittest.TestCase):
         self.panel.findChild(QPushButton, 'copy_all_button').click()
         self.assertTrue(QApplication.clipboard().text().startswith('1:13 A>G (HOXB13)'))
 
+    def test_copy_buttons_follow_the_chosen_scheme_only(self):
+        # Copying a viewed, not chosen scheme would put another pair under the ★ names used in Excel.
+        self.panel.show_summary(self.hoxb13, 'fallback')
+        order = self.panel.findChild(QPushButton, 'copy_order_button')
+        copy_all = self.panel.findChild(QPushButton, 'copy_all_button')
+        self.panel.view_scheme(1)
+        self.assertEqual((order.isEnabled(), copy_all.isEnabled()), (False, False))
+        self.panel.choose_scheme(1)
+        self.assertEqual((order.isEnabled(), copy_all.isEnabled()), (True, True))
+
+    def test_swapped_alleles_are_shown_in_the_subtitle(self):
+        rows = [core_row(**dict(HOX, variant='1:13 A>G'))]
+        swapped = snp_summary.build_summaries([InputRecord(2, '', '1', 13, 'G', 'A', '')], HEADER, rows, [])[0]
+        self.panel.show_summary(swapped, 'fallback')
+        self.assertIn('REF и ALT переставлены по геному', self.panel.findChild(QLabel, 'subtitle_label').text())
+
     def test_summary_without_scheme_shows_reason_and_hint(self):
         self.panel.show_summary(self.olfml3, 'fallback')
         self.assertEqual(self.panel.findChild(QLabel, 'message_label').text(), self.olfml3.note('fallback'))

@@ -87,6 +87,7 @@ class SnpSummary:
     rejection: Optional[dict] = None                     # entry of report['rejected']
     chosen: int = 0
     primer_base: str = ''
+    swapped: bool = False   # normalization swapped REF and ALT: bands follow the genome's REF
 
     @property
     def label(self) -> str:
@@ -119,15 +120,18 @@ class SnpSummary:
             raise IndexError(f'No scheme {index} for {self.label}')
         self.chosen = index
 
+    def swap_text(self) -> str:
+        return f'REF и ALT переставлены по геному: REF = {self.record.alt}' if self.swapped else ''
+
     def note(self, dcaps_mode: str) -> str:
         """The «Примечание» text of the spec, §6.6."""
         if self.rejection is not None:
             return _rejection_text(self.rejection)
         scheme = self.scheme
         if scheme is None:
-            return self._failure_note(dcaps_mode)
+            return '; '.join(text for text in (self.swap_text(), self._failure_note(dcaps_mode)) if text)
         quality = scheme.get('genotype_quality')
-        parts = []
+        parts = [self.swap_text()] if self.swapped else []
         if quality not in _QUALITY_STATUS:
             parts.append('Три генотипа неразличимы по присутствию полос')
         if self.manual:
@@ -172,23 +176,33 @@ def build_summaries(records: List[InputRecord], header: List[str], rows: List[li
     for item in rejected:
         if item.get('chrom') is not None and item.get('pos') is not None:
             by_values.setdefault((str(item['chrom']), int(item['pos']), item.get('ref'), item.get('alt')), item)
+    # The core does not deduplicate variants: a repeated line (or the same SNP
+    # with REF/ALT swapped) yields an identical block of rows. Keep one copy.
     groups: Dict[str, List[dict]] = {}
+    seen = set()
     for index, row in enumerate(rows):
+        key = tuple(row)
+        if key in seen:
+            continue
+        seen.add(key)
         values = dict(zip(header, row), _index=index)
         groups.setdefault(values.get('variant'), []).append(values)
 
     summaries = []
     for r in records:
         rejection = by_line.get(r.line) or by_values.get((r.chrom, r.pos, r.ref, r.alt))
-        found = []
+        found, swapped = [], False
         if rejection is None and r.pos is not None:
-            found = (groups.get(f'{r.chrom}:{r.pos} {r.ref}>{r.alt}')
-                     or groups.get(f'{r.chrom}:{r.pos} {r.alt}>{r.ref}') or [])
+            found = groups.get(f'{r.chrom}:{r.pos} {r.ref}>{r.alt}') or []
+            if not found:
+                found = groups.get(f'{r.chrom}:{r.pos} {r.alt}>{r.ref}') or []
+                swapped = bool(found)
         summaries.append(SnpSummary(
             record=r,
             schemes=[values for values in found if values.get('enzyme')],
             failure=next((values for values in found if not values.get('enzyme')), None),
             rejection=rejection,
+            swapped=swapped,
         ))
     assign_primer_bases(summaries)
     return summaries

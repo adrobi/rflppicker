@@ -190,7 +190,8 @@ class DetailsPanel(QWidget):
         self.title_label.setText(f'{r.snp_id} · {summary.label}' if r.snp_id else summary.label)
         source = summary.scheme or summary.failure or {}
         mapped = source.get('mapped_id')
-        self.subtitle_label.setText(f'{mapped} · строка {r.line} файла' if mapped else f'строка {r.line} файла')
+        parts = [mapped, f'строка {r.line} файла', summary.swap_text()]
+        self.subtitle_label.setText(' · '.join(part for part in parts if part))
         self._update_badge()
         if not has_schemes:
             self.message_label.setText(summary.note(dcaps_mode))
@@ -311,10 +312,14 @@ class DetailsPanel(QWidget):
             details.append(f"Поставщики: {scheme['suppliers']}")
         if scheme.get('design') == 'dCAPS':
             details.append('Строчные буквы — намеренные несовпадения.')
-        if self._viewed != self._summary.chosen:
-            details.append(f"Эта схема не выбрана: в Excel идёт ★ {self._summary.scheme.get('enzyme')}.")
+        chosen = self._viewed == self._summary.chosen
+        if not chosen:
+            details.append(f"Эта схема не выбрана: в Excel идёт ★ {self._summary.scheme.get('enzyme')}. "
+                           f"Отметьте её звёздочкой, чтобы копировать.")
         self.card_details.setText('\n'.join(details))
-        self.copy_order_button.setEnabled(bool(scheme.get('primers_left')))
+        # Copy only the ★ scheme: its primer names are the ones Excel uses.
+        self.copy_order_button.setEnabled(chosen and bool(scheme.get('primers_left')))
+        self.copy_all_button.setEnabled(chosen)
 
     def _copy_order(self):
         QApplication.clipboard().setText(order_lines(self._viewed_summary()))

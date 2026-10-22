@@ -150,6 +150,14 @@ class ReportingTests(unittest.TestCase):
         self.assertEqual(book['Праймеры']['A2'].value, 'A_F')
         self.assertEqual(book['Results']['A2'].value, '1:1 A>G')
 
+    def test_excel_drops_control_characters(self):
+        # A Ctrl-Z line from old Windows tools ends up in parse errors and the summary.
+        export_excel(self.folder / "results.xlsx", ['raw'], [['1\t200\x1aA']],
+                     rejected=[{'line': 3, 'reason': 'parse_error', 'raw': '\x1a'}])
+        book = self.workbook()
+        self.assertEqual(book['Results']['A2'].value, '1\t200A')
+        self.assertIn(book['Rejected']['C2'].value, ('', None))
+
     def test_versions_include_runtime_and_installed_packages(self):
         versions = collect_versions()
         self.assertTrue(versions["Python"])

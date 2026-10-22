@@ -1,6 +1,8 @@
+import random
 import tempfile
 import unittest
 
+import rflp_core
 import snp_summary
 from snp_summary import InputRecord, SnpSummary
 from tests.helpers import HEADER, core_row, write_text
@@ -59,6 +61,18 @@ class JoinTests(unittest.TestCase):
         self.assertEqual(s[0].label, '1:10 A>G')
         self.assertIsInstance(s[0], SnpSummary)
 
+    def test_swapped_alleles_are_flagged(self):
+        rows = [core_row(variant='1:12 A>G', enzyme='AluI', genotype_quality='robust', assay_rank=1)]
+        swapped = snp_summary.build_summaries([rec(2, '1', 12, 'G', 'A')], HEADER, rows, [])[0]
+        self.assertTrue(swapped.swapped)
+        self.assertEqual(swapped.note('off'), 'REF и ALT переставлены по геному: REF = A')
+        straight = snp_summary.build_summaries([rec(2, '1', 12, 'A', 'G')], HEADER, rows, [])[0]
+        self.assertFalse(straight.swapped)
+        self.assertEqual(straight.note('off'), '')
+        failure = [core_row(variant='1:12 A>G', enzyme='', status='no_primers', reason='Primer3 не вернул подходящих пар')]
+        self.assertTrue(snp_summary.build_summaries([rec(2, '1', 12, 'G', 'A')], HEADER, failure, [])[0]
+                        .note('off').startswith('REF и ALT переставлены по геному: REF = A; Primer3'))
+
     def test_skip_norm_rejections_match_by_values_not_by_variant_index(self):
         # With skip_norm the core numbers rejected variants 1, 2, ... — not file lines.
         records = [rec(2, '1', 10, 'A', 'G'), rec(3, '1', 13, 'T', 'C')]
@@ -68,6 +82,33 @@ class JoinTests(unittest.TestCase):
         self.assertIsNone(s[0].rejection)
         self.assertEqual([x['enzyme'] for x in s[0].schemes], ['BamHI'])
         self.assertEqual(s[1].rejection['reason'], 'ref_not_match')
+
+
+class RealCoreJoinTests(unittest.TestCase):
+    def test_repeated_and_swapped_lines_do_not_multiply_schemes(self):
+        rng = random.Random(3)
+        sequence = ''.join(rng.choice('ACGT') for _ in range(400))
+        sequence = sequence[:197] + 'GAATTC' + sequence[203:]
+        ref = sequence[199]
+        alt = next(base for base in 'ACGT' if base != ref)
+        with tempfile.TemporaryDirectory() as directory:
+            fasta = write_text(directory, 'toy.fa', '>1\n' + sequence + '\n')
+            variants = write_text(directory, 'v.tsv', f'chrom\tpos\tref\talt\n1\t200\t{ref}\t{alt}\n'
+                                                      f'1\t200\t{ref}\t{alt}\n1\t200\t{alt}\t{ref}\n')
+            params = dict(rflp_core.DEFAULT_PARAMS, fasta=fasta, input_file=variants, use_primer3=False,
+                          flank=150, min_frag=20)
+            report = {}
+            header, rows = rflp_core.run_rflp_gui_mode(params, report=report)
+            records, _ = snp_summary.read_input_records(variants)
+            summaries = snp_summary.build_summaries(records, header, rows, report.get('rejected', []))
+        self.assertEqual(len(rows) % 3, 0)
+        single = len(rows) // 3
+        self.assertGreater(single, 0)
+        for s in summaries:
+            self.assertEqual(len(s.schemes), single)
+            ranks = [x['assay_rank'] for x in s.schemes]
+            self.assertEqual(len(ranks), len(set(ranks)))
+        self.assertEqual([s.swapped for s in summaries], [False, False, True])
 
 
 def summary(schemes=(), failure=None, rejection=None, snp_id=''):
