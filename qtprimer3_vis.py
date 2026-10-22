@@ -21,7 +21,7 @@ import rflp_core as core_impl
 from rflp_core import _PRIMER3_AVAILABLE, _PRIMER3_IMPORT_ERROR, _SUPPLIER_CANON, get_base_dir, logger, revcomp
 from reporting import export_csv as safe_export_csv, export_excel as safe_export_excel
 from result_model import LABELS
-from visualization import RFLPVisualizationDialog
+from visualization import RFLPVisualizationDialog, overlay_primers
 
 
 class NumericTableItem(QTableWidgetItem):
@@ -78,19 +78,6 @@ def _safe_int(s: object) -> Optional[int]:
         return int(float(t))
     except Exception:
         return None
-
-
-def overlay_primers(amplicon: str, left: str, right: str) -> str:
-    """The PCR product: primer sequences replace the genome at both ends.
-
-    Identical for ordinary primers; a dCAPS primer carries its mismatches
-    (lower case in the table) into the product, so cuts are drawn correctly.
-    """
-    product = amplicon.upper()
-    left, right = (left or '').strip().upper(), revcomp((right or '').strip().upper())
-    if len(left) + len(right) <= len(product):
-        product = left + product[len(left):len(product) - len(right)] + right
-    return product
 
 
 class RFLPPickerGUI(QMainWindow):
