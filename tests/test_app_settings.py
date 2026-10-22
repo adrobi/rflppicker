@@ -59,6 +59,8 @@ class AppSettingsTests(unittest.TestCase):
         self.assertEqual(self.settings.names_for_genome(r'D:\g.fa'), '')
         self.settings.set_names_for_genome(r'D:\g.fa', r'D:\names.txt')
         self.assertEqual(AppSettings(self.reopen()).names_for_genome(r'd:\G.FA'), r'D:\names.txt')
+        self.settings.clear_names_for_genome(r'D:\g.fa')
+        self.assertIsNone(self.settings.names_for_genome(r'D:\g.fa'))
 
     def test_values_keep_their_types(self):
         self.settings.set_value('launch_collapsed', True)

@@ -79,3 +79,9 @@ class AppSettings:
         mapping = self._names_map()
         mapping[os.path.normcase(genome)] = names
         self.set_value('names_for_genome', mapping)
+
+    def clear_names_for_genome(self, genome: str) -> None:
+        """Back to the automatic choice of the names file."""
+        mapping = self._names_map()
+        mapping.pop(os.path.normcase(genome), None)
+        self.set_value('names_for_genome', mapping)

@@ -14,18 +14,18 @@ def stylesheet(c: dict) -> str:
     return f"""
         QMainWindow, QDialog {{ background: {c['window']}; color: {c['text']}; }}
         QWidget {{ color: {c['text']}; }}
-        QFrame#panel {{ background: {c['panel']}; border: 1px solid {c['line']}; border-radius: 8px; }}
-        QLabel#caption {{ color: {c['text2']}; font-size: 8.5pt; }}
-        QLabel#title {{ font-size: 11pt; font-weight: 500; }}
-        QLabel#error {{ color: {c['error_fg']}; }}
-        QLabel#muted {{ color: {c['text2']}; }}
+        QFrame[role="panel"] {{ background: {c['panel']}; border: 1px solid {c['line']}; border-radius: 8px; }}
+        QLabel[role="caption"] {{ color: {c['text2']}; font-size: 8.5pt; }}
+        QLabel[role="title"] {{ font-size: 11pt; font-weight: 500; }}
+        QLabel[role="error"] {{ color: {c['error_fg']}; }}
+        QLabel[role="muted"] {{ color: {c['text2']}; }}
         QPushButton, QToolButton {{ min-height: 26px; padding: 0 10px; border: 1px solid {c['line']};
             border-radius: 4px; background: {c['panel']}; color: {c['text']}; }}
         QPushButton:hover, QToolButton:hover {{ border-color: {c['accent']}; }}
         QPushButton:disabled, QToolButton:disabled {{ color: {c['text2']}; background: {c['window']}; }}
-        QPushButton#primary {{ background: {c['accent']}; color: {c['on_accent']}; border-color: {c['accent']};
+        QPushButton[role="primary"] {{ background: {c['accent']}; color: {c['on_accent']}; border-color: {c['accent']};
             font-weight: 500; }}
-        QPushButton#link, QToolButton#link {{ border: none; background: transparent; color: {c['accent']};
+        QPushButton[role="link"], QToolButton[role="link"] {{ border: none; background: transparent; color: {c['accent']};
             padding: 0; text-align: left; }}
         QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {{ min-height: 26px; padding: 0 6px;
             border: 1px solid {c['line']}; border-radius: 4px; background: {c['panel']}; color: {c['text']};
