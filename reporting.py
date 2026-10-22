@@ -20,6 +20,7 @@ import platform
 import tempfile
 from collections.abc import Iterable, Mapping, Sequence
 from contextlib import contextmanager
+from dataclasses import dataclass, field
 from datetime import date, datetime, time, timezone
 from decimal import Decimal
 from importlib import metadata as package_metadata
@@ -137,7 +138,21 @@ def _write_cell(worksheet: Any, row: int, column: int, value: Any) -> Any:
     return cell
 
 
-def _populate_sheet(worksheet: Any, header: Sequence[str], rows: list[list[Any]], table_name: str) -> None:
+@dataclass(frozen=True)
+class ExtraSheet:
+    """A worksheet written before Results (the summary and primer sheets).
+
+    ``fills`` maps a column title to {cell value: RGB hex} for cell fills.
+    """
+    title: str
+    header: Sequence[str]
+    rows: list[list[Any]]
+    table_name: str
+    fills: Mapping[str, Mapping[Any, str]] = field(default_factory=dict)
+
+
+def _populate_sheet(worksheet: Any, header: Sequence[str], rows: list[list[Any]], table_name: str,
+                    header_fill: str | None = None, fills: Mapping[str, Mapping[Any, str]] | None = None) -> None:
     from openpyxl.styles import Alignment, Font, PatternFill
     from openpyxl.utils import get_column_letter
     from openpyxl.worksheet.table import Table, TableStyleInfo
@@ -159,16 +174,21 @@ def _populate_sheet(worksheet: Any, header: Sequence[str], rows: list[list[Any]]
     worksheet.row_dimensions[1].height = 30
     for column, name in enumerate(header, start=1):
         cell = _write_cell(worksheet, 1, column, name)
-        cell.fill = PatternFill("solid", fgColor="183B56")
-        cell.font = Font(name="Calibri", size=11, color="FFFFFF", bold=True)
+        cell.fill = PatternFill("solid", fgColor=header_fill or "183B56")
+        cell.font = Font(name="Calibri", size=11, color="1F1F1F" if header_fill else "FFFFFF", bold=True)
         cell.alignment = Alignment(vertical="center", wrap_text=True)
+    column_fills = [(fills or {}).get(name) for name in header]
     for row_index, values in enumerate(rows, start=2):
         for column, value in enumerate(values, start=1):
             cell = _write_cell(worksheet, row_index, column, value)
             cell.alignment = Alignment(vertical="top", wrap_text=True)
             column_name = header[column - 1].lower()
-            sequence_column = "primer" in column_name and isinstance(value, str)
+            sequence_column = isinstance(value, str) and any(
+                key in column_name for key in ("primer", "праймер", "последовательность"))
             cell.font = Font(name="Consolas" if sequence_column else "Calibri", size=11, color="23374D")
+            fill = column_fills[column - 1]
+            if fill and value in fill:
+                cell.fill = PatternFill("solid", fgColor=fill[value])
     for column, name in enumerate(header, start=1):
         lengths = [len(name)]
         lengths.extend(
@@ -216,8 +236,11 @@ def export_excel(
     rows: Iterable[Sequence[Any]],
     metadata: Mapping[str, Any] | None = None,
     rejected: Iterable[Mapping[str, Any] | Sequence[Any]] | None = None,
+    extra_sheets: Sequence[ExtraSheet] = (),
 ) -> None:
     """Write typed Results, Run, and Rejected worksheets atomically.
+
+    ``extra_sheets`` are written first, in the given order, with a light header.
 
     Numeric inputs stay numeric; identifier strings and primer strings stay
     text, including strings that look like formulas. Pass typed model values,
@@ -241,9 +264,18 @@ def export_excel(
     run_metadata.setdefault("versions", collect_versions())
     run_rows = [[str(key), value] for key, value in run_metadata.items()]
 
+    from palette import EXCEL_HEADER_FILL
+
     workbook = Workbook()
     try:
-        results_sheet = workbook.active
+        first = workbook.active
+        for index, sheet in enumerate(extra_sheets):
+            worksheet = first if index == 0 else workbook.create_sheet(sheet.title)
+            worksheet.title = sheet.title
+            sheet_header = _headers(sheet.header)
+            _populate_sheet(worksheet, sheet_header, list(_checked_rows(sheet.rows, len(sheet_header))),
+                            sheet.table_name, EXCEL_HEADER_FILL, sheet.fills)
+        results_sheet = workbook.create_sheet("Results") if extra_sheets else first
         results_sheet.title = "Results"
         _populate_sheet(results_sheet, names, result_rows, "RFLPResults")
         _populate_sheet(workbook.create_sheet("Run"), ["Parameter", "Value"], run_rows, "RFLPRun")

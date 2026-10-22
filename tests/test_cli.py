@@ -23,7 +23,7 @@ class CliTests(unittest.TestCase):
         self.fasta = self.root / 'toy.fa'
         self.fasta.write_text('>1\n' + sequence + '\n')
         self.variants = self.root / 'variants.tsv'
-        self.variants.write_text('chrom\tpos\tref\talt\n1\t200\tA\tG\n1\t2\tA\tA\n')
+        self.variants.write_text('chrom\tpos\tref\talt\tid\n1\t200\tA\tG\tSNP1\n1\t2\tA\tA\tSNP2\n')
 
     def run_cli(self, *args):
         stderr = io.StringIO()
@@ -42,19 +42,26 @@ class CliTests(unittest.TestCase):
         header, rows = core.run_rflp_gui_mode(params)
         with out.open(encoding='utf-8-sig', newline='') as stream:
             written = list(csv.reader(stream))
-        self.assertEqual(written[0], header)
-        self.assertEqual(written[1:], [['' if v is None else str(v) for v in row] for row in rows])
+        self.assertEqual(written[0], header + ['snp_id', 'selected'])
+        self.assertEqual([line[:len(header)] for line in written[1:]],
+                         [['' if v is None else str(v) for v in row] for row in rows])
+        self.assertEqual({line[-2] for line in written[1:]}, {'SNP1'})
         self.assertTrue(any(r['enzyme'] == 'EcoRI' for r in (dict(zip(header, row)) for row in rows)))
         with rejected.open(encoding='utf-8-sig', newline='') as stream:
             self.assertEqual(len(list(csv.DictReader(stream))), 1)
         self.assertIn('Сохранено', log)
 
-    def test_excel_has_run_and_rejected_sheets(self):
+    def test_excel_has_summary_primer_and_technical_sheets(self):
         out = self.root / 'out.xlsx'
         code, log = self.run_cli('--out', str(out), '--no-primer3', '--min-frag', '20', '-q')
         self.assertEqual((code, log), (0, ''))
         workbook = load_workbook(out, read_only=True)
-        self.assertEqual(workbook.sheetnames, ['Results', 'Run', 'Rejected'])
+        self.assertEqual(workbook.sheetnames, ['Сводка', 'Праймеры', 'Results', 'Run', 'Rejected'])
+        summary = list(workbook['Сводка'].iter_rows(values_only=True))
+        self.assertEqual([row[0] for row in summary], ['ID', 'SNP1', 'SNP2'])
+        self.assertEqual(summary[2][3], 'Ошибка данных')
+        results_header = next(workbook['Results'].iter_rows(max_row=1, values_only=True))
+        self.assertEqual(list(results_header[-2:]), ['snp_id', 'selected'])
         run = {row[0]: row[1] for row in workbook['Run'].iter_rows(min_row=2, values_only=True)}
         self.assertEqual(run['app_version'], core.APP_VERSION)
         workbook.close()

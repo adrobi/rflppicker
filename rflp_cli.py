@@ -14,6 +14,7 @@ from pathlib import Path
 
 import rflp_core as core
 from reporting import export_csv, export_excel
+from snp_summary import build_summaries, excel_sheets, read_input_records, results_table
 
 PRESETS = {'recommended': core.RECOMMENDED_PARAMS, 'v1.1': core.DEFAULT_PARAMS}
 
@@ -138,14 +139,18 @@ def main(argv=None):
         print('Анализ прерван.', file=sys.stderr)
         return 130
     summary = report.get('summary', {})
+    # One summary per line of the variants file; the best scheme is the chosen one.
+    records, _ = read_input_records(params['input_file'])
+    summaries = build_summaries(records, header, rows, report.get('rejected', []))
+    table_header, table_rows = results_table(summaries, header, rows)
     if out.suffix.lower() == '.xlsx':
-        export_excel(out, header, rows, metadata={
+        export_excel(out, table_header, table_rows, metadata={
             'app_version': core.APP_VERSION, 'scoring_model': core.MODEL_VERSION,
             'run_timestamp': started.isoformat(timespec='seconds'), 'genome_path': params['fasta'],
             'parameters': report.get('parameters', params), 'status_summary': summary,
-        }, rejected=report.get('rejected', []))
+        }, rejected=report.get('rejected', []), extra_sheets=excel_sheets(summaries, params['dcaps']))
     else:
-        export_csv(out, header, rows)
+        export_csv(out, table_header, table_rows)
     if args.rejected:
         rejected = report.get('rejected', [])
         names = []

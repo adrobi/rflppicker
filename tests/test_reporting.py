@@ -9,7 +9,8 @@ from unittest.mock import patch
 
 from openpyxl import load_workbook
 
-from reporting import collect_versions, export_csv, export_excel
+import palette
+from reporting import ExtraSheet, collect_versions, export_csv, export_excel
 
 
 class ReportingTests(unittest.TestCase):
@@ -133,6 +134,21 @@ class ReportingTests(unittest.TestCase):
                 export_excel(path, ["pos"], [[125]])
         self.assertEqual(path.read_bytes(), b"previous workbook")
         self.assertEqual(list(self.folder.iterdir()), [path])
+
+    def test_extra_sheets_come_first_with_status_fill(self):
+        sheet = ExtraSheet('Сводка', ['ID', 'Статус'], [['A', 'Надёжно'], ['B', 'Ошибка данных']],
+                           'RFLPSummary', {'Статус': palette.EXCEL_STATUS_FILLS})
+        primers = ExtraSheet('Праймеры', ['Имя'], [['A_F']], 'RFLPPrimers')
+        export_excel(self.folder / "results.xlsx", ['variant'], [['1:1 A>G']], extra_sheets=[sheet, primers])
+        book = self.workbook()
+        self.assertEqual(book.sheetnames, ['Сводка', 'Праймеры', 'Results', 'Run', 'Rejected'])
+        summary = book['Сводка']
+        self.assertEqual(summary['B2'].fill.fgColor.rgb[-6:], 'EAF3DE')
+        self.assertEqual(summary['B3'].fill.fgColor.rgb[-6:], 'FCEBEB')
+        self.assertEqual(summary['A1'].fill.fgColor.rgb[-6:], 'EDEDED')
+        self.assertEqual(summary['A2'].value, 'A')
+        self.assertEqual(book['Праймеры']['A2'].value, 'A_F')
+        self.assertEqual(book['Results']['A2'].value, '1:1 A>G')
 
     def test_versions_include_runtime_and_installed_packages(self):
         versions = collect_versions()

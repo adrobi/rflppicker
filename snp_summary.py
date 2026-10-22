@@ -9,6 +9,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
+from palette import EXCEL_STATUS_FILLS
+from reporting import ExtraSheet
 from rflp_core import parse_fields, read_input_table
 
 
@@ -281,6 +283,14 @@ def primer_table(summaries: List[SnpSummary]) -> Tuple[List[str], List[list]]:
             rows.append([f'{s.primer_base}_{side}', sequence, len(sequence), scheme.get(tm), s.label,
                          scheme.get('enzyme')])
     return list(PRIMER_HEADER), rows
+
+
+def excel_sheets(summaries: List[SnpSummary], dcaps_mode: str) -> List[ExtraSheet]:
+    """The «Сводка» and «Праймеры» worksheets written before Results."""
+    header, rows = summary_table(summaries, dcaps_mode)
+    primer_header, primer_rows = primer_table(summaries)
+    return [ExtraSheet('Сводка', header, rows, 'RFLPSummary', {'Статус': EXCEL_STATUS_FILLS}),
+            ExtraSheet('Праймеры', primer_header, primer_rows, 'RFLPPrimers')]
 
 
 def results_table(summaries: List[SnpSummary], header: List[str], rows: List[list]) -> Tuple[List[str], List[list]]:
