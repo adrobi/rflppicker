@@ -131,7 +131,9 @@ class CliTests(unittest.TestCase):
         with contextlib.redirect_stderr(stderr), self.assertRaises(SystemExit) as stop:
             rflp_cli.main(['--fasta', 'a', '--lang'])
         self.assertEqual(stop.exception.code, 2)
-        self.assertIn('--variants VARIANTS', stderr.getvalue())
+        text = ' '.join(stderr.getvalue().split())   # argparse wraps the usage to the terminal width
+        self.assertIn('--variants VARIANTS', text)
+        self.assertIn('argument --lang: expected one argument', text)
 
     def test_language_follows_the_system_without_the_key(self):
         with patch('rflp_cli.locale.getlocale', return_value=('en_US', 'UTF-8')), \
