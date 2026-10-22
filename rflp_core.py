@@ -223,80 +223,88 @@ def detect_delim(header: str) -> str:
     return "\t"
 
 
+ID_COLUMNS = ("id", "name", "snp_id", "rsid")
+
+
+def read_input_table(path: str) -> Tuple[Dict[str, Optional[int]], List[Tuple[int, List[str]]], str]:
+    """Columns, data lines and delimiter of a variants file.
+
+    ``columns`` maps chrom/pos/ref/alt/id to a field index, or None when the
+    header has no such column (or there is no header). Data lines are
+    ``(line_no, fields)`` with blank lines skipped and, after a header, the
+    template lines containing «должно быть:». A missing file gives
+    ``({}, [], "")``.
+    """
+    if not os.path.isfile(path):
+        logger.error(f"Файл с вариантами не найден: {path}")
+        return {}, [], ""
+    with open(path, "r", encoding="utf-8-sig", errors="replace", newline="") as f:
+        first = f.readline()
+        if not first:
+            return {}, [], ""
+        delim = detect_delim(first)
+        f.seek(0)
+        reader = csv.reader(f, delimiter=delim)
+        first_fields = next(reader, [])
+        hdr = [h.strip().lower() for h in first_fields]
+
+        def idx(*cands):
+            for c in cands:
+                if c in hdr:
+                    return hdr.index(c)
+            return None
+
+        columns = dict(chrom=idx("chrom", "chr", "chr1", "chromosome"), pos=idx("pos", "position"),
+                       ref=idx("ref", "reference"), alt=idx("alt", "alternate", "alt_allele"),
+                       id=idx(*ID_COLUMNS))
+        has_header = any(
+            x in hdr
+            for x in ("chrom", "chr", "pos", "ref", "alt", "position", "reference", "alternate")
+        )
+        lines: List[Tuple[int, List[str]]] = []
+        if not has_header:
+            # As before, a header-like token in a data line still sets its index;
+            # an ID column needs a real header.
+            columns["id"] = None
+            lines.append((1, first_fields))
+        for line_no, parts in enumerate(reader, start=2):
+            if not parts or not any(x.strip() for x in parts):
+                continue
+            if has_header and "должно быть:" in delim.join(parts).lower():
+                continue
+            lines.append((line_no, parts))
+    return columns, lines, delim
+
+
+def parse_fields(parts: List[str], columns: Dict[str, Optional[int]]) -> Tuple[str, int, str, str]:
+    """(chrom, pos, ref, alt) of one data line; raises IndexError/ValueError."""
+    def field(name, default_index):
+        index = columns.get(name)
+        return parts[index if index is not None else default_index]
+
+    return (
+        field("chrom", 0).replace("chr", "").strip(),
+        int(field("pos", 1)),
+        field("ref", 2).strip().upper(),
+        field("alt", 3).strip().upper(),
+    )
+
+
 def parse_input(path: str, report: Optional[dict] = None) -> List[Tuple[str, int, str, str]]:
     rows: List[Tuple[str, int, str, str]] = []
     try:
-        if not os.path.isfile(path):
-            logger.error(f"Файл с вариантами не найден: {path}")
-            return rows
-        with open(path, "r", encoding="utf-8-sig", errors="replace", newline="") as f:
-            first = f.readline()
-            if not first:
-                return rows
-            delim = detect_delim(first)
-            f.seek(0)
-            reader = csv.reader(f, delimiter=delim)
-            first_fields = next(reader, [])
-            hdr = [h.strip().lower() for h in first_fields]
-
-            def idx(*cands):
-                for c in cands:
-                    if c in hdr:
-                        return hdr.index(c)
-                return None
-
-            i_chrom = idx("chrom", "chr", "chr1", "chromosome")
-            i_pos = idx("pos", "position")
-            i_ref = idx("ref", "reference")
-            i_alt = idx("alt", "alternate", "alt_allele")
-
-            def parse_line(parts, line_no):
-                if len(parts) < 4:
-                    if report is not None:
-                        report.setdefault('rejected', []).append({'line': line_no, 'reason': 'parse_error', 'details': 'Ожидалось минимум 4 поля', 'raw': delim.join(parts)})
-                    return None
-                try:
-                    ch = parts[i_chrom] if i_chrom is not None else parts[0]
-                    po = int(parts[i_pos] if i_pos is not None else parts[1])
-                    rf = parts[i_ref] if i_ref is not None else parts[2]
-                    al = parts[i_alt] if i_alt is not None else parts[3]
-                    return (
-                        ch.replace("chr", "").strip(),
-                        po,
-                        rf.strip().upper(),
-                        al.strip().upper(),
-                    )
-                except Exception as e2:
-                    logger.error(f"Ошибка парсинга строки: {e2}")
-                    if report is not None:
-                        report.setdefault('rejected', []).append({'line': line_no, 'reason': 'parse_error', 'details': str(e2), 'raw': delim.join(parts)})
-                    return None
-
-            data: List[Tuple[str, int, str, str]] = []
-            has_header = any(
-                x in hdr
-                for x in ("chrom", "chr", "pos", "ref", "alt", "position", "reference", "alternate")
-            )
-            if has_header:
-                for line_no, parts in enumerate(reader, start=2):
-                    if not parts or not any(x.strip() for x in parts):
-                        continue
-                    if "должно быть:" in delim.join(parts).lower():
-                        continue
-                    rec = parse_line(parts, line_no)
-                    if rec:
-                        data.append(rec)
-            else:
-                rec = parse_line(first_fields, 1)
-                if rec:
-                    data.append(rec)
-                for line_no, parts in enumerate(reader, start=2):
-                    if not parts or not any(x.strip() for x in parts):
-                        continue
-                    rec = parse_line(parts, line_no)
-                    if rec:
-                        data.append(rec)
-            rows.extend(data)
+        columns, lines, delim = read_input_table(path)
+        for line_no, parts in lines:
+            if len(parts) < 4:
+                if report is not None:
+                    report.setdefault('rejected', []).append({'line': line_no, 'reason': 'parse_error', 'details': 'Ожидалось минимум 4 поля', 'raw': delim.join(parts)})
+                continue
+            try:
+                rows.append(parse_fields(parts, columns))
+            except Exception as e2:
+                logger.error(f"Ошибка парсинга строки: {e2}")
+                if report is not None:
+                    report.setdefault('rejected', []).append({'line': line_no, 'reason': 'parse_error', 'details': str(e2), 'raw': delim.join(parts)})
     except Exception as e:
         logger.error(f"Ошибка при чтении файла с вариантами: {e}")
     return rows

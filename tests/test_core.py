@@ -6,6 +6,8 @@ from pathlib import Path
 
 from Bio.Restriction import AllEnzymes
 
+import rflp_core
+from tests.helpers import write_text
 from rflp_core import (
     AnalysisCancelled,
     cut_positions,
@@ -97,6 +99,39 @@ class CoreTests(unittest.TestCase):
                 for a, b in amplicons:
                     self.assertEqual(cut_positions(enz, seq[a:b]), cut_positions(enz, altseq[a:b]),
                                      (enz, seq, off, a, b))
+
+
+class InputTableTests(unittest.TestCase):
+    def setUp(self):
+        self._dir = tempfile.TemporaryDirectory()
+        self.tmp = self._dir.name
+
+    def tearDown(self):
+        self._dir.cleanup()
+
+    def test_read_input_table_detects_columns_and_id(self):
+        path = write_text(self.tmp, 'v.tsv', 'chrom\tpos\tref\talt\tName\n1\t10\tA\tG\tDGAT1\n\n1\t11\tC\n')
+        columns, lines, delim = rflp_core.read_input_table(path)
+        self.assertEqual(delim, '\t')
+        self.assertEqual(columns, {'chrom': 0, 'pos': 1, 'ref': 2, 'alt': 3, 'id': 4})
+        self.assertEqual(lines, [(2, ['1', '10', 'A', 'G', 'DGAT1']), (4, ['1', '11', 'C'])])
+
+    def test_read_input_table_headerless_and_template_rows(self):
+        path = write_text(self.tmp, 'v.csv', '1,10,A,G\n2,20,C,T\n')
+        columns, lines, _ = rflp_core.read_input_table(path)
+        self.assertEqual(set(columns.values()), {None})
+        self.assertEqual([n for n, _ in lines], [1, 2])
+        path = write_text(self.tmp, 'h.csv', 'chrom,pos,ref,alt\nдолжно быть: 1,10,A,G\n1,10,A,G\n')
+        self.assertEqual([n for n, _ in rflp_core.read_input_table(path)[1]], [3])
+
+    def test_read_input_table_missing_file(self):
+        self.assertEqual(rflp_core.read_input_table(str(Path(self.tmp) / 'missing.tsv')), ({}, [], ''))
+
+    def test_parse_fields(self):
+        columns = {'chrom': None, 'pos': None, 'ref': None, 'alt': None, 'id': None}
+        self.assertEqual(rflp_core.parse_fields(['chr1 ', '10', 'a', 'g '], columns), ('1', 10, 'A', 'G'))
+        with self.assertRaises(ValueError):
+            rflp_core.parse_fields(['1', 'x', 'A', 'G'], columns)
 
 
 if __name__ == '__main__':
