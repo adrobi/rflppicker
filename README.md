@@ -1,270 +1,284 @@
 # RFLP Picker 1.3
 
-RFLP Picker — настольная программа для поиска рестриктаз, которые различают
-аллели SNP, и подбора PCR-праймеров через Primer3. Программа сравнивает REF и
-ALT на референсном FASTA, показывает размеры фрагментов и позволяет открыть
-схему ампликона и виртуальный гель.
+English | [Русский](README.ru.md)
 
-## Что нового в 1.3
+![RFLP Picker 1.3 window: the SNP list, the chosen assay and the virtual gel](docs/img/dark_en.png)
 
-Новое окно в три колонки: запуск, список SNP и детали выбранного SNP —
-см. [Работа с окном](#работа-с-окном). Одна строка на каждый SNP из файла,
-статусы-фильтры, выбор схемы звёздочкой, гель прямо в окне, листы Excel
-«Сводка» и «Праймеры», ID SNP из входного файла, светлая и тёмная темы.
-Расчёт не изменился. Список изменений — в [CHANGELOG](CHANGELOG.md).
+RFLP Picker is a desktop program for PCR-RFLP (CAPS) genotyping of SNPs. From a
+list of SNPs and a reference genome it designs Primer3 primer pairs, finds
+restriction enzymes that tell the three genotypes apart and shows the expected
+bands on a virtual gel. The program compares REF and ALT on the reference FASTA,
+reports fragment sizes and draws a map of the amplicon.
 
-## Что нового в 1.2
+## What's new in 1.3
 
-Изменения основаны на проверке версии 1.1.0 на опубликованных анализах.
-Подробности — в [описании алгоритма](docs/assay_design.md#отбор-и-проверки-с-версии-12),
-список изменений — в [CHANGELOG](CHANGELOG.md).
+A new three-column window: launch, SNP list and the details of the chosen SNP —
+see [Working with the window](#working-with-the-window). One row for each SNP of
+the input file, status filters, assay choice with a star, the gel right in the
+window, the Excel sheets «Summary» and «Primers», SNP IDs from the input file,
+light and dark themes. The interface is available in English and Russian: the
+language follows the system and can be changed with the «Language» switch (see
+[Interface language](#interface-language)). The analysis itself has not changed.
+The list of changes is in the [CHANGELOG](CHANGELOG.md) (in Russian).
 
-- Расчёт в 7–10 раз быстрее с теми же результатами; командная строка `rflp_cli.py`.
-- Изошизомеры объединяются в одну строку; по умолчанию только продаваемые ферменты.
-- SNP не ближе 100 п.н. к концам ампликона: диагностический фрагмент остаётся видимым.
-- Схемы, где праймер сам содержит сайт фермента, исключаются.
-- Повторы soft-mask FASTA не попадают на 3′-концы праймеров.
-- Известные варианты из VCF: праймеры их избегают, схемы, где соседние замены
-  меняют разрезы, отмечаются и исключаются.
-- Проектирование dCAPS (праймер с несовпадением), если нет надёжной схемы
-  с природным сайтом.
-- Вкладка «Виртуальный гель» в окне визуализации.
+## What's new in 1.2
 
-Настройки v1.2 собраны в окне «Дополнительно» панели «Запуск» (группа «Проверки»).
-Параметры версии 1.1.0 воспроизводятся кнопкой «Как в v1.1.0» там же
-или `--preset v1.1` в командной строке.
+The changes are based on a check of version 1.1.0 against published assays.
+Details are in the [algorithm description](docs/assay_design.md#отбор-и-проверки-с-версии-12)
+(in Russian); the list of changes is in the [CHANGELOG](CHANGELOG.md).
 
-## Совместный подбор праймеров и фермента
+- The analysis is 7–10 times faster with the same results; command line `rflp_cli.py`.
+- Isoschizomers are grouped into one row; only commercially available enzymes by default.
+- The SNP is kept at least 100 bp from the amplicon ends, so the diagnostic fragment stays visible.
+- Assays where a primer itself contains the enzyme site are excluded.
+- Soft-masked FASTA repeats are kept off primer 3′ ends.
+- Known variants from a VCF: primers avoid them; assays where nearby variants
+  change the cuts are flagged and excluded.
+- dCAPS design (a primer with a mismatch) when there is no robust assay with a
+  natural site.
+- A «Virtual gel» tab in the visualization window.
 
-По умолчанию программа проверяет до **10 пар Primer3 на SNP**, оценивает
-различимость **REF/REF, REF/ALT и ALT/ALT** и выдаёт до 10 лучших сочетаний.
-В правой панели можно изменить число пар, число результатов (0 — все),
-абсолютное и относительное разрешение геля и коэффициент его ухудшения.
-Исходные параметры модели (10 п.н., 3%, ×1.5) — предположения для скрининга,
-их нужно сопоставить с условиями своего эксперимента.
+The 1.2 settings are in the «Advanced» dialog of the «Run» panel (the «Checks»
+group). The parameters of version 1.1.0 are restored with the «As in v1.1.0»
+button there, or with `--preset v1.1` on the command line.
 
-Используется **максиминная оценка**: выше располагается схема с лучшей
-различимостью самой трудной пары генотипов при ухудшенном разрешении.
-Оценка > 1 означает различимость в модели. `robust` — различимость сохраняется
-при ухудшении; `nominal_only` — только при исходном разрешении.
-Это не вероятность успешного генотипирования.
+## Joint design of primers and enzyme
 
-Выбранная строка показывает ожидаемые полосы трёх генотипов и пояснение.
-Все оценки, параметры и номер пары сохраняются в экспорт. Для сравнения со
-старым подходом отключите «Подбирать праймеры и фермент совместно».
+By default the program checks up to **10 Primer3 pairs per SNP**, scores how well
+**REF/REF, REF/ALT and ALT/ALT** can be told apart and reports up to 10 best
+combinations. The «Advanced» dialog sets the number of pairs, the number of
+results (0: all), the absolute and relative gel resolution and the resolution
+stress factor. The default model parameters (10 bp, 3%, ×1.5) are screening
+assumptions; compare them with the conditions of your own experiment.
 
-Формулы, правила ранжирования, ограничения и воспроизводимое сравнение режимов:
-[Описание алгоритма](docs/assay_design.md).
+The ranking uses a **maximin score**: the assay whose hardest genotype pair is
+best separated under the stressed resolution comes first. A score > 1 means the
+genotypes are distinguishable in the model. `robust`: they stay distinguishable
+under stress; `nominal_only`: only at the nominal resolution. This is not a
+probability of successful genotyping.
 
-## Суть программы
+The chosen row shows the expected bands of the three genotypes and an
+explanation. All scores, parameters and the pair number are written to the
+export. To compare with the older approach, turn off the joint design of primers
+and enzyme.
 
-RFLP Picker получает список SNP, проверяет их по референсному геному и ищет
-рестриктазы, которые дают различимый рисунок фрагментов для аллелей REF и ALT.
-Если включён Primer3, для подходящего участка дополнительно подбирается пара
-PCR-праймеров. В результате для каждой позиции видны фермент, сайт узнавания,
-размеры фрагментов, параметры праймеров и понятный статус обработки.
+Formulas, ranking rules, limitations and a reproducible comparison of the modes:
+[algorithm description](docs/assay_design.md) (in Russian).
 
-Схема обработки одной позиции:
+## How it works
+
+RFLP Picker takes a list of SNPs, checks them against the reference genome and
+looks for restriction enzymes that give distinguishable fragment patterns for
+the REF and ALT alleles. With Primer3 on, it also designs a PCR primer pair for a
+suitable region. For each position the result shows the enzyme, the recognition
+site, the fragment sizes, the primer parameters and a plain processing status.
+
+Processing of one position:
 
 ```mermaid
 flowchart TD
-    A[CSV / TSV со SNP] --> B[Чтение и проверка полей]
-    B --> C[Сопоставление названия хромосомы]
-    C --> D{REF совпадает с FASTA?}
-    D -->|Нет| E[Отклонить или исправить допустимый случай]
-    D -->|Да| F[Сформировать окна REF и ALT]
-    E --> G[Записать причину в Rejected]
-    F --> H{Primer3 включён?}
-    H -->|Да| I[Подобрать до K пар праймеров]
-    H -->|Нет| J[Использовать заданное окно]
-    I --> K{Пара найдена?}
-    K -->|Нет| L[Статус no_primers / primer3_error]
-    K -->|Да| M[Для каждой пары определить ампликон]
+    A[CSV / TSV of SNPs] --> B[Read and check the fields]
+    B --> C[Map the chromosome name]
+    C --> D{REF matches the FASTA?}
+    D -->|No| E[Reject, or fix an allowed case]
+    D -->|Yes| F[Build the REF and ALT windows]
+    E --> G[Write the reason to Rejected]
+    F --> H{Primer3 on?}
+    H -->|Yes| I[Design up to K primer pairs]
+    H -->|No| J[Use the given window]
+    I --> K{Pair found?}
+    K -->|No| L[Status no_primers / primer3_error]
+    K -->|Yes| M[Find the amplicon of each pair]
     J --> M
-    M --> N[Сравнить сайты рестрикции REF и ALT]
-    N --> O{Есть подходящий фермент?}
-    O -->|Нет| P[Статус no_enzyme_found]
-    O -->|Да| Q[Оценить три генотипа и ранжировать кандидатов]
-    L --> R[Таблица и отчёт]
+    M --> N[Compare REF and ALT restriction sites]
+    N --> O{Suitable enzyme?}
+    O -->|No| P[Status no_enzyme_found]
+    O -->|Yes| Q[Score the three genotypes and rank the candidates]
+    L --> R[Table and report]
     P --> R
     Q --> R
-    R --> S[Визуализация]
+    R --> S[Visualization]
     R --> T[CSV / Excel]
 ```
 
-Нормализация нужна для того, чтобы не анализировать ошибочные координаты и
-аллели. Она не заменяет проверку: даже при отключённой нормализации программа
-всё равно контролирует наличие хромосомы, диапазон координат и соответствие
-REF референсу.
+Normalization keeps wrong coordinates and alleles out of the analysis. It does
+not replace the checks: even with normalization off, the program still checks
+that the chromosome exists, that the position is in range and that REF matches
+the reference.
 
-## Запуск из исходников
+## Running from source
 
-Требуется Python 3.11 или новее. В PowerShell из этой папки выполните:
+Python 3.11 or newer is required. In PowerShell, from this folder, run:
 
 ```powershell
 python -m pip install -r requirements.txt
 ```
 
-Затем запустите приложение:
+Then start the program:
 
 ```powershell
 python qtprimer3_vis.py
 ```
 
-Оформление автоматически подстраивается под тему Windows 11. Переключение
-светлой и тёмной темы во время работы также обновляет цвета интерфейса.
+The appearance follows the Windows 11 theme, including a switch between light
+and dark while the program is running.
 
-## Командная строка
+## Command line
 
-`rflp_cli.py` выполняет тот же анализ без окна — для пакетных запусков и
-скриптов. Результат сохраняется в CSV или Excel (по расширению `--out`);
-в Excel, как и при экспорте из окна, есть листы Run и Rejected.
+`rflp_cli.py` runs the same analysis without the window, for batch runs and
+scripts. The result is saved as CSV or Excel (by the extension of `--out`); like
+the export from the window, Excel gets the Run and Rejected sheets.
 
 ```powershell
 python rflp_cli.py --fasta genome.fa --variants snps.tsv --names names.txt --out results.xlsx
 python rflp_cli.py --help
 ```
 
-По умолчанию используются те же настройки, что в окне программы
-(`--preset recommended`). `--preset v1.1` воспроизводит параметры и
-результаты версии 1.1.0. Любой параметр можно переопределить, например
-`--pairs 20 --top 0 --prod-min 150 --prod-max 1000`. Код возврата: 0 — успех,
-2 — ошибка параметров, 130 — прервано (Ctrl+C).
+By default the settings are the same as in the program window
+(`--preset recommended`). `--preset v1.1` reproduces the parameters and results
+of version 1.1.0. Any parameter can be overridden, for example
+`--pairs 20 --top 0 --prod-min 150 --prod-max 1000`. Exit codes: 0 — success,
+2 — parameter error, 130 — interrupted (Ctrl+C).
 
-## Запуск готовой версии Windows
+The help, the messages and the Summary and Primers sheets follow the system
+language; `--lang en` or `--lang ru` sets it explicitly.
 
-Скачайте архив релиза и запустите `RFLP-Picker.exe`. Python на
-компьютере для этого не требуется. Референсный FASTA не входит в архив из-за
-размера; укажите его полный путь в поле FASTA. Папка `names/` в архиве содержит
-готовое соответствие названий хромосом для используемого генома.
+## Windows release
 
-Готовый архив релиза находится в разделе Releases на GitHub. Для пересборки EXE
-из исходников требуется Python 3.13 и зависимости из `requirements.txt`;
-выполните `.\build_windows.ps1`. Результат появится в `dist/RFLP-Picker/`.
+Download the release archive and run `RFLP-Picker.exe`. Python is not needed on
+the computer. The reference FASTA is not in the archive because of its size;
+choose it in the «Genome» field. The `names/` folder in the archive holds a
+ready chromosome name mapping for the genome used in the examples.
 
-Архив распространяется без README: инструкция находится в этом файле на
-GitHub, а рядом с EXE должны находиться папка `_internal` и каталог `names`.
+The release archive is in the Releases section on GitHub. To rebuild the EXE
+from source you need Python 3.13 and the packages from `requirements.txt`; run
+`.\build_windows.ps1`. The result appears in `dist/RFLP-Picker/`.
 
-## Данные
+The archive comes without a README: the instructions are in this file on GitHub.
+The `_internal` and `names` folders must stay next to the EXE.
 
-В окне выберите:
+## Data
 
-- файл вариантов CSV, TSV или TXT с колонками `chrom`, `pos`, `ref`, `alt`;
-- референсный геном FASTA из `genoms/`;
-- необязательный файл соответствий названий хромосом из `names/`.
+In the window, choose:
 
-Поля FASTA и соответствий редактируемые: можно указать полный путь к файлам,
-которые хранятся вне репозитория.
+- a variants file (CSV, TSV or TXT) with the columns `chrom`, `pos`, `ref`, `alt`;
+- a reference genome FASTA: the «Genome» list holds recent genomes and FASTA files
+  from the `genoms/` folder next to the program, «Choose a file…» opens any other;
+- if needed, a chromosome name mapping file: the program takes
+  `names/<genome name>.txt` by itself, another file is chosen with the «change» link.
 
-Поддерживаются одиночные SNP: один символ в `REF` и один символ в `ALT`,
-только `A`, `C`, `G`, `T`. Позиции в файле начинаются с 1. CSV с кавычками и
-UTF-8 с BOM поддерживается. Некорректные строки сохраняются в
-`results/normalize/*.rejected.tsv`, если включено сохранение нормализации, с
-номером исходной строки и причиной; в любом случае причины видны в журнале.
+Single-base SNPs are supported: one character in `REF` and one in `ALT`, only
+`A`, `C`, `G`, `T`. Positions in the file start at 1. Quoted CSV and UTF-8 with
+BOM are supported. Invalid lines are saved to `results/normalize/*.rejected.tsv`
+with the original line number and the reason when saving of normalization is on;
+in any case the reasons are shown in the log and in the SNP list.
 
-Для проверки используйте собственный небольшой CSV/TSV-файл с вариантами.
+## Parameters
 
-## Параметры
+The flank is the number of bases on each side of the SNP. In the joint mode the
+fragment range sets the limits of band visibility: fragments outside the range
+are hidden in the model but kept in the full fragment lists. In the single pair
+or window mode every fragment must fall into the range.
+The Δ threshold applies to the symmetric Hausdorff distance between the visible
+REF and ALT sizes: the largest distance to the nearest size of the other allele.
+It applies to both gain/loss and shift. The joint search also requires all
+three genotypes to differ in the presence of bands.
 
-Фланк задаёт число оснований по обе стороны SNP. В совместном режиме диапазон
-фрагментов задаёт границы видимости полос: фрагменты вне диапазона скрываются
-в модели, но сохраняются в исходных списках фрагментов. В режиме одной пары
-или окна каждый фрагмент должен попадать в диапазон.
-Порог Δ применяется к симметричному расстоянию Хаусдорфа между видимыми
-длинами REF и ALT: максимуму расстояний до ближайшей длины другого аллеля.
-Он применяется и к gain/loss, и к shift. Совместный поиск дополнительно
-требует различимости всех трёх генотипов по присутствию полос.
+With Primer3 on, the program searches for primer pairs within the given product
+size and Tm range. When no pair is found, the line gets the status «no primers»
+and gives no false enzyme candidates. With Primer3 off, the search runs over the
+whole window and is marked «window search».
 
-При включённом Primer3 программа ищет пары праймеров в заданном диапазоне
-размера продукта и Tm. Если пара не найдена, строка получает статус
-«Праймеры не найдены» и не выдаёт ложные ферментные кандидаты. Если Primer3
-выключен, поиск идёт по полному окну и помечается «Поиск по окну».
+Checking the coordinates and that `REF` matches the FASTA is always on. The
+option to skip normalization turns off only the automatic REF/ALT swap.
 
-Проверка координат и соответствия `REF` FASTA обязательна всегда. Опция
-пропуска нормализации отключает только автоматическую перестановку REF/ALT.
+## Working with the window
 
-## Работа с окном
+The window has three columns (see the screenshot at the top of this file).
 
-![Окно RFLP Picker 1.3, светлая тема](docs/img/light_1536x816.png)
+1. **Run.** SNP file, genome, an optional VCF of known variants, product size,
+   Tm, enzyme suppliers and the dCAPS mode. The other parameters are under the
+   «Advanced…» link. The program remembers files and parameters between
+   sessions. After a run the panel collapses; « and » collapse and expand it.
+2. **SNP list.** One row for each SNP of the file, in file order. The counters
+   above the list — «Robust», «Good gel only», «No assay», «Data error» — work
+   as filters; the search looks at the ID, the position and the enzyme. The
+   «Note» column holds warnings and hints on what to change when no assay was
+   found. More columns are added with a right click on the header.
+3. **Details of the chosen SNP.** All assays of the SNP; the star marks the
+   assay that goes to Excel (the best one by default). The «Gel», «Map» and
+   «Primers» tabs: the primer card copies «name ⇥ sequence» lines for an oligo
+   order form. «⤢ Enlarge» opens the map with sequences and PNG/SVG export.
 
-Окно состоит из трёх колонок.
+When the input file has an `id` column (or `name`, `snp_id`, `rsid`), its values
+appear in the list, in Excel and in the primer names (`DGAT1_F`, `DGAT1_R`).
 
-1. **Запуск.** Файл SNP, геном, при необходимости VCF известных вариантов,
-   длина продукта, Tm, поставщики ферментов и режим dCAPS. Остальные параметры —
-   по ссылке «Дополнительно…». Программа запоминает файлы и параметры
-   между запусками. После расчёта панель сворачивается; « и » сворачивают
-   и разворачивают её.
-2. **Список SNP.** Одна строка на каждый SNP из файла, в порядке файла.
-   Счётчики над списком — «Надёжно», «Только на хорошем геле», «Нет схемы»,
-   «Ошибка данных» — работают как фильтры; поиск ищет по ID, координате
-   и ферменту. В «Примечании» — предупреждения и подсказки, что изменить,
-   если схема не найдена. Дополнительные столбцы включаются правым щелчком
-   по заголовку.
-3. **Детали выбранного SNP.** Все схемы SNP; звёздочка отмечает схему,
-   которая пойдёт в Excel (по умолчанию лучшая). Вкладки «Гель», «Карта»
-   и «Праймеры»: карточка праймеров копирует строки «имя ⇥ последовательность»
-   для бланка заказа. «⤢ Крупно» открывает карту с последовательностями
-   и сохранением PNG/SVG.
+The theme follows Windows; the «Theme» switch in the status bar selects light
+or dark by hand.
 
-Если во входном файле есть столбец `id` (или `name`, `snp_id`, `rsid`),
-его значения видны в списке, в Excel и в именах праймеров (`DGAT1_F`, `DGAT1_R`).
+### Interface language
 
-Тема берётся из Windows; переключатель «Тема» в строке состояния позволяет
-выбрать светлую или тёмную вручную.
+When Windows uses Russian, the program opens in Russian; with any other
+language it opens in English. The «Language» switch in the status bar selects
+the language by hand («System», «Русский», «English»); a new language applies
+after the program is restarted. The window, the notes, the Excel sheets
+«Summary» and «Primers» and the log are translated. The technical sheets
+`Results`, `Run` and `Rejected` are the same in both languages; the `reason`
+column of `Results` always holds the original text of the analysis in Russian.
 
-![Окно RFLP Picker 1.3, тёмная тема](docs/img/dark_1536x816.png)
+## Results and export
 
-## Результаты и экспорт
+The «Export to Excel ▾» button saves all SNPs or only the shown ones (after the
+filter and the search) to the `results/` folder. Excel sheets:
 
-Кнопка «Выгрузить в Excel ▾» сохраняет все SNP или только показанные
-(с учётом фильтра и поиска) в папку `results/`. Листы Excel:
+- «Summary» — one row per SNP for the chosen assay: status, enzyme, primers, Tm,
+  product, bands of the three genotypes, score, note;
+- «Primers» — names and sequences for ordering oligos;
+- `Results` — all assays of all SNPs, as in 1.2, plus the `snp_id` and
+  `selected` columns;
+- `Run` and `Rejected` — run parameters and rejected lines.
 
-- «Сводка» — одна строка на SNP по выбранной схеме: статус, фермент, праймеры,
-  Tm, продукт, полосы трёх генотипов, оценка, примечание;
-- «Праймеры» — имена и последовательности для заказа синтеза;
-- `Results` — все схемы всех SNP, как в 1.2, плюс столбцы `snp_id` и `selected`;
-- `Run` и `Rejected` — параметры запуска и отклонённые строки.
+«CSV: all assays» saves the contents of the `Results` sheet as UTF-8 with BOM.
 
-«CSV: все схемы» сохраняет содержимое листа `Results` в UTF-8 с BOM.
+## Project structure
 
-## Структура проекта
+`qtprimer3_vis.py` — the main window; `launch_panel.py`, `snp_list.py`,
+`details_panel.py` — its three columns; `snp_summary.py` — the per-SNP summary
+for the window, Excel and the command line (no Qt); `palette.py`, `theme.py`,
+`icons.py` — colors, theme and icons; `app_settings.py` — remembered settings;
+`i18n.py` and `translations_en.py` — the interface language and the English
+texts; `rflp_cli.py` — the command line; `rflp_core.py` — reading,
+normalization and the analysis; `reporting.py` — safe CSV/XLSX export;
+`result_model.py` — titles of the core columns; `resources_rc.py` — Qt
+resources; `genoms/` and `names/` — input data.
+`assay_scoring.py` — the band model and maximin ranking;
+`benchmark_design.py` — comparison of the modes with data checksums;
+`visualization.py` — the amplicon map and the virtual gel with export;
+`tools/regression.py` — comparison of the results of two program versions;
+`tools/gui_screenshots.py` — window screenshots in a chosen language, both
+themes and three sizes; `examples/` — a clearly synthetic example for a quick check.
 
-`qtprimer3_vis.py` — главное окно; `launch_panel.py`, `snp_list.py`,
-`details_panel.py` — его три колонки; `snp_summary.py` — сводка по SNP
-для окна, Excel и командной строки (без Qt); `palette.py`, `theme.py`,
-`icons.py` — цвета, тема и иконки; `app_settings.py` — запоминание настроек;
-`rflp_cli.py` — командная строка; `rflp_core.py` — чтение,
-нормализация и расчёт; `reporting.py` — безопасный CSV/XLSX экспорт;
-`result_model.py` — русские названия столбцов и статусов;
-`resources_rc.py` — ресурсы Qt; `genoms/` и `names/` — исходные данные.
-`assay_scoring.py` — модель полос и максиминное ранжирование;
-`benchmark_design.py` — сравнение режимов с контрольными суммами данных;
-`visualization.py` — окно схемы ампликона с экспортом;
-`tools/regression.py` — сравнение результатов двух версий программы;
-`tools/gui_screenshots.py` — снимки окна в обеих темах и трёх размерах;
-`examples/` — явно синтетический пример для проверки работоспособности.
+## Testing
 
-## Проверка
-
-Запуск тестов:
+Run the tests:
 
 ```powershell
 python -m unittest discover -s tests -v
 python -m py_compile qtprimer3_vis.py rflp_core.py reporting.py result_model.py
 ```
 
-Снимки окна для ручной проверки (1920×1040, 1536×816 и 1280×680, светлая
-и тёмная темы):
+Window screenshots for a manual check (1920×1040, 1536×816 and 1280×680, light
+and dark themes; `--lang ru` for the Russian interface):
 
 ```powershell
-python tools\gui_screenshots.py --fasta genome.fa --variants variants.tsv --out shots
+python tools\gui_screenshots.py --lang en --fasta genome.fa --variants variants.tsv --out shots
 ```
 
-Изменения, которые не должны менять результаты (рефакторинг, ускорение),
-сверяются с выпуском v1.1.0: каждая версия запускается в отдельном процессе,
-а заголовок, строки и отчёт сравниваются. `same` — побайтное совпадение,
-`extended` — добавлены только новые столбцы и поля отчёта, а все значения
-v1.1.0 не изменились; любое другое отличие — ошибка.
+Changes that must not alter the results (refactoring, speed-ups) are compared
+with the v1.1.0 release: each version runs in its own process, and the header,
+the rows and the report are compared. `same` — byte-identical, `extended` — only
+new columns and report fields were added and every v1.1.0 value is unchanged;
+any other difference is an error.
 
 ```powershell
 git worktree add ..\rflp-v1.1.0 42ad9e5
