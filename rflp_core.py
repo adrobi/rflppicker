@@ -14,7 +14,7 @@ from Bio.Seq import Seq
 from Bio.Restriction import AllEnzymes
 from assay_scoring import GelModel, MODEL_VERSION, score_genotypes, rank_key
 
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.3.0"
 
 # Analysis defaults of the GUI. Options added after v1.1.0 are off here, so a
 # parameter set written for v1.1.0 reproduces its results.
