@@ -5,8 +5,9 @@ import unittest
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 from PyQt6.QtWidgets import QApplication
 
+import i18n
 import palette
-from tests.helpers import dispose, write_text
+from tests.helpers import cyrillic_texts, dispose, scene_texts, write_text
 from visualization import (GelPanel, PrimerGraphicPanel, RFLPVisualizationDialog, gel_lanes, overlay_primers,
                            payload_for_scheme, render_payload)
 
@@ -123,6 +124,30 @@ class VisualizationTests(unittest.TestCase):
         self.addCleanup(dispose, gel)
         render_payload(panel, gel, None, 'Не удалось открыть FASTA: x')
         self.assertEqual(gel.message(), 'Не удалось открыть FASTA: x')
+
+    def test_english_gel_map_and_messages(self):
+        i18n.set_language('en')
+        self.addCleanup(i18n.set_language, 'ru')
+        gel = GelPanel()
+        self.addCleanup(dispose, gel)
+        gel.render([100, 300], [400], 400, '1:1 A>G', 'AluI')
+        self.assertIn('No enzyme', scene_texts(gel.scene))
+        self.assertEqual(cyrillic_texts(gel), [])
+        dialog = RFLPVisualizationDialog()
+        self.addCleanup(dispose, dialog)
+        self.assertEqual(cyrillic_texts(dialog), [])
+        sequence = 'AAAAAAAAAA' + 'GAATTC' + 'A' * 84 + 'GAATTC' + 'C' * 194
+        dialog.show_payload(dict(SAMPLE_PAYLOAD, amplicon_seq=sequence, genome_end=len(sequence), snp_offset=12,
+                                 variant_str='1:13 A>G', enzyme_name='EcoRI', pattern='gain/loss',
+                                 gel=dict(min_visible=80, max_visible=800)))
+        self.assertEqual(cyrillic_texts(dialog), [])
+        dialog.show_payload(dict(SAMPLE_PAYLOAD, variant_str='1:11 C>T'))   # REF does not match: no ALT lane
+        self.assertEqual(cyrillic_texts(dialog), [])
+        payload, error = payload_for_scheme(dict(mapped_id='1', amplicon_start=1, amplicon_end=40),
+                                            r'C:\missing\genome.fa', {})
+        self.assertTrue(error.startswith('Could not open the FASTA'), error)
+        dialog.show_payload(None, error)
+        self.assertEqual(cyrillic_texts(dialog), [])
 
     def test_overlay_primers_moved(self):
         self.assertEqual(overlay_primers('AAAACCCCGGGG', 'AAtA', 'cCCC'), 'AATACCCCGGGG')

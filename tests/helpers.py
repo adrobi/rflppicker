@@ -1,5 +1,6 @@
 """Shared helpers for the test suite."""
 import os
+import re
 
 import rflp_core
 
@@ -31,6 +32,48 @@ def dispose(widget) -> None:
     widget.deleteLater()
     QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
     gc.collect()
+
+
+CYRILLIC = re.compile('[А-Яа-яЁё]')
+
+
+def scene_texts(scene) -> list:
+    """Texts and tooltips of the items of a QGraphicsScene."""
+    texts = []
+    for item in scene.items():
+        if hasattr(item, 'toPlainText'):
+            texts.append(item.toPlainText())
+        texts.append(item.toolTip())
+    return texts
+
+
+def cyrillic_texts(root) -> list:
+    """Texts under a widget that contain Cyrillic letters: titles, tooltips, placeholders, menus, tabs, scenes."""
+    from PyQt6.QtWidgets import (
+        QAbstractButton, QAbstractSpinBox, QComboBox, QGraphicsView, QLabel, QLineEdit, QTabWidget, QTextEdit,
+        QToolButton, QWidget,
+    )
+
+    texts = [root.windowTitle(), root.toolTip()]
+    for widget in [root] + root.findChildren(QWidget):
+        texts.append(widget.toolTip())
+        if isinstance(widget, (QLabel, QAbstractButton)):
+            texts.append(widget.text())
+        if isinstance(widget, QAbstractSpinBox):
+            texts.append(widget.specialValueText())
+        if isinstance(widget, QComboBox):
+            texts += [widget.itemText(i) for i in range(widget.count())]
+        if isinstance(widget, (QLineEdit, QTextEdit)):
+            texts.append(widget.placeholderText())
+        if isinstance(widget, QTextEdit):
+            texts.append(widget.toPlainText())
+        if isinstance(widget, QToolButton) and widget.menu():
+            texts += [action.text() for action in widget.menu().actions()]
+        if isinstance(widget, QTabWidget):
+            texts += [widget.tabText(i) for i in range(widget.count())]
+        if isinstance(widget, QGraphicsView) and widget.scene() is not None:
+            texts += scene_texts(widget.scene())
+    return [text for text in texts if CYRILLIC.search(text or '')]
 
 
 def write_text(directory: str, name: str, text: str) -> str:

@@ -1,19 +1,17 @@
 import os
-import re
 import tempfile
 import unittest
 from unittest.mock import patch
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 from PyQt6.QtCore import QSettings
-from PyQt6.QtWidgets import (QAbstractSpinBox, QApplication, QCheckBox, QComboBox, QLabel, QPushButton,
-                             QToolButton, QWidget)
+from PyQt6.QtWidgets import QApplication, QComboBox, QLabel, QPushButton
 
 import i18n
 import rflp_core
 from app_settings import AppSettings
 from launch_panel import ADVANCED_PARAMS, KEY_PARAMS, AdvancedDialog, LaunchPanel, SupplierPicker, field_errors
-from tests.helpers import dispose, write_text
+from tests.helpers import cyrillic_texts, dispose, write_text
 
 
 class LaunchPanelTests(unittest.TestCase):
@@ -177,24 +175,6 @@ class LaunchPanelTests(unittest.TestCase):
         dialog = AdvancedDialog(panel.collect_params(), panel)
         self.addCleanup(dispose, dialog)
         self.assertEqual(cyrillic_texts(panel) + cyrillic_texts(dialog), [])
-
-
-def cyrillic_texts(root: QWidget) -> list:
-    """Visible texts, tooltips, placeholders and menu items under root that contain Cyrillic letters."""
-    texts = [root.windowTitle(), root.toolTip()]
-    for widget in root.findChildren(QWidget):
-        texts.append(widget.toolTip())
-        if isinstance(widget, (QLabel, QPushButton, QCheckBox, QToolButton)):
-            texts.append(widget.text())
-        if isinstance(widget, QAbstractSpinBox):
-            texts.append(widget.specialValueText())
-        if isinstance(widget, QComboBox):
-            texts += [widget.itemText(i) for i in range(widget.count())]
-        if hasattr(widget, 'placeholderText'):
-            texts.append(widget.placeholderText())
-        if isinstance(widget, QToolButton) and widget.menu():
-            texts += [action.text() for action in widget.menu().actions()]
-    return [text for text in texts if re.search('[А-Яа-яЁё]', text or '')]
 
 
 if __name__ == '__main__':

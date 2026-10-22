@@ -5,10 +5,11 @@ import unittest
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 from PyQt6.QtWidgets import QApplication, QLabel, QListWidget, QPushButton, QTabWidget
 
+import i18n
 import snp_summary
 from details_panel import DetailsPanel
 from snp_summary import InputRecord, order_lines
-from tests.helpers import HEADER, core_row, dispose, write_text
+from tests.helpers import HEADER, core_row, cyrillic_texts, dispose, write_text
 
 SEQUENCE = 'AAAAAAAAAA' + 'GAATTC' + 'A' * 84 + 'GAATTC' + 'C' * 194
 HOX = dict(variant='1:13 A>G', mapped_id='1', enzyme='EcoRI', site='GAATTC', isoschizomers='FunII; RI',
@@ -40,6 +41,35 @@ class DetailsPanelTests(unittest.TestCase):
     def tearDown(self):
         self.panel.close_fasta()
         dispose(self.panel)
+
+    def test_english_details(self):
+        i18n.set_language('en')
+        self.addCleanup(i18n.set_language, 'ru')
+        panel = DetailsPanel()
+        self.addCleanup(dispose, panel)
+        self.addCleanup(panel.close_fasta)
+        self.assertEqual(panel.findChild(QLabel, 'message_label').text(), 'Choose an SNP in the list')
+        with tempfile.TemporaryDirectory() as directory:
+            fasta = write_text(directory, 'g.fa', '>1\n' + SEQUENCE + '\n')
+            panel.set_context(fasta, {})
+            panel.show_summary(self.hoxb13, 'fallback')
+            self.assertEqual(panel.findChild(QLabel, 'subtitle_label').text(), '1 · line 2 of the file')
+            self.assertEqual(panel.findChild(QLabel, 'status_badge').text(), 'Robust')
+            rows = panel.scheme_texts()
+            self.assertIn('+2 isoschizomers', rows[0])
+            self.assertIn('best', rows[0])
+            tabs = panel.findChild(QTabWidget, 'tabs')
+            self.assertEqual([tabs.tabText(i) for i in range(tabs.count())], ['Gel', 'Map', 'Primers'])
+            self.assertEqual(panel.findChild(QPushButton, 'copy_order_button').text(), 'Copy for ordering')
+            panel.view_scheme(1)
+            self.assertEqual(cyrillic_texts(panel), [])
+            panel.open_large()
+            self.assertEqual(cyrillic_texts(panel.large_dialog()), [])
+            panel.large_dialog().close()
+            panel.close_fasta()
+        for summary in (self.olfml3, self.bad):
+            panel.show_summary(summary, 'fallback')
+            self.assertEqual(cyrillic_texts(panel), [])
 
     def test_empty_state(self):
         self.panel.show_summary(None, 'fallback')

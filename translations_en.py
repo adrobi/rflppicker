@@ -362,6 +362,147 @@ and the Rejected sheet (rejected variants). The log goes to stderr.''',
     'по столбцу «{column}»': 'by column «{column}»',
     'Показано {shown} из {total} · порядок: {order}': 'Shown {shown} of {total} · order: {order}',
     'Нет SNP с такими условиями': 'No SNPs match these conditions',
+    # details_panel: the details column and the primer card.
+    'Выберите SNP в списке': 'Choose an SNP in the list',
+    '+{count} изошизомер': '+{count} isoschizomer',
+    '+{count} изошизомеров': '+{count} isoschizomers',
+    'Карта': 'Map',
+    '⤢ Крупно': '⤢ Enlarge',
+    'Карта с последовательностями и гель в отдельном окне, с сохранением PNG и SVG':
+        'The map with sequences and the gel in a separate window, with PNG and SVG export',
+    'Копировать для заказа': 'Copy for ordering',
+    'Две строки «имя ⇥ последовательность» для бланка заказа синтеза':
+        'Two lines «name ⇥ sequence» for an oligo synthesis order form',
+    'Копировать всё': 'Copy all',
+    'Текстовая сводка схемы для лабораторного журнала': 'A text summary of the assay for the lab notebook',
+    'строка {line} файла': 'line {line} of the file',
+    'Схемы ({count}) · ★ идёт в Excel': 'Assays ({count}) · ★ goes to Excel',
+    'Выбрана для Excel': 'Chosen for Excel',
+    'Сделать выбранной': 'Make it the chosen one',
+    'лучшая': 'best',
+    '{ref_ref} | {alt_alt} · продукт {size}': '{ref_ref} | {alt_alt} · product {size}',
+    'Изошизомеры: {names}': 'Isoschizomers: {names}',
+    '{length} нт · Tm {tm} °C': '{length} nt · Tm {tm} °C',
+    'Продукт {size} п.н. · {enzyme} ({site})': 'Product {size} bp · {enzyme} ({site})',
+    'Поставщики: {suppliers}': 'Suppliers: {suppliers}',
+    'Строчные буквы — намеренные несовпадения.': 'Lower-case letters are intended mismatches.',
+    'Эта схема не выбрана: в Excel идёт ★ {enzyme}. Отметьте её звёздочкой, чтобы копировать.':
+        'This assay is not chosen: ★ {enzyme} goes to Excel. Star it to copy.',
+    # visualization: the amplicon map and the virtual gel.
+    'Карта ампликона': 'Amplicon map',
+    'Уменьшить схему': 'Zoom out',
+    'Увеличить схему; Ctrl + колесо мыши': 'Zoom in; Ctrl + mouse wheel',
+    'Вписать': 'Fit',
+    'Сбросить масштаб и показать всю схему': 'Reset the zoom and show the whole map',
+    'Сохранить PNG': 'Save PNG',
+    'Вся схема в высоком разрешении': 'The whole map at high resolution',
+    'Сохранить SVG': 'Save SVG',
+    'Векторная схема для печати и редактирования': 'A vector map for printing and editing',
+    'Последовательности 5′ → 3′': 'Sequences 5′ → 3′',
+    'Копировать REF': 'Copy REF',
+    'Полная последовательность REF без разметки': 'The full REF sequence without marks',
+    'Копировать ALT': 'Copy ALT',
+    'Полная последовательность ALT без разметки': 'The full ALT sequence without marks',
+    'Копировать праймеры': 'Copy primers',
+    'Оба праймера в направлении 5′ → 3′': 'Both primers in the 5′ → 3′ direction',
+    'Ctrl + колесо — масштаб; перетаскивание — перемещение схемы.': 'Ctrl + wheel: zoom; drag: move the map.',
+    'Выберите результат в таблице, чтобы увидеть ампликон и сравнить REF с ALT.':
+        'Choose a result to see the amplicon and compare REF with ALT.',
+    'Карта появится после выбора результата': 'The map appears when a result is chosen',
+    'ALT недоступна: позиция SNP отсутствует или находится за пределами ампликона.':
+        'ALT is not available: the SNP position is missing or outside the amplicon.',
+    'ALT недоступна: для двух дорожек требуется одиночная замена A/C/G/T.':
+        'ALT is not available: two lanes need a single A/C/G/T substitution.',
+    'ALT недоступна: REF {ref} не совпадает с основанием {base} в FASTA.':
+        'ALT is not available: REF {ref} does not match the base {base} in the FASTA.',
+    'Не удалось получить последовательность ампликона.': 'Could not get the amplicon sequence.',
+    'Левый праймер не найден в ампликоне.': 'The left primer is not found in the amplicon.',
+    'Сайт посадки правого праймера не найден в ампликоне.':
+        'The binding site of the right primer is not found in the amplicon.',
+    'Фермент не найден в базе Biopython; разрезы не показаны.':
+        'The enzyme is not in the Biopython database; cuts are not shown.',
+    'Длина последовательности не совпадает с геномными координатами.':
+        'The sequence length does not match the genome coordinates.',
+    'Сравните разрезы и длины фрагментов; наведите курсор на метку для точных координат.':
+        'Compare the cuts and fragment sizes; hover over a mark for exact coordinates.',
+    'Фермент не выбран': 'No enzyme chosen',
+    '{chrom}:{start}–{end}  ·  {length} п.н.  ·  геномные координаты 1-based':
+        '{chrom}:{start}–{end}  ·  {length} bp  ·  1-based genome coordinates',
+    'Появление / исчезновение сайта': 'Site gain / loss',
+    'Изменение фрагментов': 'Fragment change',
+    '{label}  5′ → 3′  ·  {length} п.н.': '{label}  5′ → 3′  ·  {length} bp',
+    '{label}: не подобран': '{label}: not designed',
+    '{label}: {primer}\nПосадка: {start}–{end} в ампликоне (1-based)':
+        '{label}: {primer}\nBinds at {start}–{end} in the amplicon (1-based)',
+    'Левый праймер →': 'Left primer →',
+    '← Правый праймер': '← Right primer',
+    'Дорожка недоступна — см. сообщение над схемой': 'The lane is not available; see the message above the map',
+    '{label}: после {position} п.н. от начала ампликона': '{label}: after {position} bp from the amplicon start',
+    'Граница ампликона: {position} п.н.': 'Amplicon end: {position} bp',
+    'Фрагменты: {detail} п.н.': 'Fragments: {detail} bp',
+    'Разрезы не рассчитаны: фермент не выбран или неизвестен.':
+        'Cuts not calculated: no enzyme chosen or the enzyme is unknown.',
+    'Фрагментов: {count}; полные длины — в последовательностях и подсказке.':
+        'Fragments: {count}; the full sizes are in the sequences and the tooltip.',
+    'SNP: основание {base} в ампликоне; геномная позиция {position}':
+        'SNP: base {base} of the amplicon; genome position {position}',
+    'Шкала и метки разрезов: п.н. от начала ампликона · длины фрагментов указаны под дорожками':
+        'Scale and cut marks: bp from the amplicon start · fragment sizes are under the lanes',
+    'SNP  {ref} → {alt}  ·  основание {base}': 'SNP  {ref} → {alt}  ·  base {base}',
+    'Основания {start}–{stop} ампликона (1-based)': 'Bases {start}–{stop} of the amplicon (1-based)',
+    'REF: референсная последовательность · ALT: последовательность после замены':
+        'REF: the reference sequence · ALT: the sequence after the substitution',
+    'Показаны основания {begin}–{end} из {length}. Кнопки копируют полную последовательность.':
+        'Bases {begin}–{end} of {length} are shown. The buttons copy the full sequence.',
+    'Левый  5′→3′: {left}\nПравый 5′→3′: {right}': 'Left   5′→3′: {left}\nRight  5′→3′: {right}',
+    '{label}, фрагменты: {fragments} п.н.': '{label}, fragments: {fragments} bp',
+    'Ампликон {start}–{stop} · геном {genome_start}–{genome_stop}':
+        'Amplicon {start}–{stop} · genome {genome_start}–{genome_stop}',
+    '{allele}: скопировано {length} п.н.': '{allele}: {length} bp copied',
+    'Праймеры скопированы в формате FASTA (5′ → 3′).': 'Primers copied in FASTA format (5′ → 3′).',
+    'Сначала выберите результат для визуализации.': 'Choose a result to draw first.',
+    'Ампликон, праймеры 5′→3′, SNP и разрезы рестриктазы. Координаты генома 1-based; '
+    'разрезы — п.н. от начала ампликона.':
+        'Amplicon, primers 5′→3′, the SNP and restriction cuts. Genome coordinates are 1-based; '
+        'cuts are bp from the amplicon start.',
+    'Сохранить карту ампликона': 'Save the amplicon map',
+    'Экспорт схемы': 'Map export',
+    'Без фермента': 'No enzyme',
+    'Масштаб экспорта должен быть от 0.5 до 8.': 'The export scale must be between 0.5 and 8.',
+    'Не удалось сохранить PNG: {path}': 'Could not save the PNG: {path}',
+    'Не удалось сохранить SVG: {error}': 'Could not save the SVG: {error}',
+    'Не удалось начать экспорт SVG: {path}': 'Could not start the SVG export: {path}',
+    'Показать весь гель': 'Show the whole gel',
+    'Гель в высоком разрешении': 'The gel at high resolution',
+    'Векторный рисунок геля': 'A vector picture of the gel',
+    'Выберите результат в таблице, чтобы увидеть ожидаемые полосы.': 'Choose a result to see the expected bands.',
+    'Длина продукта неизвестна.': 'The product size is unknown.',
+    'Виртуальный гель': 'Virtual gel',
+    'Продукт {product} п.н. · видимые фрагменты {low}–{high} п.н. · полная рестрикция':
+        'Product {product} bp · visible fragments {low}–{high} bp · complete digestion',
+    'Маркер: {length} п.н.': 'Marker: {length} bp',
+    '{label}: {length} п.н., доля ДНК {share}': '{label}: {length} bp, DNA share {share}',
+    ' — вне видимого диапазона': ', outside the visible range',
+    '{fragments} п.н.': '{fragments} bp',
+    'Схема по модели программы: яркость пропорциональна массе фрагмента, у гетерозиготы — '
+    'по половине каждого аллеля; в скобках и бледно — фрагменты вне видимого диапазона.':
+        'Drawn from the program model: brightness follows fragment mass, a heterozygote has half of each '
+        'allele; fragments outside the visible range are faint and in brackets.',
+    'Виртуальный гель RFLP': 'RFLP virtual gel',
+    'Ожидаемые полосы REF/REF, REF/ALT и ALT/ALT по модели RFLP Picker.':
+        'Expected REF/REF, REF/ALT and ALT/ALT bands by the RFLP Picker model.',
+    'Сохранить гель': 'Save the gel',
+    'Экспорт геля': 'Gel export',
+    'Карта ампликона · RFLP REF / ALT': 'Amplicon map · RFLP REF / ALT',
+    'Закрыть': 'Close',
+    'Гель недоступен: нет последовательности ALT (см. карту ампликона).':
+        'The gel is not available: there is no ALT sequence (see the amplicon map).',
+    'Не задан FASTA для визуализации. Запустите анализ заново.': 'No FASTA set for drawing. Run the analysis again.',
+    'В выбранной строке нет координат ампликона.': 'The chosen row has no amplicon coordinates.',
+    'Некорректные координаты ампликона: {region}': 'Invalid amplicon coordinates: {region}',
+    'Не удалось открыть FASTA: {path}\n{error}': 'Could not open the FASTA: {path}\n{error}',
+    'Не удалось получить последовательность из FASTA: {region}\n{error}':
+        'Could not read the sequence from the FASTA: {region}\n{error}',
 }
 
 CORE = [

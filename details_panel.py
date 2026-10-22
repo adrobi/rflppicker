@@ -10,14 +10,17 @@ from PyQt6.QtWidgets import (
 
 import icons
 import palette
-from snp_summary import STATUS_TITLES, SnpSummary, order_lines, summary_text, weakest_text
+from i18n import N_, fmt, language, t
+from snp_summary import SnpSummary, order_lines, status_title, summary_text, weakest_text
 from theme import mono_font
 from visualization import GelPanel, PrimerGraphicPanel, RFLPVisualizationDialog, payload_for_scheme, render_payload
 
-EMPTY_TEXT = 'Выберите SNP в списке'
+EMPTY_TEXT = N_('Выберите SNP в списке')
 
 
 def _isoschizomer_text(count: int) -> str:
+    if language() == 'en':
+        return t('+{count} изошизомер', count=count) if count == 1 else t('+{count} изошизомеров', count=count)
     if count % 10 == 1 and count % 100 != 11:
         word = 'изошизомер'
     elif 2 <= count % 10 <= 4 and not 12 <= count % 100 <= 14:
@@ -28,7 +31,7 @@ def _isoschizomer_text(count: int) -> str:
 
 
 def _score(value) -> str:
-    return f'{value:.1f}'.replace('.', ',') if isinstance(value, (int, float)) else ''
+    return fmt(float(value)) if isinstance(value, (int, float)) else ''
 
 
 class DetailsPanel(QWidget):
@@ -84,15 +87,15 @@ class DetailsPanel(QWidget):
         self.weakest_label = self._label('weakest_label', 'muted')
         self.weakest_label.setWordWrap(True)
         gel_layout.addWidget(self.weakest_label)
-        self.tabs.addTab(gel_tab, 'Гель')
+        self.tabs.addTab(gel_tab, t('Гель'))
         self.map = PrimerGraphicPanel(compact=True)
-        self.tabs.addTab(self.map, 'Карта')
-        self.tabs.addTab(self._build_primer_card(), 'Праймеры')
+        self.tabs.addTab(self.map, t('Карта'))
+        self.tabs.addTab(self._build_primer_card(), t('Праймеры'))
         self.large_button = QToolButton()
         self.large_button.setObjectName('large_button')
-        self.large_button.setText('⤢ Крупно')
+        self.large_button.setText(t('⤢ Крупно'))
         self.large_button.setProperty('role', 'link')
-        self.large_button.setToolTip('Карта с последовательностями и гель в отдельном окне, с сохранением PNG и SVG')
+        self.large_button.setToolTip(t('Карта с последовательностями и гель в отдельном окне, с сохранением PNG и SVG'))
         self.large_button.clicked.connect(self.open_large)
         self.tabs.setCornerWidget(self.large_button)
         layout.addWidget(self.tabs, 1)
@@ -135,13 +138,13 @@ class DetailsPanel(QWidget):
         self.card_details.setWordWrap(True)
         layout.addWidget(self.card_details)
         buttons = QHBoxLayout()
-        self.copy_order_button = QPushButton('Копировать для заказа')
+        self.copy_order_button = QPushButton(t('Копировать для заказа'))
         self.copy_order_button.setObjectName('copy_order_button')
-        self.copy_order_button.setToolTip('Две строки «имя ⇥ последовательность» для бланка заказа синтеза')
+        self.copy_order_button.setToolTip(t('Две строки «имя ⇥ последовательность» для бланка заказа синтеза'))
         self.copy_order_button.clicked.connect(self._copy_order)
-        self.copy_all_button = QPushButton('Копировать всё')
+        self.copy_all_button = QPushButton(t('Копировать всё'))
         self.copy_all_button.setObjectName('copy_all_button')
-        self.copy_all_button.setToolTip('Текстовая сводка схемы для лабораторного журнала')
+        self.copy_all_button.setToolTip(t('Текстовая сводка схемы для лабораторного журнала'))
         self.copy_all_button.clicked.connect(self._copy_all)
         buttons.addWidget(self.copy_order_button)
         buttons.addWidget(self.copy_all_button)
@@ -188,15 +191,15 @@ class DetailsPanel(QWidget):
             self.title_label.setText('')
             self.subtitle_label.setText('')
             self.status_badge.hide()
-            self.message_label.setText(EMPTY_TEXT)
+            self.message_label.setText(t(EMPTY_TEXT))
             self.message_label.show()
-            self._show_payload(None, EMPTY_TEXT)
+            self._show_payload(None, t(EMPTY_TEXT))
             return
         r = summary.record
         self.title_label.setText(f'{r.snp_id} · {summary.label}' if r.snp_id else summary.label)
         source = summary.scheme or summary.failure or {}
         mapped = source.get('mapped_id')
-        parts = [mapped, f'строка {r.line} файла', summary.swap_text()]
+        parts = [mapped, t('строка {line} файла', line=r.line), summary.swap_text()]
         self.subtitle_label.setText(' · '.join(part for part in parts if part))
         self._update_badge()
         if not has_schemes:
@@ -214,14 +217,14 @@ class DetailsPanel(QWidget):
     def _update_badge(self):
         status = self._summary.status
         c = self._colors
-        self.status_badge.setText(STATUS_TITLES[status])
+        self.status_badge.setText(status_title(status))
         self.status_badge.setStyleSheet(f"color: {c[f'{status}_fg']}; background: {c[f'{status}_bg']}; "
                                         f"border-radius: 4px; padding: 2px 8px;")
         self.status_badge.show()
 
     def _fill_schemes(self):
         s = self._summary
-        self.schemes_caption.setText(f'Схемы ({len(s.schemes)}) · ★ идёт в Excel')
+        self.schemes_caption.setText(t('Схемы ({count}) · ★ идёт в Excel', count=len(s.schemes)))
         self.schemes_list.blockSignals(True)
         self.schemes_list.clear()
         self._row_texts: List[str] = []
@@ -234,7 +237,7 @@ class DetailsPanel(QWidget):
             star.setAutoRaise(True)
             chosen = index == s.chosen
             star.setIcon(icons.icon('star', c['accent'] if chosen else c['text2'], filled=chosen))
-            star.setToolTip('Выбрана для Excel' if chosen else 'Сделать выбранной')
+            star.setToolTip(t('Выбрана для Excel') if chosen else t('Сделать выбранной'))
             star.clicked.connect(lambda _=False, i=index: self.choose_scheme(i))
             layout.addWidget(star)
             parts = [scheme.get('enzyme') or '']
@@ -244,13 +247,13 @@ class DetailsPanel(QWidget):
             if scheme.get('design') == 'dCAPS':
                 parts.append('dCAPS')
             if index == 0:
-                parts.append('лучшая')
+                parts.append(t('лучшая'))
             first = ' · '.join(parts)
-            second = (f"{scheme.get('bands_ref_ref') or ''} | {scheme.get('bands_alt_alt') or ''} · "
-                      f"продукт {scheme.get('product_size')}")
+            second = t('{ref_ref} | {alt_alt} · продукт {size}', ref_ref=scheme.get('bands_ref_ref') or '',
+                       alt_alt=scheme.get('bands_alt_alt') or '', size=scheme.get('product_size'))
             text = QLabel(f'{first}\n{second}')
             if others:
-                text.setToolTip('Изошизомеры: ' + ', '.join(others))
+                text.setToolTip(t('Изошизомеры: {names}', names=', '.join(others)))
             layout.addWidget(text, 1)
             note = dataclasses.replace(s, chosen=index).note(self._dcaps_mode)
             warning = scheme.get('genotype_quality') == 'nominal_only' or any(
@@ -312,16 +315,18 @@ class DetailsPanel(QWidget):
             name.setText(f'{viewed.primer_base}_{side}' if text else '')
             sequence.setText(text or '—')
             tm_value = scheme.get(tm)
-            info.setText(f'{len(text)} нт · Tm {tm_value:.1f} °C' if text and tm_value is not None else '')
-        details = [f"Продукт {scheme.get('product_size')} п.н. · {scheme.get('enzyme')} ({scheme.get('site')})"]
+            info.setText(t('{length} нт · Tm {tm} °C', length=len(text), tm=f'{tm_value:.1f}')
+                         if text and tm_value is not None else '')
+        details = [t('Продукт {size} п.н. · {enzyme} ({site})', size=scheme.get('product_size'),
+                     enzyme=scheme.get('enzyme'), site=scheme.get('site'))]
         if scheme.get('suppliers'):
-            details.append(f"Поставщики: {scheme['suppliers']}")
+            details.append(t('Поставщики: {suppliers}', suppliers=scheme['suppliers']))
         if scheme.get('design') == 'dCAPS':
-            details.append('Строчные буквы — намеренные несовпадения.')
+            details.append(t('Строчные буквы — намеренные несовпадения.'))
         chosen = self._viewed == self._summary.chosen
         if not chosen:
-            details.append(f"Эта схема не выбрана: в Excel идёт ★ {self._summary.scheme.get('enzyme')}. "
-                           f"Отметьте её звёздочкой, чтобы копировать.")
+            details.append(t('Эта схема не выбрана: в Excel идёт ★ {enzyme}. Отметьте её звёздочкой, чтобы копировать.',
+                             enzyme=self._summary.scheme.get('enzyme')))
         self.card_details.setText('\n'.join(details))
         # Copy only the ★ scheme: its primer names are the ones Excel uses.
         self.copy_order_button.setEnabled(chosen and bool(scheme.get('primers_left')))

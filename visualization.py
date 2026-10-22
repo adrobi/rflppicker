@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (
 )
 
 import palette
+from i18n import N_, t
 from rflp_core import cut_positions, revcomp
 from theme import mono_font
 
@@ -99,7 +100,7 @@ class PrimerGraphicPanel(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 12, 16, 12)
         layout.setSpacing(10)
-        self.title = QLabel("Карта ампликона")
+        self.title = QLabel(t("Карта ампликона"))
         font = self.title.font()
         font.setPointSize(17)
         font.setBold(True)
@@ -112,17 +113,19 @@ class PrimerGraphicPanel(QWidget):
         self.scene = QGraphicsScene(self)
         self.view = DiagramView(self.scene, self)
         toolbar = QHBoxLayout()
-        self.zoom_out_btn = self._button("−", "Уменьшить схему", lambda: self.view.zoom_by(1 / 1.25))
-        self.zoom_in_btn = self._button("+", "Увеличить схему; Ctrl + колесо мыши", lambda: self.view.zoom_by(1.25))
-        self.fit_btn = self._button("Вписать", "Сбросить масштаб и показать всю схему", self.view.fit_diagram)
+        self.zoom_out_btn = self._button("−", t("Уменьшить схему"), lambda: self.view.zoom_by(1 / 1.25))
+        self.zoom_in_btn = self._button("+", t("Увеличить схему; Ctrl + колесо мыши"), lambda: self.view.zoom_by(1.25))
+        self.fit_btn = self._button(t("Вписать"), t("Сбросить масштаб и показать всю схему"), self.view.fit_diagram)
         self.zoom_label = QLabel("100%")
         self.zoom_label.setMinimumWidth(48)
         self.view.zoom_changed.connect(lambda value: self.zoom_label.setText(f"{value:.0%}"))
         for widget in (self.zoom_out_btn, self.zoom_label, self.zoom_in_btn, self.fit_btn):
             toolbar.addWidget(widget)
         toolbar.addStretch()
-        self.export_png_btn = self._button("Сохранить PNG", "Вся схема в высоком разрешении", lambda: self._export_dialog("png"))
-        self.export_svg_btn = self._button("Сохранить SVG", "Векторная схема для печати и редактирования", lambda: self._export_dialog("svg"))
+        self.export_png_btn = self._button(t("Сохранить PNG"), t("Вся схема в высоком разрешении"),
+                                           lambda: self._export_dialog("png"))
+        self.export_svg_btn = self._button(t("Сохранить SVG"), t("Векторная схема для печати и редактирования"),
+                                           lambda: self._export_dialog("svg"))
         toolbar.addWidget(self.export_png_btn)
         toolbar.addWidget(self.export_svg_btn)
         layout.addLayout(toolbar)
@@ -130,11 +133,14 @@ class PrimerGraphicPanel(QWidget):
         sequence_layout = QVBoxLayout(sequence_panel)
         sequence_layout.setContentsMargins(0, 4, 0, 0)
         copy_row = QHBoxLayout()
-        copy_row.addWidget(QLabel("Последовательности 5′ → 3′"))
+        copy_row.addWidget(QLabel(t("Последовательности 5′ → 3′")))
         copy_row.addStretch()
-        self.copy_ref_btn = self._button("Копировать REF", "Полная последовательность REF без разметки", lambda: self.copy_sequence("REF"))
-        self.copy_alt_btn = self._button("Копировать ALT", "Полная последовательность ALT без разметки", lambda: self.copy_sequence("ALT"))
-        self.copy_primers_btn = self._button("Копировать праймеры", "Оба праймера в направлении 5′ → 3′", self.copy_primers)
+        self.copy_ref_btn = self._button(t("Копировать REF"), t("Полная последовательность REF без разметки"),
+                                         lambda: self.copy_sequence("REF"))
+        self.copy_alt_btn = self._button(t("Копировать ALT"), t("Полная последовательность ALT без разметки"),
+                                         lambda: self.copy_sequence("ALT"))
+        self.copy_primers_btn = self._button(t("Копировать праймеры"), t("Оба праймера в направлении 5′ → 3′"),
+                                             self.copy_primers)
         for widget in (self.copy_ref_btn, self.copy_alt_btn, self.copy_primers_btn):
             copy_row.addWidget(widget)
         sequence_layout.addLayout(copy_row)
@@ -143,7 +149,7 @@ class PrimerGraphicPanel(QWidget):
         self.seq_view.setFont(mono_font(10))
         self.seq_view.setMinimumHeight(125)
         sequence_layout.addWidget(self.seq_view)
-        self.status_label = QLabel("Ctrl + колесо — масштаб; перетаскивание — перемещение схемы.")
+        self.status_label = QLabel(t("Ctrl + колесо — масштаб; перетаскивание — перемещение схемы."))
         sequence_layout.addWidget(self.status_label)
         splitter = QSplitter(Qt.Orientation.Vertical)
         splitter.setChildrenCollapsible(False)
@@ -211,7 +217,7 @@ class PrimerGraphicPanel(QWidget):
         self.copy_primers_btn.setEnabled(available and any(self._primers))
 
     def show_empty(self):
-        self.show_message("Выберите результат в таблице, чтобы увидеть ампликон и сравнить REF с ALT.")
+        self.show_message(t("Выберите результат в таблице, чтобы увидеть ампликон и сравнить REF с ALT."))
 
     def show_message(self, msg: str):
         self._last_payload = None
@@ -223,9 +229,9 @@ class PrimerGraphicPanel(QWidget):
         self.meta.setText(msg)
         self.scene.clear()
         self.scene.setSceneRect(0, 0, 1200, 590)
-        self._draw_text(50, 220, "Карта появится после выбора результата", 17, True)
+        self._draw_text(50, 220, t("Карта появится после выбора результата"), 17, True)
         self.seq_view.setPlainText(msg)
-        self.status_label.setText("Ctrl + колесо — масштаб; перетаскивание — перемещение схемы.")
+        self.status_label.setText(t("Ctrl + колесо — масштаб; перетаскивание — перемещение схемы."))
         self._set_enabled(False)
         self.view.fit_diagram()
 
@@ -286,18 +292,19 @@ class PrimerGraphicPanel(QWidget):
     @staticmethod
     def _make_alt_seq(seq_ref, snp_offset, ref, alt):
         if snp_offset is None or not 0 <= snp_offset < len(seq_ref):
-            return None, "ALT недоступна: позиция SNP отсутствует или находится за пределами ампликона."
+            return None, t("ALT недоступна: позиция SNP отсутствует или находится за пределами ампликона.")
         if len(ref) != 1 or len(alt) != 1 or ref not in "ACGT" or alt not in "ACGT":
-            return None, "ALT недоступна: для двух дорожек требуется одиночная замена A/C/G/T."
+            return None, t("ALT недоступна: для двух дорожек требуется одиночная замена A/C/G/T.")
         if seq_ref[snp_offset] != ref:
-            return None, f"ALT недоступна: REF {ref} не совпадает с основанием {seq_ref[snp_offset]} в FASTA."
+            return None, t("ALT недоступна: REF {ref} не совпадает с основанием {base} в FASTA.",
+                           ref=ref, base=seq_ref[snp_offset])
         return seq_ref[:snp_offset] + alt + seq_ref[snp_offset + 1:], ""
 
     def _render_impl(self, **payload):
         self._apply_theme()
         sequence = re.sub(r"\s+", "", payload["amplicon_seq"] or "").upper()
         if not sequence:
-            self.show_message("Не удалось получить последовательность ампликона.")
+            self.show_message(t("Не удалось получить последовательность ампликона."))
             return
         colors = self._colors()
         length = len(sequence)
@@ -314,15 +321,16 @@ class PrimerGraphicPanel(QWidget):
         self._cuts_alt = cut_positions(enzyme, alt_sequence) if enzyme and alt_sequence is not None else ([0, length] if alt_sequence else [])
         self._warnings = [alt_error] if alt_error else []
         if left and left_pos < 0:
-            self._warnings.append("Левый праймер не найден в ампликоне.")
+            self._warnings.append(t("Левый праймер не найден в ампликоне."))
         if right and right_pos < 0:
-            self._warnings.append("Сайт посадки правого праймера не найден в ампликоне.")
+            self._warnings.append(t("Сайт посадки правого праймера не найден в ампликоне."))
         if payload["enzyme_name"] and enzyme is None:
-            self._warnings.append("Фермент не найден в базе Biopython; разрезы не показаны.")
+            self._warnings.append(t("Фермент не найден в базе Biopython; разрезы не показаны."))
         if payload["genome_end"] - payload["genome_start"] + 1 != length:
-            self._warnings.append("Длина последовательности не совпадает с геномными координатами.")
-        self.meta.setText("\n".join(self._warnings) if self._warnings else "Сравните разрезы и длины фрагментов; наведите курсор на метку для точных координат.")
-        self.status_label.setText("Ctrl + колесо — масштаб; перетаскивание — перемещение схемы.")
+            self._warnings.append(t("Длина последовательности не совпадает с геномными координатами."))
+        self.meta.setText("\n".join(self._warnings) if self._warnings else
+                          t("Сравните разрезы и длины фрагментов; наведите курсор на метку для точных координат."))
+        self.status_label.setText(t("Ctrl + колесо — масштаб; перетаскивание — перемещение схемы."))
         self.scene.clear()
         self.scene.setSceneRect(0, 0, 1200, 590)
         c = colors
@@ -332,10 +340,13 @@ class PrimerGraphicPanel(QWidget):
             return x0 + float(boundary) / length * (x1 - x0)
 
         no_pen = QtGui.QPen(Qt.PenStyle.NoPen)
-        self._draw_text(30, 15, payload["variant_str"] or "Карта ампликона", 17, True, width=790)
-        self._draw_text(865, 19, payload["enzyme_name"] or "Фермент не выбран", 13, True, width=305)
-        self._draw_text(30, 52, f"{payload['mapped_id']}:{payload['genome_start']}–{payload['genome_end']}  ·  {length} п.н.  ·  геномные координаты 1-based", 10, color=c["muted"], width=800)
-        pattern = {"gain/loss": "Появление / исчезновение сайта", "shift": "Изменение фрагментов"}.get(payload["pattern"], payload["pattern"])
+        self._draw_text(30, 15, payload["variant_str"] or t("Карта ампликона"), 17, True, width=790)
+        self._draw_text(865, 19, payload["enzyme_name"] or t("Фермент не выбран"), 13, True, width=305)
+        self._draw_text(30, 52, t("{chrom}:{start}–{end}  ·  {length} п.н.  ·  геномные координаты 1-based",
+                                  chrom=payload['mapped_id'], start=payload['genome_start'], end=payload['genome_end'],
+                                  length=length), 10, color=c["muted"], width=800)
+        patterns = {"gain/loss": N_("Появление / исчезновение сайта"), "shift": N_("Изменение фрагментов")}
+        pattern = t(patterns[payload["pattern"]]) if payload["pattern"] in patterns else payload["pattern"]
         self._draw_text(865, 51, pattern, 9, color=c["muted"], width=305)
 
         def tm_text(value):
@@ -346,21 +357,24 @@ class PrimerGraphicPanel(QWidget):
                 return ""
 
         def primer_arrow(position, primer, y, direction, color, label, tm):
-            self._draw_text(100, y - 34, f"{label}  5′ → 3′  ·  {len(primer)} п.н.{tm_text(tm)}" if primer else f"{label}: не подобран", 10, True, color=color, width=1020)
+            text = (t("{label}  5′ → 3′  ·  {length} п.н.", label=label, length=len(primer)) + tm_text(tm)
+                    if primer else t("{label}: не подобран", label=label))
+            self._draw_text(100, y - 34, text, 10, True, color=color, width=1020)
             if not primer or position < 0:
                 return
             start, end = x_at(position), x_at(position + len(primer))
             pen = QtGui.QPen(QtGui.QColor(color), 5)
             pen.setCapStyle(Qt.PenCapStyle.RoundCap)
             line = self.scene.addLine(start, y, end, y, pen)
-            line.setToolTip(f"{label}: {primer}\nПосадка: {position + 1}–{position + len(primer)} в ампликоне (1-based)")
+            line.setToolTip(t("{label}: {primer}\nПосадка: {start}–{end} в ампликоне (1-based)", label=label,
+                              primer=primer, start=position + 1, end=position + len(primer)))
             tip = end if direction == 1 else start
             head_size = min(10, max(4, abs(end - start) / 2))
             polygon = QtGui.QPolygonF([QtCore.QPointF(tip, y), QtCore.QPointF(tip - direction * head_size, y - 7), QtCore.QPointF(tip - direction * head_size, y + 7)])
             self.scene.addPolygon(polygon, no_pen, QtGui.QBrush(QtGui.QColor(color)))
 
-        primer_arrow(left_pos, left, 124, 1, c["left"], "Левый праймер →", payload["tm_left"])
-        primer_arrow(right_pos, right, 174, -1, c["right"], "← Правый праймер", payload["tm_right"])
+        primer_arrow(left_pos, left, 124, 1, c["left"], t("Левый праймер →"), payload["tm_left"])
+        primer_arrow(right_pos, right, 174, -1, c["right"], t("← Правый праймер"), payload["tm_right"])
 
         def track(label, y, cuts, color, available):
             self.scene.addRect(25, y - 39, 1150, 106, no_pen, QtGui.QBrush(QtGui.QColor(c["card"])))
@@ -370,7 +384,7 @@ class PrimerGraphicPanel(QWidget):
                 pen.setStyle(Qt.PenStyle.DashLine)
             self.scene.addLine(x0, y, x1, y, pen)
             if not available:
-                self._draw_text(x0, y + 15, "Дорожка недоступна — см. сообщение над схемой", 10, color=c["muted"])
+                self._draw_text(x0, y + 15, t("Дорожка недоступна — см. сообщение над схемой"), 10, color=c["muted"])
                 return
             positions = sorted(set(position for position in cuts if 0 <= position <= length))
             fragments = [b - a for a, b in zip(positions, positions[1:])]
@@ -378,7 +392,11 @@ class PrimerGraphicPanel(QWidget):
             for position in positions:
                 x = x_at(position)
                 marker = self.scene.addLine(x, y - 13, x, y + 13, QtGui.QPen(QtGui.QColor(color), 2))
-                marker.setToolTip(f"{label}: после {position} п.н. от начала ампликона" if 0 < position < length else f"Граница ампликона: {position} п.н.")
+                if 0 < position < length:
+                    tip = t("{label}: после {position} п.н. от начала ампликона", label=label, position=position)
+                else:
+                    tip = t("Граница ампликона: {position} п.н.", position=position)
+                marker.setToolTip(tip)
                 if 0 < position < length and x - 19 >= last_label_right:
                     text = self._draw_text(x - 19, y - 39, str(position), 9, color=color)
                     text.setToolTip(marker.toolTip())
@@ -391,18 +409,21 @@ class PrimerGraphicPanel(QWidget):
                 if right_x - left_x > text_width + 12:
                     self._draw_text((left_x + right_x - text_width) / 2, y + 7, value, 10, True, color=color)
             detail = " + ".join(str(value) for value in fragments)
-            summary = f"Фрагменты: {detail} п.н." if enzyme else "Разрезы не рассчитаны: фермент не выбран или неизвестен."
+            summary = (t("Фрагменты: {detail} п.н.", detail=detail) if enzyme
+                       else t("Разрезы не рассчитаны: фермент не выбран или неизвестен."))
             summary_item = self._draw_text(x0, y + 36, summary, 9, color=c["muted"], width=1040)
             summary_item.setToolTip(summary)
             if summary_item.boundingRect().height() > 28:
-                summary_item.setPlainText(f"Фрагментов: {len(fragments)}; полные длины — в последовательностях и подсказке.")
+                summary_item.setPlainText(t("Фрагментов: {count}; полные длины — в последовательностях и подсказке.",
+                                            count=len(fragments)))
 
         track("REF", 245, self._cuts_ref, c["ref"], True)
         track("ALT", 360, self._cuts_alt, c["alt"], alt_sequence is not None)
         if offset is not None and 0 <= offset < length:
             x = x_at(offset + 0.5)
             marker = self.scene.addLine(x, 203, x, 382, QtGui.QPen(QtGui.QColor(c["snp"]), 2, Qt.PenStyle.DashLine))
-            marker.setToolTip(f"SNP: основание {offset + 1} в ампликоне; геномная позиция {payload['genome_start'] + offset}")
+            marker.setToolTip(t("SNP: основание {base} в ампликоне; геномная позиция {position}", base=offset + 1,
+                                position=payload['genome_start'] + offset))
             for y in (245, 360):
                 self.scene.addEllipse(x - 5, y - 5, 10, 10, QtGui.QPen(QtGui.QColor(c["snp"]), 1.5),
                                       QtGui.QBrush(QtGui.QColor(c["snp_bg"])))
@@ -420,16 +441,19 @@ class PrimerGraphicPanel(QWidget):
             x = x_at(position)
             self.scene.addLine(x, axis_y - 4, x, axis_y + 4, QtGui.QPen(QtGui.QColor(c["line"]), 1))
             self._draw_text(x - 13, axis_y + 6, str(position), 9, color=c["muted"])
-        self._draw_text(100, 477, "Шкала и метки разрезов: п.н. от начала ампликона · длины фрагментов указаны под дорожками", 9, color=c["muted"])
+        self._draw_text(100, 477, t("Шкала и метки разрезов: п.н. от начала ампликона · длины фрагментов указаны "
+                                    "под дорожками"), 9, color=c["muted"])
         if alt_sequence is not None:
             start, stop = max(0, offset - 12), min(length, offset + 13)
-            self._draw_text(30, 518, f"SNP  {ref} → {alt}  ·  основание {offset + 1}", 11, True, color=c["snp"], width=390)
+            self._draw_text(30, 518, t("SNP  {ref} → {alt}  ·  основание {base}", ref=ref, alt=alt, base=offset + 1),
+                            11, True, color=c["snp"], width=390)
             context = f"REF  {sequence[start:stop]}\nALT  {alt_sequence[start:stop]}"
             item = self._draw_text(475, 510, context, 11)
             item.setFont(mono_font(11))
-            item.setToolTip(f"Основания {start + 1}–{stop} ампликона (1-based)")
+            item.setToolTip(t("Основания {start}–{stop} ампликона (1-based)", start=start + 1, stop=stop))
         else:
-            self._draw_text(30, 520, "REF: референсная последовательность · ALT: последовательность после замены", 10, color=c["muted"])
+            self._draw_text(30, 520, t("REF: референсная последовательность · ALT: последовательность после замены"),
+                            10, color=c["muted"])
         self._render_sequences(payload, offset, left_pos, right_pos, colors)
         self._set_enabled(True)
         self.view.fit_diagram()
@@ -446,18 +470,23 @@ class PrimerGraphicPanel(QWidget):
         lines = [f"<div style='color:{colors['text']};font-family:\"{mono_font().family()}\",monospace;"
                  f"font-size:10pt'>"]
         if begin or end != length:
-            lines.append(f"<p>Показаны основания {begin + 1}–{end} из {length}. Кнопки копируют полную последовательность.</p>")
-        lines.append(f"<p><b><u>Праймеры</u></b> · <span style='{snp_style}'>SNP</span></p>")
+            lines.append("<p>" + t("Показаны основания {begin}–{end} из {length}. Кнопки копируют полную "
+                                   "последовательность.", begin=begin + 1, end=end, length=length) + "</p>")
+        lines.append(f"<p><b><u>{t('Праймеры')}</u></b> · <span style='{snp_style}'>SNP</span></p>")
         if left or right:
-            lines.append(f"<pre>Левый  5′→3′: {html.escape(left) or '—'}\nПравый 5′→3′: {html.escape(right) or '—'}</pre>")
+            lines.append("<pre>" + t("Левый  5′→3′: {left}\nПравый 5′→3′: {right}", left=html.escape(left) or '—',
+                                     right=html.escape(right) or '—') + "</pre>")
         if payload["enzyme_name"] and self._enzyme_by_name(payload["enzyme_name"]):
             for label, cuts in (("REF", self._cuts_ref), ("ALT", self._cuts_alt)):
                 if cuts:
                     fragments = " + ".join(str(b - a) for a, b in zip(cuts, cuts[1:]))
-                    lines.append(f"<p>{label}, фрагменты: {fragments} п.н.</p>")
+                    lines.append("<p>" + t("{label}, фрагменты: {fragments} п.н.", label=label, fragments=fragments)
+                                 + "</p>")
         for start in range(begin, end, 70):
             stop = min(start + 70, end)
-            lines.append(f"<p style='color:{colors['muted']}'>Ампликон {start + 1}–{stop} · геном {payload['genome_start'] + start}–{payload['genome_start'] + stop - 1}</p><pre>")
+            where = t("Ампликон {start}–{stop} · геном {genome_start}–{genome_stop}", start=start + 1, stop=stop,
+                      genome_start=payload['genome_start'] + start, genome_stop=payload['genome_start'] + stop - 1)
+            lines.append(f"<p style='color:{colors['muted']}'>{where}</p><pre>")
             for label, bases in (("REF", sequence), ("ALT", alt)):
                 if bases is None:
                     continue
@@ -484,7 +513,7 @@ class PrimerGraphicPanel(QWidget):
         if not sequence:
             return False
         QApplication.clipboard().setText(sequence)
-        self.status_label.setText(f"{allele}: скопировано {len(sequence)} п.н.")
+        self.status_label.setText(t("{allele}: скопировано {length} п.н.", allele=allele, length=len(sequence)))
         return True
 
     def copy_primers(self):
@@ -493,26 +522,27 @@ class PrimerGraphicPanel(QWidget):
             return False
         text = "\n".join(f">{label} (5'->3')\n{sequence}" for label, sequence in (("LEFT", left), ("RIGHT", right)) if sequence)
         QApplication.clipboard().setText(text)
-        self.status_label.setText("Праймеры скопированы в формате FASTA (5′ → 3′).")
+        self.status_label.setText(t("Праймеры скопированы в формате FASTA (5′ → 3′)."))
         return True
 
     def export_png(self, path, scale=2.0):
         """Save the whole scene, independently of zoom/pan. Return the saved path."""
         if not self._seq_ref:
-            raise ValueError("Сначала выберите результат для визуализации.")
+            raise ValueError(t("Сначала выберите результат для визуализации."))
         return save_scene_png(self.scene, path, self._colors()["background"], self.view.renderHints(), scale)
 
     def export_svg(self, path):
         if not self._seq_ref:
-            raise ValueError("Сначала выберите результат для визуализации.")
+            raise ValueError(t("Сначала выберите результат для визуализации."))
         return save_scene_svg(self.scene, path, "RFLP · REF / ALT",
-                              "Ампликон, праймеры 5′→3′, SNP и разрезы рестриктазы. Координаты генома 1-based; "
-                              "разрезы — п.н. от начала ампликона.", self.view.renderHints())
+                              t("Ампликон, праймеры 5′→3′, SNP и разрезы рестриктазы. Координаты генома 1-based; "
+                                "разрезы — п.н. от начала ампликона."), self.view.renderHints())
 
     def _export_dialog(self, extension):
         payload = self._last_payload or {}
         name = re.sub(r"[^\w.-]+", "_", f"{payload.get('variant_str', 'amplicon')}_{payload.get('enzyme_name', '')}").strip("_")
-        path, _ = QFileDialog.getSaveFileName(self, "Сохранить карту ампликона", f"{name}.{extension}", f"{extension.upper()} (*.{extension})")
+        path, _ = QFileDialog.getSaveFileName(self, t("Сохранить карту ампликона"), f"{name}.{extension}",
+                                              f"{extension.upper()} (*.{extension})")
         if not path:
             return
         if not Path(path).suffix:
@@ -520,9 +550,9 @@ class PrimerGraphicPanel(QWidget):
         try:
             (self.export_png if extension == "png" else self.export_svg)(path)
         except (OSError, ValueError) as error:
-            QMessageBox.warning(self, "Экспорт схемы", str(error))
+            QMessageBox.warning(self, t("Экспорт схемы"), str(error))
         else:
-            self.status_label.setText(f"Сохранено: {path}")
+            self.status_label.setText(t("Сохранено: {path}", path=path))
 
 
 LADDER_BP = (50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 800, 1000, 1500, 2000)
@@ -542,13 +572,13 @@ def gel_lanes(frags_ref, frags_alt, product):
                 amounts[length] = amounts.get(length, 0.0) + length / product / len(alleles)
         return sorted(amounts.items(), reverse=True)
 
-    return [("Без фермента", [(product, 1.0)]), ("REF/REF", lane(frags_ref)),
+    return [(N_("Без фермента"), [(product, 1.0)]), ("REF/REF", lane(frags_ref)),
             ("REF/ALT", lane(frags_ref, frags_alt)), ("ALT/ALT", lane(frags_alt))]
 
 
 def save_scene_png(scene, path, background, hints, scale=2.0):
     if not math.isfinite(float(scale)) or not 0.5 <= scale <= 8:
-        raise ValueError("Масштаб экспорта должен быть от 0.5 до 8.")
+        raise ValueError(t("Масштаб экспорта должен быть от 0.5 до 8."))
     rect = scene.sceneRect()
     image = QtGui.QImage(math.ceil(rect.width() * scale), math.ceil(rect.height() * scale), QtGui.QImage.Format.Format_ARGB32)
     image.fill(QtGui.QColor(background))
@@ -559,14 +589,14 @@ def save_scene_png(scene, path, background, hints, scale=2.0):
     finally:
         painter.end()
     if not image.save(str(path), "PNG"):
-        raise OSError(f"Не удалось сохранить PNG: {path}")
+        raise OSError(t("Не удалось сохранить PNG: {path}", path=path))
     return str(path)
 
 
 def save_scene_svg(scene, path, title, description, hints):
     output = QtCore.QFile(str(path))
     if not output.open(QtCore.QIODevice.OpenModeFlag.WriteOnly):
-        raise OSError(f"Не удалось сохранить SVG: {output.errorString()}")
+        raise OSError(t("Не удалось сохранить SVG: {error}", error=output.errorString()))
     generator = QSvgGenerator()
     generator.setOutputDevice(output)
     rect = scene.sceneRect()
@@ -577,7 +607,7 @@ def save_scene_svg(scene, path, title, description, hints):
     painter = QtGui.QPainter()
     try:
         if not painter.begin(generator):
-            raise OSError(f"Не удалось начать экспорт SVG: {path}")
+            raise OSError(t("Не удалось начать экспорт SVG: {path}", path=path))
         painter.setRenderHints(hints)
         scene.render(painter, rect, rect)
     finally:
@@ -608,11 +638,13 @@ class GelPanel(QWidget):
         self.view.setBackgroundBrush(QtGui.QColor(palette.GEL["background"]))
         self.scene.setBackgroundBrush(QtGui.QColor(palette.GEL["background"]))
         toolbar = QHBoxLayout()
-        self.fit_btn = PrimerGraphicPanel._button("Вписать", "Показать весь гель", self.view.fit_diagram)
+        self.fit_btn = PrimerGraphicPanel._button(t("Вписать"), t("Показать весь гель"), self.view.fit_diagram)
         toolbar.addWidget(self.fit_btn)
         toolbar.addStretch()
-        self.export_png_btn = PrimerGraphicPanel._button("Сохранить PNG", "Гель в высоком разрешении", lambda: self._export_dialog("png"))
-        self.export_svg_btn = PrimerGraphicPanel._button("Сохранить SVG", "Векторный рисунок геля", lambda: self._export_dialog("svg"))
+        self.export_png_btn = PrimerGraphicPanel._button(t("Сохранить PNG"), t("Гель в высоком разрешении"),
+                                                         lambda: self._export_dialog("png"))
+        self.export_svg_btn = PrimerGraphicPanel._button(t("Сохранить SVG"), t("Векторный рисунок геля"),
+                                                         lambda: self._export_dialog("svg"))
         toolbar.addWidget(self.export_png_btn)
         toolbar.addWidget(self.export_svg_btn)
         layout.addLayout(toolbar)
@@ -621,7 +653,7 @@ class GelPanel(QWidget):
             for widget in (self.fit_btn, self.export_png_btn, self.export_svg_btn):
                 widget.hide()
             self.view.setMinimumHeight(200)
-        self.show_message("Выберите результат в таблице, чтобы увидеть ожидаемые полосы.")
+        self.show_message(t("Выберите результат в таблице, чтобы увидеть ожидаемые полосы."))
 
     def _text_color(self):
         return palette.GEL["label"]
@@ -656,7 +688,7 @@ class GelPanel(QWidget):
 
     def render(self, frags_ref, frags_alt, product, variant="", enzyme="", min_visible=80, max_visible=800):
         if not product or product <= 0:
-            self.show_message("Длина продукта неизвестна.")
+            self.show_message(t("Длина продукта неизвестна."))
             return
         self._message = ""
         self._lanes = gel_lanes(frags_ref, frags_alt, product)
@@ -671,14 +703,15 @@ class GelPanel(QWidget):
         def y_at(length):
             return top + (math.log10(high) - math.log10(length)) / (math.log10(high) - math.log10(low)) * (bottom - top)
 
-        self._text(30, 12, self._title or "Виртуальный гель", 16, True, width=840)
-        self._text(30, 44, f"Продукт {product} п.н. · видимые фрагменты {min_visible}–{max_visible} п.н. · "
-                           f"полная рестрикция", 10, width=840)
+        self._text(30, 12, self._title or t("Виртуальный гель"), 16, True, width=840)
+        self._text(30, 44, t("Продукт {product} п.н. · видимые фрагменты {low}–{high} п.н. · полная рестрикция",
+                             product=product, low=min_visible, high=max_visible), 10, width=840)
         gel = palette.GEL
         lanes = [("M", [(size, None) for size in LADDER_BP if low <= size <= high])] + self._lanes
         width = (right - left) / len(lanes)
         band = QtGui.QColor(gel["band"])
         for index, (label, bands) in enumerate(lanes):
+            label = t(label)
             x = left + index * width + width * 0.14
             w = width * 0.72
             self.scene.addRect(x, top - 18, w, 7, QtGui.QPen(QtGui.QColor(gel["well"])),
@@ -691,39 +724,43 @@ class GelPanel(QWidget):
                 if amount is None:  # ladder
                     color = QtGui.QColor(gel["marker"])
                     self._text(left - 58, y - 11, str(length), 9, color=None)
-                    tip = f"Маркер: {length} п.н."
+                    tip = t("Маркер: {length} п.н.", length=length)
                 else:
                     visible = min_visible <= length <= max_visible
                     color = QtGui.QColor(band if visible else QtGui.QColor(gel["faint"]))
                     color.setAlpha(int(70 + 185 * min(1.0, amount * 1.6)) if visible else 160)
-                    tip = f"{label}: {length} п.н., доля ДНК {amount:.0%}" + ("" if visible else " — вне видимого диапазона")
+                    tip = t("{label}: {length} п.н., доля ДНК {share}", label=label, length=length,
+                            share=f"{amount:.0%}")
+                    if not visible:
+                        tip += t(" — вне видимого диапазона")
                     listed.append(str(length) if visible else f"({length})")
                 item = self.scene.addRect(x, y - 3, w, 6, QtGui.QPen(Qt.PenStyle.NoPen), QtGui.QBrush(color))
                 item.setToolTip(tip)
             if listed:
                 summary = self._text(x - 8, bottom + 66, " + ".join(listed), 9, width=w + 16)
-                summary.setToolTip(" + ".join(listed) + " п.н.")
-        self._text(30, 650, "Схема по модели программы: яркость пропорциональна массе фрагмента, у гетерозиготы — "
-                            "по половине каждого аллеля; в скобках и бледно — фрагменты вне видимого диапазона.",
+                summary.setToolTip(t("{fragments} п.н.", fragments=" + ".join(listed)))
+        self._text(30, 650, t("Схема по модели программы: яркость пропорциональна массе фрагмента, у гетерозиготы — "
+                              "по половине каждого аллеля; в скобках и бледно — фрагменты вне видимого диапазона."),
                    9, width=840)
         self._set_enabled(True)
         self.view.fit_diagram()
 
     def export_png(self, path, scale=2.0):
         if not self._lanes:
-            raise ValueError("Сначала выберите результат для визуализации.")
+            raise ValueError(t("Сначала выберите результат для визуализации."))
         return save_scene_png(self.scene, path, palette.GEL["background"], self.view.renderHints(), scale)
 
     def export_svg(self, path):
         if not self._lanes:
-            raise ValueError("Сначала выберите результат для визуализации.")
-        return save_scene_svg(self.scene, path, "Виртуальный гель RFLP",
-                              "Ожидаемые полосы REF/REF, REF/ALT и ALT/ALT по модели RFLP Picker.",
+            raise ValueError(t("Сначала выберите результат для визуализации."))
+        return save_scene_svg(self.scene, path, t("Виртуальный гель RFLP"),
+                              t("Ожидаемые полосы REF/REF, REF/ALT и ALT/ALT по модели RFLP Picker."),
                               self.view.renderHints())
 
     def _export_dialog(self, extension):
         name = re.sub(r"[^\w.-]+", "_", f"gel_{self._title}").strip("_")
-        path, _ = QFileDialog.getSaveFileName(self, "Сохранить гель", f"{name}.{extension}", f"{extension.upper()} (*.{extension})")
+        path, _ = QFileDialog.getSaveFileName(self, t("Сохранить гель"), f"{name}.{extension}",
+                                              f"{extension.upper()} (*.{extension})")
         if not path:
             return
         if not Path(path).suffix:
@@ -731,13 +768,13 @@ class GelPanel(QWidget):
         try:
             (self.export_png if extension == "png" else self.export_svg)(path)
         except (OSError, ValueError) as error:
-            QMessageBox.warning(self, "Экспорт геля", str(error))
+            QMessageBox.warning(self, t("Экспорт геля"), str(error))
 
 
 class RFLPVisualizationDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Карта ампликона · RFLP REF / ALT")
+        self.setWindowTitle(t("Карта ампликона · RFLP REF / ALT"))
         self.resize(1240, 930)
         self.setMinimumSize(900, 700)
         layout = QVBoxLayout(self)
@@ -745,12 +782,12 @@ class RFLPVisualizationDialog(QDialog):
         self.panel = PrimerGraphicPanel(self)
         self.gel = GelPanel(self)
         self.tabs = QTabWidget(self)
-        self.tabs.addTab(self.panel, "Карта ампликона")
-        self.tabs.addTab(self.gel, "Виртуальный гель")
+        self.tabs.addTab(self.panel, t("Карта ампликона"))
+        self.tabs.addTab(self.gel, t("Виртуальный гель"))
         layout.addWidget(self.tabs, 1)
         row = QHBoxLayout()
         row.addStretch()
-        self.close_btn = QPushButton("Закрыть")
+        self.close_btn = QPushButton(t("Закрыть"))
         self.close_btn.setMinimumHeight(32)
         self.close_btn.clicked.connect(self.close)
         row.addWidget(self.close_btn)
@@ -771,7 +808,7 @@ def render_payload(panel: PrimerGraphicPanel, gel: GelPanel, payload: Optional[d
         gel_params = payload.pop("gel", None) or {}
         panel.render(**payload)
         if panel._seq_alt is None or not panel._seq_ref:
-            gel.show_message("Гель недоступен: нет последовательности ALT (см. карту ампликона).")
+            gel.show_message(t("Гель недоступен: нет последовательности ALT (см. карту ампликона)."))
             return
         fragments = [[b - a for a, b in zip(cuts, cuts[1:])] for cuts in (panel._cuts_ref, panel._cuts_alt)]
         gel.render(*fragments, len(panel._seq_ref), payload.get("variant_str", ""),
@@ -781,7 +818,7 @@ def render_payload(panel: PrimerGraphicPanel, gel: GelPanel, payload: Optional[d
             panel.show_message(message)
         else:
             panel.show_empty()
-        gel.show_message(message or "Выберите результат в таблице, чтобы увидеть ожидаемые полосы.")
+        gel.show_message(message or t("Выберите результат в таблице, чтобы увидеть ожидаемые полосы."))
 
 
 def overlay_primers(amplicon: str, left: str, right: str) -> str:
@@ -803,25 +840,26 @@ def payload_for_scheme(scheme: dict, fasta_path: str, params: dict, fasta=None) 
     Opens ``fasta_path`` itself when no open ``Fasta`` is given and closes it again.
     """
     if not fasta_path and fasta is None:
-        return None, "Не задан FASTA для визуализации. Запустите анализ заново."
+        return None, t("Не задан FASTA для визуализации. Запустите анализ заново.")
     mapped_id = str(scheme.get("mapped_id") or "").strip()
     amp_start, amp_end = _safe_int(scheme.get("amplicon_start")), _safe_int(scheme.get("amplicon_end"))
     if not mapped_id or amp_start is None or amp_end is None:
-        return None, "В выбранной строке нет координат ампликона."
+        return None, t("В выбранной строке нет координат ампликона.")
     if amp_start < 1 or amp_end < amp_start:
-        return None, f"Некорректные координаты ампликона: {mapped_id}:{amp_start}-{amp_end}"
+        return None, t("Некорректные координаты ампликона: {region}", region=f"{mapped_id}:{amp_start}-{amp_end}")
     own = fasta is None
     if own:
         try:
             from pyfaidx import Fasta
             fasta = Fasta(fasta_path, as_raw=True, sequence_always_upper=True)
         except Exception as exc:
-            return None, f"Не удалось открыть FASTA: {fasta_path}\n{exc}"
+            return None, t("Не удалось открыть FASTA: {path}\n{error}", path=fasta_path, error=exc)
     try:
         amplicon = overlay_primers(str(fasta[mapped_id][amp_start - 1:amp_end]), scheme.get("primers_left") or "",
                                    scheme.get("primers_right") or "")
     except Exception as exc:
-        return None, f"Не удалось получить последовательность из FASTA: {mapped_id}:{amp_start}-{amp_end}\n{exc}"
+        return None, t("Не удалось получить последовательность из FASTA: {region}\n{error}",
+                       region=f"{mapped_id}:{amp_start}-{amp_end}", error=exc)
     finally:
         if own:
             fasta.close()
