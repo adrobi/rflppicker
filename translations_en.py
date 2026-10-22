@@ -114,6 +114,90 @@ EN = {
     'Позиция': 'Position',
     'Подробности': 'Details',
     'Исходная строка': 'Original line',
+    # rflp_cli: help and messages.
+    '''RFLP Picker из командной строки: тот же анализ, что в окне программы.
+
+Пример:
+    python rflp_cli.py --fasta genome.fa --variants snps.tsv --out results.xlsx
+
+Результат сохраняется в CSV или Excel (по расширению --out). В Excel, как и
+при экспорте из окна, добавляются листы Run (параметры, версии, сводка) и
+Rejected (отклонённые варианты). Журнал выводится в stderr.''':
+    '''RFLP Picker from the command line: the same analysis as in the program window.
+
+Example:
+    python rflp_cli.py --fasta genome.fa --variants snps.tsv --out results.xlsx
+
+The result is saved as CSV or Excel (by the extension of --out). Like the
+export from the window, Excel gets the Run sheet (parameters, versions, totals)
+and the Rejected sheet (rejected variants). The log goes to stderr.''',
+    'Язык справки, сообщений и листов Сводка/Праймеры (по умолчанию — язык системы)':
+        'Language of the help, the messages and the Summary/Primers sheets (default: the system language)',
+    'данные': 'data',
+    'Референсный геном FASTA (рядом создаётся .fai)': 'Reference genome FASTA (a .fai index is created next to it)',
+    'CSV/TSV/TXT с колонками chrom, pos, ref, alt': 'CSV/TSV/TXT with the columns chrom, pos, ref, alt',
+    'Файл соответствий названий хромосом': 'File that maps chromosome names',
+    'Файл результата: .csv или .xlsx': 'Result file: .csv or .xlsx',
+    'CSV с отклонёнными вариантами (в .xlsx они всегда на листе Rejected)':
+        'CSV of rejected variants (in .xlsx they are always on the Rejected sheet)',
+    'Исходный набор параметров: recommended — настройки по итогам '
+    'проверки (как в окне программы), v1.1 — воспроизведение v1.1.0 '
+    '(по умолчанию: %(default)s)':
+        'Starting parameter set: recommended — the validated settings (as in the program window), '
+        'v1.1 — reproduces v1.1.0 (default: %(default)s)',
+    'поиск (по умолчанию — значения пресета)': 'search (default: the preset values)',
+    'Фланг вокруг SNP, п.н.': 'Flank around the SNP, bp',
+    'Мин. видимый фрагмент, п.н.': 'Min. visible fragment, bp',
+    'Макс. видимый фрагмент, п.н.': 'Max. visible fragment, bp',
+    'Диагностическая дельта, п.н.': 'Diagnostic delta, bp',
+    'Макс. число разрезов в ампликоне': 'Max. number of cuts in the amplicon',
+    'Только появление/исчезновение сайта': 'Site gain or loss only',
+    'Поставщики через запятую: коды REBASE (N,E) или названия':
+        'Suppliers, comma-separated: REBASE codes (N,E) or names',
+    'отбор и проверки': 'filters and checks',
+    'Только ферменты, у которых в REBASE есть поставщик': 'Only enzymes with a supplier in REBASE',
+    'Одна строка на сайт узнавания; остальные ферменты — в столбце isoschizomers':
+        'One row per recognition site; the other enzymes go to the isoschizomers column',
+    'SNP не ближе BP п.н. к каждому концу ампликона (0 — не ограничивать)':
+        'SNP at least BP bp from each amplicon end (0: no limit)',
+    'Исключать схемы, где праймер сам содержит сайт фермента':
+        'Exclude assays where a primer itself contains the enzyme site',
+    'Повторы (строчные буквы soft-mask FASTA) не на 3′-концах праймеров':
+        'Repeats (lower-case soft-masked FASTA) not at primer 3′ ends',
+    'VCF/VCF.gz известных вариантов: праймеры их избегают, влияние на разрезы '
+    'отмечается (названия хромосом — через --names)':
+        'VCF/VCF.gz of known variants: primers avoid them, effects on cuts are '
+        'flagged (chromosome names via --names)',
+    'Исключать схемы, где фоновые варианты меняют разрезы или длины полос':
+        'Exclude assays where background variants change cuts or band sizes',
+    'Праймеры с несовпадением (dCAPS): fallback — только если нет robust-схемы':
+        'Mismatch primers (dCAPS): fallback — only when there is no robust assay',
+    'Наибольшее число несовпадений в праймере dCAPS': 'Maximum number of mismatches in a dCAPS primer',
+    'праймеры и совместный подбор': 'primers and joint design',
+    'Подбирать праймеры Primer3 (--no-primer3 — поиск по окну)':
+        'Design primers with Primer3 (--no-primer3: window search)',
+    'Совместный подбор праймеров и фермента': 'Choose primers and enzyme together',
+    'Пар Primer3 на SNP': 'Primer3 pairs per SNP',
+    'Результатов на SNP (0 — все)': 'Results per SNP (0: all)',
+    'Мин. размер продукта, п.н.': 'Min. product size, bp',
+    'Макс. размер продукта, п.н.': 'Max. product size, bp',
+    'Мин. Tm, °C': 'Min. Tm, °C',
+    'Макс. Tm, °C': 'Max. Tm, °C',
+    'модель геля': 'gel model',
+    'Разрешение, п.н.': 'Resolution, bp',
+    'Разрешение, %%': 'Resolution, %%',
+    'Ухудшение разрешения, ×': 'Resolution stress, ×',
+    'нормализация': 'normalization',
+    'Не исправлять REF/ALT (проверка REF по FASTA остаётся)': 'Do not fix REF/ALT (REF is still checked against the FASTA)',
+    'Сохранять cleaned/rejected в results/normalize': 'Save cleaned/rejected to results/normalize',
+    'Не выводить журнал': 'Do not print the log',
+    '--out: требуется расширение .csv или .xlsx': '--out: the extension must be .csv or .xlsx',
+    'Ошибка параметров: {error}': 'Parameter error: {error}',
+    'Анализ прерван.': 'Analysis interrupted.',
+    '[INFO] Сохранено: {out} · строк {rows} · SNP принято {accepted}, с кандидатами {candidates}, '
+    'с robust-кандидатами {robust}':
+        '[INFO] Saved: {out} · rows {rows} · SNPs accepted {accepted}, with candidates {candidates}, '
+        'with robust candidates {robust}',
 }
 
 CORE = [

@@ -2,12 +2,15 @@ import contextlib
 import csv
 import io
 import random
+import re
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from openpyxl import load_workbook
 
+import i18n
 import rflp_cli
 import rflp_core as core
 
@@ -17,6 +20,7 @@ class CliTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
+        self.addCleanup(i18n.set_language, 'ru')
         rng = random.Random(3)
         sequence = ''.join(rng.choice('ACGT') for _ in range(400))
         sequence = sequence[:197] + 'GAATTC' + sequence[203:]
@@ -26,9 +30,11 @@ class CliTests(unittest.TestCase):
         self.variants.write_text('chrom\tpos\tref\talt\tid\n1\t200\tA\tG\tSNP1\n1\t2\tA\tA\tSNP2\n')
 
     def run_cli(self, *args):
+        # Russian unless a test asks otherwise: the language of the CI machine is English.
         stderr = io.StringIO()
         with contextlib.redirect_stderr(stderr):
-            code = rflp_cli.main(['--fasta', str(self.fasta), '--variants', str(self.variants), *args])
+            code = rflp_cli.main(['--lang', 'ru', '--fasta', str(self.fasta), '--variants', str(self.variants),
+                                  *args])
         return code, stderr.getvalue()
 
     def test_csv_matches_core_run(self):
@@ -72,6 +78,40 @@ class CliTests(unittest.TestCase):
         self.assertIn('размер продукта', log)
         with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
             self.run_cli('--out', str(self.root / 'x.txt'))
+
+    def test_english_help_has_no_cyrillic(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit):
+            rflp_cli.main(['--lang', 'en', '--help'])
+        self.assertIsNone(re.search('[А-Яа-яЁё]', out.getvalue()), out.getvalue())
+        self.assertIn('--lang', out.getvalue())
+
+    def test_english_excel_and_messages(self):
+        out = self.root / 'out.xlsx'
+        code, log = self.run_cli('--lang', 'en', '--out', str(out), '--no-primer3', '--min-frag', '20')
+        self.assertEqual(code, 0, log)
+        self.assertIn('Saved', log)
+        self.assertIsNone(re.search('[А-Яа-яЁё]', log), log)
+        book = load_workbook(out, read_only=True)
+        self.assertEqual(book.sheetnames, ['Summary', 'Primers', 'Results', 'Run', 'Rejected'])
+        self.assertEqual(next(book['Summary'].values)[:4], ('ID', 'SNP', 'Genome chromosome', 'Status'))
+        book.close()
+
+    def test_english_parameter_errors(self):
+        code, log = self.run_cli('--lang', 'en', '--out', str(self.root / 'x.csv'), '--prod-min', '900',
+                                 '--prod-max', '100')
+        self.assertEqual(code, 2)
+        self.assertEqual(log.strip(), 'Parameter error: Minimum product size is greater than maximum')
+
+    def test_language_follows_the_system_without_the_key(self):
+        with patch('rflp_cli.locale.getlocale', return_value=('en_US', 'UTF-8')), \
+                contextlib.redirect_stdout(io.StringIO()), self.assertRaises(SystemExit):
+            rflp_cli.main(['--help'])
+        self.assertEqual(i18n.language(), 'en')
+        with patch('rflp_cli.locale.getlocale', return_value=('Russian_Russia', '1251')), \
+                contextlib.redirect_stdout(io.StringIO()), self.assertRaises(SystemExit):
+            rflp_cli.main(['--help'])
+        self.assertEqual(i18n.language(), 'ru')
 
 
 if __name__ == '__main__':
