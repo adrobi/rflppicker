@@ -137,7 +137,8 @@ class ReportingTests(unittest.TestCase):
 
     def test_extra_sheets_come_first_with_status_fill(self):
         sheet = ExtraSheet('Сводка', ['ID', 'Статус'], [['A', 'Надёжно'], ['B', 'Ошибка данных']],
-                           'RFLPSummary', {'Статус': palette.EXCEL_STATUS_FILLS})
+                           'RFLPSummary', {'Статус': {'Надёжно': palette.EXCEL_STATUS_FILLS['robust'],
+                                                     'Ошибка данных': palette.EXCEL_STATUS_FILLS['error']}})
         primers = ExtraSheet('Праймеры', ['Имя'], [['A_F']], 'RFLPPrimers')
         export_excel(self.folder / "results.xlsx", ['variant'], [['1:1 A>G']], extra_sheets=[sheet, primers])
         book = self.workbook()

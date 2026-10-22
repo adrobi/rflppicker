@@ -2,6 +2,7 @@ import random
 import tempfile
 import unittest
 
+import i18n
 import rflp_core
 import snp_summary
 from snp_summary import InputRecord, SnpSummary
@@ -276,6 +277,56 @@ class ExportTests(unittest.TestCase):
         self.assertEqual(rows[0][4:6], ['вручную', 'BsrDI'])
         _, rows = snp_summary.results_table(self.summaries, HEADER, self.core_rows)
         self.assertEqual([r[-1] for r in rows], [False, True, False])
+
+    def test_english_note_summary_and_tables(self):
+        i18n.set_language('en')
+        self.addCleanup(i18n.set_language, 'ru')
+        s = summary(schemes=[dict(enzyme='Bse1I', genotype_quality='robust'),
+                             dict(enzyme='HinfI', genotype_quality='nominal_only',
+                                  weakest_genotypes='REF/REF–REF/ALT')])
+        s.choose(1)
+        self.assertEqual(s.note('fallback'), 'Chosen by hand, best is Bse1I; '
+                                             'Nominal resolution only; hardest pair: REF/REF–REF/ALT')
+        header, rows = snp_summary.summary_table(self.summaries, 'fallback')
+        self.assertEqual(header[:5], ['ID', 'SNP', 'Genome chromosome', 'Status', 'Choice'])
+        self.assertEqual(rows[0][3:5], ['Robust', 'auto'])
+        self.assertEqual(snp_summary.primer_table(self.summaries)[0][:2], ['Name', 'Sequence 5′→3′'])
+        sheets = snp_summary.excel_sheets(self.summaries, 'fallback')
+        self.assertEqual([x.title for x in sheets], ['Summary', 'Primers'])
+        self.assertEqual(sheets[0].fills['Status']['Robust'], 'EAF3DE')       # Review Focus 3
+        self.assertEqual(sheets[0].fills['Status']['Data error'], 'FCEBEB')
+
+    def test_english_texts_for_the_lab_notebook(self):
+        i18n.set_language('en')
+        self.addCleanup(i18n.set_language, 'ru')
+        hox = self.summaries[0]
+        self.assertEqual(snp_summary.summary_text(hox, 'fallback').splitlines(), [
+            '11:37525128 C>G (HOXB13)',
+            'Status: Robust',
+            'Enzyme: Bse1I, site ACTGG',
+            'HOXB13_F: TATGAGCTTCTCTCCGCCAG (Tm 59.0 °C)',
+            'HOXB13_R: CGCCTCCAAAGTAGCCGTAA (Tm 60.1 °C)',
+            'Product: 475 bp',
+            'Bands: REF/REF 448; REF/ALT 212; 236; 448; ALT/ALT 212; 236',
+        ])
+        self.assertEqual(snp_summary.summary_text(self.summaries[1], 'fallback').splitlines()[-1],
+                         'Note: No primer pair and enzyme tell the three genotypes apart. Try dCAPS «For every SNP»')
+        self.assertEqual(snp_summary.weakest_text(hox.scheme),
+                         'Hardest to tell apart: REF/REF–REF/ALT; stressed score 10.5')
+
+    def test_english_failure_and_error_notes(self):
+        i18n.set_language('en')
+        self.addCleanup(i18n.set_language, 'ru')
+        self.assertEqual(summary(failure=dict(status='no_primers', reason='Primer3 не вернул подходящих пар'))
+                         .note('off'), 'Primer3 returned no suitable pairs. Try a wider product size range or Tm')
+        self.assertEqual(summary(rejection=dict(reason='parse_error', details='Ожидалось минимум 4 поля'))
+                         .note('off'), 'Line not read: At least 4 fields expected')
+        self.assertEqual(summary(rejection=dict(reason='bad_chrom', details='x')).note('off'),
+                         'Chromosome not found in the genome')
+        self.assertEqual(summary(rejection=dict(reason='unsupported_variant',
+                                                details='Поддерживаются только одиночные SNP A/C/G/T')).note('off'),
+                         'Only single-base A/C/G/T SNPs are supported')
+        self.assertEqual(summary().note('off'), 'No result for this line')
 
     def test_results_table_for_a_subset(self):
         _, rows = snp_summary.results_table(self.summaries[1:], HEADER, self.core_rows)

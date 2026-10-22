@@ -28,6 +28,5 @@ def colors(dark: bool) -> dict:
 GEL = dict(background='#161616', well='#5B6670', band='#F2F2F2', marker='#8A8A8A', faint='#6A6A6A',
            label='#C8C8C8')
 
-EXCEL_STATUS_FILLS = {'Надёжно': 'EAF3DE', 'Только на хорошем геле': 'FAEEDA', 'Нет схемы': 'EDEDED',
-                      'Ошибка данных': 'FCEBEB'}
+EXCEL_STATUS_FILLS = {'robust': 'EAF3DE', 'nominal': 'FAEEDA', 'none': 'EDEDED', 'error': 'FCEBEB'}
 EXCEL_HEADER_FILL = 'EDEDED'
