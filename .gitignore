@@ -50,3 +50,7 @@ dist_*/
 release/
 *.spec
 *.zip
+
+# Local working notes: design specs, plans and agent workspaces
+docs/superpowers/
+.superpowers/
