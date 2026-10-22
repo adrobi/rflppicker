@@ -68,6 +68,12 @@ class ThemeController(QObject):
         self._app = app
         self._mode = 'system'
         self._colors = palette.colors(False)
+        # Set the style once: replacing it later deletes the QStyle that widgets
+        # with their own style sheets still reference (segfault on Linux).
+        # (After a style sheet is set, app.style() is Qt's wrapper, so its name does not tell.)
+        if not app.property('rflp_fusion_style'):
+            app.setStyle('Fusion')
+            app.setProperty('rflp_fusion_style', True)
         app.styleHints().colorSchemeChanged.connect(self._on_system_scheme)
         self.set_mode(mode)
 
@@ -97,7 +103,6 @@ class ThemeController(QObject):
         dark = self._system_dark() if mode == 'system' else mode == 'dark'
         c = self._colors = palette.colors(dark)
         app = self._app
-        app.setStyle('Fusion')
         pal = QPalette()
         roles = {
             QPalette.ColorRole.Window: c['window'], QPalette.ColorRole.Base: c['panel'],

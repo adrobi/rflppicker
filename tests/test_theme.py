@@ -1,5 +1,6 @@
 import os
 import unittest
+from unittest.mock import patch
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 from PyQt6.QtGui import QPalette
@@ -26,6 +27,14 @@ class ThemeTests(unittest.TestCase):
         self.assertEqual(theme.colors, palette.colors(True))
         self.assertIn('#202020', self.app.styleSheet().upper())
         self.assertEqual(self.app.font().family(), 'Segoe UI')
+
+    def test_style_is_set_once(self):
+        # Replacing the QStyle while widgets hold style-sheet wrappers of it crashed on Linux.
+        ThemeController(self.app, 'light')
+        with patch.object(self.app, 'setStyle') as set_style:
+            theme = ThemeController(self.app, 'dark')
+            theme.set_mode('light')
+        set_style.assert_not_called()
 
     def test_unknown_mode_is_rejected(self):
         theme = ThemeController(self.app, 'light')
