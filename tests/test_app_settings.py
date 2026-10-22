@@ -58,9 +58,14 @@ class AppSettingsTests(unittest.TestCase):
         self.settings.set_names_for_genome(r'D:\g.fa', '')
         self.assertEqual(self.settings.names_for_genome(r'D:\g.fa'), '')
         self.settings.set_names_for_genome(r'D:\g.fa', r'D:\names.txt')
-        self.assertEqual(AppSettings(self.reopen()).names_for_genome(r'd:\G.FA'), r'D:\names.txt')
+        self.assertEqual(AppSettings(self.reopen()).names_for_genome(r'D:\g.fa'), r'D:\names.txt')
         self.settings.clear_names_for_genome(r'D:\g.fa')
         self.assertIsNone(self.settings.names_for_genome(r'D:\g.fa'))
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows paths are case-insensitive; elsewhere they are not')
+    def test_names_per_genome_ignore_path_case_on_windows(self):
+        self.settings.set_names_for_genome(r'D:\g.fa', r'D:\names.txt')
+        self.assertEqual(self.settings.names_for_genome(r'd:\G.FA'), r'D:\names.txt')
 
     def test_values_keep_their_types(self):
         self.settings.set_value('launch_collapsed', True)
