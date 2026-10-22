@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import QApplication, QMessageBox
 
 import qtprimer3_vis
 from app_settings import AppSettings
-from tests.helpers import HEADER, core_row, write_text
+from tests.helpers import HEADER, core_row, dispose, write_text
 from theme import ThemeController
 
 FOUR_SNPS = ('chrom\tpos\tref\talt\tid\n11\t37525128\tC\tG\tHOXB13\n1\t41250567\tA\tC\tLEPR\n'
@@ -50,8 +50,8 @@ class MainWindowTests(unittest.TestCase):
         self.asked = []
 
     def tearDown(self):
-        self.window.close()
         self.window.details.close_fasta()
+        dispose(self.window)
         self.qs.sync()
         self._dir.cleanup()
 
@@ -173,7 +173,7 @@ class MainWindowTests(unittest.TestCase):
     def test_launch_panel_starts_expanded(self):
         self.settings.set_value('launch_collapsed', True)
         window = qtprimer3_vis.RFLPPickerGUI(self.settings, ThemeController(self.app, 'light'))
-        self.addCleanup(window.close)
+        self.addCleanup(dispose, window)
         self.assertFalse(window.launch.is_collapsed())
 
     def test_launch_stays_open_when_every_snp_is_an_error(self):

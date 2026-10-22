@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import QApplication, QLabel, QListWidget, QPushButton, QTab
 import snp_summary
 from details_panel import DetailsPanel
 from snp_summary import InputRecord, order_lines
-from tests.helpers import HEADER, core_row, write_text
+from tests.helpers import HEADER, core_row, dispose, write_text
 
 SEQUENCE = 'AAAAAAAAAA' + 'GAATTC' + 'A' * 84 + 'GAATTC' + 'C' * 194
 HOX = dict(variant='1:13 A>G', mapped_id='1', enzyme='EcoRI', site='GAATTC', isoschizomers='FunII; RI',
@@ -39,7 +39,7 @@ class DetailsPanelTests(unittest.TestCase):
 
     def tearDown(self):
         self.panel.close_fasta()
-        self.panel.close()
+        dispose(self.panel)
 
     def test_empty_state(self):
         self.panel.show_summary(None, 'fallback')
@@ -138,7 +138,7 @@ class DetailsPanelTests(unittest.TestCase):
         self.panel.show_summary(self.hoxb13, 'fallback')
         self.panel.open_large()
         dialog = self.panel.large_dialog()
-        self.addCleanup(dialog.close)
+        self.addCleanup(dispose, dialog)
         self.assertTrue(dialog.isVisible())
         self.panel.show_summary(self.olfml3, 'fallback')
         self.assertEqual(dialog.gel.message(), self.olfml3.note('fallback'))

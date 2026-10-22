@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import QApplication, QComboBox, QLabel, QPushButton
 import rflp_core
 from app_settings import AppSettings
 from launch_panel import ADVANCED_PARAMS, KEY_PARAMS, LaunchPanel, SupplierPicker, field_errors
-from tests.helpers import write_text
+from tests.helpers import dispose, write_text
 
 
 class LaunchPanelTests(unittest.TestCase):
@@ -34,7 +34,7 @@ class LaunchPanelTests(unittest.TestCase):
         self.panel = LaunchPanel(self.settings)
 
     def tearDown(self):
-        self.panel.close()
+        dispose(self.panel)
         self.qs.sync()
         self._dir.cleanup()
 
@@ -110,7 +110,7 @@ class LaunchPanelTests(unittest.TestCase):
     def test_genome_list_and_names_label(self):
         self.settings.add_recent_genome(self.genome)
         panel = LaunchPanel(self.settings)
-        self.addCleanup(panel.close)
+        self.addCleanup(dispose, panel)
         combo = panel.findChild(QComboBox, 'genome_combo')
         self.assertEqual(combo.itemText(0), 'sheep.fa')
         self.assertEqual(combo.itemData(0), self.genome)
@@ -125,7 +125,7 @@ class LaunchPanelTests(unittest.TestCase):
     def test_missing_remembered_file_is_marked(self):
         self.settings.set_value('last_snp_file', os.path.join(self.tmp, 'gone.tsv'))
         panel = LaunchPanel(self.settings)
-        self.addCleanup(panel.close)
+        self.addCleanup(dispose, panel)
         self.assertEqual(panel.findChild(object, 'snp_edit').toolTip(), 'Файл не найден')
 
     def test_settings_roundtrip(self):
@@ -133,7 +133,7 @@ class LaunchPanelTests(unittest.TestCase):
         self.panel.set_params(dict(self.panel.collect_params(), prod_min=150, delta=15))
         self.panel.save_settings()
         panel = LaunchPanel(AppSettings(self.reopen()))
-        self.addCleanup(panel.close)
+        self.addCleanup(dispose, panel)
         p = panel.collect_params()
         self.assertEqual((p['prod_min'], p['delta'], p['input_file'], p['fasta']),
                          (150, 15, self.genome, self.genome))

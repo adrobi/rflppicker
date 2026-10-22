@@ -10,7 +10,7 @@ import snp_summary
 from app_settings import AppSettings
 from snp_list import DEFAULT_COLUMNS, SORT_ROLE, SnpListView
 from snp_summary import InputRecord
-from tests.helpers import HEADER, core_row
+from tests.helpers import HEADER, core_row, dispose
 
 HOX = dict(variant='11:37525128 C>G', mapped_id='NC_056064.1', enzyme='Bse1I', isoschizomers='BsrI',
            genotype_quality='robust', genotype_margin=15.77, bands_ref_ref='448', bands_alt_alt='212; 236',
@@ -47,7 +47,7 @@ class SnpListTests(unittest.TestCase):
         self.view.set_summaries(self.summaries, 'fallback', has_ids=True)
 
     def tearDown(self):
-        self.view.close()
+        dispose(self.view)
         self.qs.sync()
         self._dir.cleanup()
 
@@ -139,7 +139,7 @@ class SnpListTests(unittest.TestCase):
         self.assertTrue(self.view.table.isColumnHidden(self.view.column_index('mapped_id')))
         self.view.set_column_visible('mapped_id', True)
         view = SnpListView(AppSettings(self.qs))
-        self.addCleanup(view.close)
+        self.addCleanup(dispose, view)
         view.set_summaries(self.summaries, 'fallback', has_ids=True)
         self.assertFalse(view.table.isColumnHidden(view.column_index('mapped_id')))
         self.assertEqual(DEFAULT_COLUMNS[0], 'dot')

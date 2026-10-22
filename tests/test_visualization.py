@@ -6,7 +6,7 @@ os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 from PyQt6.QtWidgets import QApplication
 
 import palette
-from tests.helpers import write_text
+from tests.helpers import dispose, write_text
 from visualization import (GelPanel, PrimerGraphicPanel, RFLPVisualizationDialog, gel_lanes, overlay_primers,
                            payload_for_scheme, render_payload)
 
@@ -48,7 +48,7 @@ class VisualizationTests(unittest.TestCase):
 
     def test_dialog_draws_the_gel_and_exports(self):
         dialog = RFLPVisualizationDialog()
-        self.addCleanup(dialog.close)
+        self.addCleanup(dispose, dialog)
         sequence = 'AAAAAAAAAA' + 'GAATTC' + 'A' * 84 + 'GAATTC' + 'C' * 194
         dialog.show_payload(dict(mapped_id='1', genome_start=1, genome_end=len(sequence), amplicon_seq=sequence,
                                  snp_offset=12, primer_left='', primer_right='', tm_left=None, tm_right=None,
@@ -67,19 +67,19 @@ class VisualizationTests(unittest.TestCase):
 
     def test_compact_map_has_no_sequence_view(self):
         panel = PrimerGraphicPanel(compact=True)
-        self.addCleanup(panel.close)
+        self.addCleanup(dispose, panel)
         self.assertTrue(panel.seq_view.isHidden())
         self.assertTrue(panel.export_png_btn.isHidden())
         full = PrimerGraphicPanel()
-        self.addCleanup(full.close)
+        self.addCleanup(dispose, full)
         self.assertFalse(full.seq_view.isHidden())
         gel = GelPanel(compact=True)
-        self.addCleanup(gel.close)
+        self.addCleanup(dispose, gel)
         self.assertTrue(gel.export_png_btn.isHidden())
 
     def test_primers_are_bold_without_background(self):
         panel = PrimerGraphicPanel()
-        self.addCleanup(panel.close)
+        self.addCleanup(dispose, panel)
         colors = palette.colors(False)
         panel.apply_colors(colors)
         panel.render(**SAMPLE_PAYLOAD)
@@ -94,7 +94,7 @@ class VisualizationTests(unittest.TestCase):
 
     def test_gel_is_dark_in_both_themes(self):
         gel = GelPanel()
-        self.addCleanup(gel.close)
+        self.addCleanup(dispose, gel)
         gel.render([100, 300], [400], 400, '1:1 A>G', 'AluI')
         self.assertEqual(gel.view.backgroundBrush().color().name().upper(), palette.GEL['background'])
 
@@ -119,8 +119,8 @@ class VisualizationTests(unittest.TestCase):
 
     def test_render_payload_without_payload_shows_message(self):
         panel, gel = PrimerGraphicPanel(compact=True), GelPanel(compact=True)
-        self.addCleanup(panel.close)
-        self.addCleanup(gel.close)
+        self.addCleanup(dispose, panel)
+        self.addCleanup(dispose, gel)
         render_payload(panel, gel, None, 'Не удалось открыть FASTA: x')
         self.assertEqual(gel.message(), 'Не удалось открыть FASTA: x')
 

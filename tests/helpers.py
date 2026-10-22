@@ -14,6 +14,25 @@ def core_row(**values) -> list:
     return [values.get(name) for name in HEADER]
 
 
+def dispose(widget) -> None:
+    """Close and really destroy a test widget now, in the main thread.
+
+    Closed but undeleted windows piled up across the suite and left Qt's style
+    sheet repolish touching freed memory (segfault on Linux, Python 3.12).
+    """
+    import gc
+
+    from PyQt6 import sip
+    from PyQt6.QtCore import QCoreApplication, QEvent
+
+    if sip.isdeleted(widget):   # already destroyed with its parent
+        return
+    widget.close()
+    widget.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    gc.collect()
+
+
 def write_text(directory: str, name: str, text: str) -> str:
     """Write UTF-8 text to directory/name and return the path."""
     path = os.path.join(directory, name)
