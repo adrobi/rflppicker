@@ -22,7 +22,7 @@ from PyQt6.QtWidgets import QApplication  # noqa: E402
 
 import i18n  # noqa: E402
 from app_settings import AppSettings  # noqa: E402
-from qtprimer3_vis import RFLPPickerGUI  # noqa: E402
+from qtprimer3_vis import RFLPPickerGUI, apply_language  # noqa: E402
 from snp_summary import ROBUST  # noqa: E402
 from theme import ThemeController  # noqa: E402
 
@@ -36,7 +36,7 @@ def main(argv=None) -> int:
     parser.add_argument('--out', required=True)
     parser.add_argument('--lang', choices=i18n.LANGS, default='ru', help='Interface language (default: ru)')
     args = parser.parse_args(argv)
-    i18n.set_language(args.lang)
+    apply_language(args.lang)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
 

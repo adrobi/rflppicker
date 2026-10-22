@@ -188,7 +188,7 @@ def _populate_sheet(worksheet: Any, header: Sequence[str], rows: list[list[Any]]
             cell.alignment = Alignment(vertical="top", wrap_text=True)
             column_name = header[column - 1].lower()
             sequence_column = isinstance(value, str) and any(
-                key in column_name for key in ("primer", "праймер", "последовательность"))
+                key in column_name for key in ("primer", "праймер", "последовательность", "sequence"))
             cell.font = Font(name="Consolas" if sequence_column else "Calibri", size=11, color="23374D")
             fill = column_fills[column - 1]
             if fill and value in fill:

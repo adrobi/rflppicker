@@ -181,7 +181,7 @@ class SnpListTests(unittest.TestCase):
         self.assertEqual(view.reset_filter_button.text(), 'Reset filter')
         view.search.clear()
         view._on_header_clicked(view.column_index('score'))
-        self.assertEqual(view.footer.text(), 'Shown 4 of 4 · order: by column «Score»')
+        self.assertEqual(view.footer.text(), 'Shown 4 of 4 · order: by column “Score”')
 
 
 if __name__ == '__main__':

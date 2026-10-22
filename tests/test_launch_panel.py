@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 from PyQt6.QtCore import QSettings
-from PyQt6.QtWidgets import QApplication, QComboBox, QLabel, QPushButton
+from PyQt6.QtWidgets import QApplication, QCheckBox, QComboBox, QLabel, QPushButton
 
 import i18n
 import rflp_core
@@ -175,6 +175,14 @@ class LaunchPanelTests(unittest.TestCase):
         dialog = AdvancedDialog(panel.collect_params(), panel)
         self.addCleanup(dispose, dialog)
         self.assertEqual(cyrillic_texts(panel) + cyrillic_texts(dialog), [])
+        combo = panel.findChild(QComboBox, 'dcaps_combo')
+        self.assertEqual([combo.itemText(i) for i in range(combo.count())],
+                         ['Off', 'If there is no robust assay', 'For every SNP'])
+        self.assertEqual(dialog.findChild(QCheckBox, 'adv_mask_repeats').text(), 'Account for repeats (soft-mask)')
+        self.assertIn('Resolution stress factor, ×', [label.text() for label in dialog.findChildren(QLabel)])
+        panel.set_running(True)
+        panel.set_progress(0, 1)
+        self.assertEqual(panel.findChild(QLabel, 'progress_label').text(), '0 of 1 SNP')
 
 
 if __name__ == '__main__':

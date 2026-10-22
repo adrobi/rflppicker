@@ -1,6 +1,7 @@
 import contextlib
 import csv
 import io
+import logging
 import random
 import re
 import tempfile
@@ -102,6 +103,35 @@ class CliTests(unittest.TestCase):
                                  '--prod-max', '100')
         self.assertEqual(code, 2)
         self.assertEqual(log.strip(), 'Parameter error: Minimum product size is greater than maximum')
+
+    def test_english_core_log_lines(self):
+        records = []
+        handler = logging.Handler()
+        handler.emit = lambda record: records.append(record.getMessage())
+        logger = logging.getLogger('RFLPPickerLogger')
+        logger.addHandler(handler)
+        self.addCleanup(logger.removeHandler, handler)
+        self.variants.write_text('chrom\tpos\tref\talt\tid\n1\t200\tA\tG\tSNP1\n1\tx\tA\tG\tSNP3\n')
+        code, log = self.run_cli('--lang', 'en', '--out', str(self.root / 'x.csv'), '--no-primer3',
+                                 '--names', str(self.root / 'missing.txt'))
+        self.assertEqual(code, 0, log)
+        self.assertTrue(any(x.startswith('Names file not found') for x in records), records)
+        self.assertTrue(any(x.startswith('Line parse error') for x in records), records)
+        self.assertEqual([x for x in records if re.search('[А-Яа-яЁё]', x)], [])
+
+    def test_unreadable_system_locale_falls_back_to_english(self):
+        with patch('rflp_cli.locale.getlocale', side_effect=ValueError('unknown locale')), \
+                contextlib.redirect_stdout(io.StringIO()), self.assertRaises(SystemExit) as stop:
+            rflp_cli.main(['--help'])
+        self.assertEqual(stop.exception.code, 0)
+        self.assertEqual(i18n.language(), 'en')
+
+    def test_lang_without_a_value_gets_the_full_usage(self):
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr), self.assertRaises(SystemExit) as stop:
+            rflp_cli.main(['--fasta', 'a', '--lang'])
+        self.assertEqual(stop.exception.code, 2)
+        self.assertIn('--variants VARIANTS', stderr.getvalue())
 
     def test_language_follows_the_system_without_the_key(self):
         with patch('rflp_cli.locale.getlocale', return_value=('en_US', 'UTF-8')), \

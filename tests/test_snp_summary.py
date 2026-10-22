@@ -310,7 +310,8 @@ class ExportTests(unittest.TestCase):
             'Bands: REF/REF 448; REF/ALT 212; 236; 448; ALT/ALT 212; 236',
         ])
         self.assertEqual(snp_summary.summary_text(self.summaries[1], 'fallback').splitlines()[-1],
-                         'Note: No primer pair and enzyme tell the three genotypes apart. Try dCAPS «For every SNP»')
+                         'Note: No primer–enzyme combination distinguishes the three genotypes. '
+                         'Try dCAPS “For every SNP”')
         self.assertEqual(snp_summary.weakest_text(hox.scheme),
                          'Hardest to tell apart: REF/REF–REF/ALT; stressed score 10.5')
 

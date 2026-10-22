@@ -5,6 +5,7 @@ it, the language of the system (i18n spec §3.2, §4.4).
 """
 import argparse
 import locale
+import logging
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -130,9 +131,29 @@ def params_from_args(args):
 def choose_language(argv) -> None:
     """--lang if given, otherwise the language of the system; before the parser is built."""
     early = argparse.ArgumentParser(add_help=False)
-    early.add_argument('--lang')
+    early.add_argument('--lang', nargs='?')   # a missing value is reported by the full parser
     known, _ = early.parse_known_args(argv)
-    set_language(known.lang if known.lang in LANGS else locale_language(locale.getlocale()[0]))
+    if known.lang in LANGS:
+        set_language(known.lang)
+        return
+    try:
+        name = locale.getlocale()[0]
+    except ValueError:   # a locale name Python does not know
+        name = None
+    set_language(locale_language(name))
+
+
+class CoreLogTranslation(logging.Filter):
+    """The core logs in Russian; on the command line its messages follow the chosen language."""
+
+    def filter(self, record):
+        record.msg, record.args = core_text(record.getMessage()), None
+        return True
+
+
+def translate_core_log() -> None:
+    if not any(isinstance(item, CoreLogTranslation) for item in core.logger.filters):
+        core.logger.addFilter(CoreLogTranslation())
 
 
 def main(argv=None):
@@ -141,6 +162,7 @@ def main(argv=None):
         if hasattr(stream, 'reconfigure'):
             stream.reconfigure(errors='replace')
     choose_language(argv)
+    translate_core_log()
     parser = build_parser()
     args = parser.parse_args(argv)
     out = Path(args.out)

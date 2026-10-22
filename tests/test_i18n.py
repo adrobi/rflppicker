@@ -17,7 +17,7 @@ CORE_SAMPLES = [
     ('SNP ближе 100 п.н. к краю окна; увеличьте фланг',
      'SNP is closer than 100 bp to the window edge; increase the flank'),
     ('Не найдено сочетание для различения трёх генотипов',
-     'No primer pair and enzyme tell the three genotypes apart'),
+     'No primer–enzyme combination distinguishes the three genotypes'),
     ('Подходящий фермент не найден', 'No suitable enzyme found'),
     ('REF не совпадает с FASTA', 'REF does not match the FASTA'),
     ('; окон с неопределёнными основаниями: 2', '; windows with ambiguous bases: 2'),
@@ -76,6 +76,12 @@ CORE_SAMPLES = [
     ('[WARN] В окнах SNP нет строчных букв: FASTA без soft-mask, маскирование повторов не действует.',
      '[WARN] No lower-case letters in SNP windows: the FASTA is not soft-masked, repeat masking has no effect.'),
     ('\n[INFO] NORMALIZE: загружено вариантов: 6', '\n[INFO] NORMALIZE: variants loaded: 6'),
+    # Logger lines (shown by the command line).
+    (r'Файл names не найден: D:\names.txt', r'Names file not found: D:\names.txt'),
+    ('Ошибка при загрузке names: bad line', 'Error loading the names file: bad line'),
+    ('Файл с вариантами не найден: snps.tsv', 'Variants file not found: snps.tsv'),
+    ('Ошибка парсинга строки: bad value', 'Line parse error: bad value'),
+    ('Ошибка при чтении файла с вариантами: denied', 'Error reading the variants file: denied'),
 ]
 
 
@@ -155,7 +161,7 @@ class I18nTests(unittest.TestCase):
         self.assertIsNone(CYRILLIC.search(text), text)
         text = i18n.core_text('Не найдено сочетание для различения трёх генотипов; '
                               'окон с неопределёнными основаниями: 2; ошибок расчёта ферментов: 1')
-        self.assertEqual(text, 'No primer pair and enzyme tell the three genotypes apart; '
+        self.assertEqual(text, 'No primer–enzyme combination distinguishes the three genotypes; '
                                'windows with ambiguous bases: 2; enzyme calculation errors: 1')
 
     def test_core_text_keeps_russian_and_unknown_text(self):
@@ -164,13 +170,32 @@ class I18nTests(unittest.TestCase):
         self.assertEqual(i18n.core_text('Совсем новое сообщение'), 'Совсем новое сообщение')
         self.assertEqual(i18n.core_text(''), '')
 
+    def test_english_plural_follows_count(self):
+        i18n.set_language('en')
+        self.assertEqual(i18n.t('Готово: {count} SNP · {parts}', count=1, parts='robust 1'), 'Done: 1 SNP · robust 1')
+        self.assertEqual(i18n.t('Готово: {count} SNP · {parts}', count=4, parts='robust 4'), 'Done: 4 SNPs · robust 4')
+        self.assertEqual(i18n.t('{done} из {count} SNP', done=1, count=1), '1 of 1 SNP')
+        self.assertEqual(i18n.t('{done} из {count} SNP', done=1, count=3), '1 of 3 SNPs')
+        self.assertEqual(i18n.t('Идёт расчёт… {done} из {count} SNP', done=0, count=1), 'Running… 0 of 1 SNP')
+        self.assertEqual(i18n.t('Ручной выбор у {count} SNP будет сброшен. Запустить?', count=1),
+                         'The choice made by hand for 1 SNP will be reset. Run?')
+
+    def test_english_uses_english_quotation_marks(self):
+        texts = [x for value in translations_en.EN.values() for x in (value if isinstance(value, tuple) else [value])]
+        texts += [replacement for _, replacement in translations_en.CORE]
+        self.assertEqual([x for x in texts if '«' in x or '»' in x], [])
+
     def test_catalog_is_complete(self):                   # Review Focus 4
         used = translatable_literals()
         self.assertEqual(sorted(used - set(translations_en.EN)), [])
         self.assertEqual(sorted(set(translations_en.EN) - used), [])
         for source, target in translations_en.EN.items():
-            self.assertEqual(placeholders(source), placeholders(target), source)
-            self.assertIsNone(CYRILLIC.search(target), source)
+            for form in target if isinstance(target, tuple) else (target,):
+                self.assertEqual(placeholders(source), placeholders(form), source)
+                self.assertIsNone(CYRILLIC.search(form), source)
+            if isinstance(target, tuple):        # (one, other), chosen by the count value
+                self.assertEqual(len(target), 2, source)
+                self.assertIn('count', placeholders(source), source)
 
 
 if __name__ == '__main__':

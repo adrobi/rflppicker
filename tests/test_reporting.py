@@ -151,6 +151,15 @@ class ReportingTests(unittest.TestCase):
         self.assertEqual(book['Праймеры']['A2'].value, 'A_F')
         self.assertEqual(book['Results']['A2'].value, '1:1 A>G')
 
+    def test_sequence_columns_are_monospaced_in_both_languages(self):
+        sheets = [ExtraSheet('Праймеры', ['Имя', 'Последовательность 5′→3′'], [['A_F', 'ACGT']], 'RFLPPrimers'),
+                  ExtraSheet('Primers', ['Name', 'Sequence 5′→3′'], [['A_F', 'ACGT']], 'RFLPPrimersEn')]
+        export_excel(self.folder / "results.xlsx", ['variant'], [['1:1 A>G']], extra_sheets=sheets)
+        book = self.workbook()
+        self.assertEqual(book['Праймеры']['B2'].font.name, 'Consolas')
+        self.assertEqual(book['Primers']['B2'].font.name, 'Consolas')
+        self.assertEqual(book['Primers']['A2'].font.name, 'Calibri')
+
     def test_excel_drops_control_characters(self):
         # A Ctrl-Z line from old Windows tools ends up in parse errors and the summary.
         export_excel(self.folder / "results.xlsx", ['raw'], [['1\t200\x1aA']],

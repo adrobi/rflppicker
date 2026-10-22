@@ -34,6 +34,8 @@ def N_(text: str) -> str:
 def t(text: str, **values) -> str:
     if _language == 'en':
         text = translations_en.EN.get(text, text)
+        if isinstance(text, tuple):   # (one, other): English plural chosen by the count value
+            text = text[0] if values.get('count') == 1 else text[1]
     return text.format(**values) if values else text
 
 

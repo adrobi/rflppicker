@@ -6,9 +6,10 @@ from unittest.mock import patch
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 import openpyxl
-from PyQt6.QtCore import QSettings
-from PyQt6.QtWidgets import QApplication, QMessageBox
+from PyQt6.QtCore import QLocale, QSettings
+from PyQt6.QtWidgets import QApplication, QDoubleSpinBox, QMessageBox
 
+import i18n
 import qtprimer3_vis
 from app_settings import AppSettings
 from tests.helpers import FIXED_OUTPUT, FOUR_SNPS, HEADER, dispose, run_fake_analysis, write_text
@@ -173,6 +174,24 @@ class MainWindowTests(unittest.TestCase):
             self.window.set_language_mode('ru')          # the language of this session: nothing to restart
         info.assert_not_called()
         self.assertEqual(self.settings.value('language'), 'ru')
+
+    def test_english_language_uses_a_dot_in_spin_boxes(self):
+        self.addCleanup(QLocale.setDefault, QLocale.system())
+        self.addCleanup(i18n.set_language, 'ru')
+        QLocale.setDefault(QLocale(QLocale.Language.Russian, QLocale.Country.Russia))
+        qtprimer3_vis.apply_language('en')
+        self.assertEqual(i18n.language(), 'en')
+        spin = QDoubleSpinBox()
+        self.addCleanup(dispose, spin)
+        spin.setDecimals(1)
+        spin.setValue(58.0)
+        self.assertEqual(spin.text(), '58.0')
+
+    def test_russian_language_keeps_the_system_number_format(self):
+        self.addCleanup(QLocale.setDefault, QLocale.system())
+        QLocale.setDefault(QLocale(QLocale.Language.German, QLocale.Country.Germany))
+        qtprimer3_vis.apply_language('ru')
+        self.assertEqual(QLocale().name(), 'de_DE')
 
     def test_startup_language(self):                     # Review Focus 2
         self.settings.set_value('language', 'fr')

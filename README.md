@@ -15,9 +15,9 @@ reports fragment sizes and draws a map of the amplicon.
 A new three-column window: launch, SNP list and the details of the chosen SNP —
 see [Working with the window](#working-with-the-window). One row for each SNP of
 the input file, status filters, assay choice with a star, the gel right in the
-window, the Excel sheets «Summary» and «Primers», SNP IDs from the input file,
+window, the Excel sheets “Summary” and “Primers”, SNP IDs from the input file,
 light and dark themes. The interface is available in English and Russian: the
-language follows the system and can be changed with the «Language» switch (see
+language follows the system and can be changed with the “Language” switch (see
 [Interface language](#interface-language)). The analysis itself has not changed.
 The list of changes is in the [CHANGELOG](CHANGELOG.md) (in Russian).
 
@@ -25,7 +25,7 @@ The list of changes is in the [CHANGELOG](CHANGELOG.md) (in Russian).
 
 The changes are based on a check of version 1.1.0 against published assays.
 Details are in the [algorithm description](docs/assay_design.md#отбор-и-проверки-с-версии-12)
-(in Russian); the list of changes is in the [CHANGELOG](CHANGELOG.md).
+(in Russian); the list of changes is in the [CHANGELOG](CHANGELOG.md) (in Russian).
 
 - The analysis is 7–10 times faster with the same results; command line `rflp_cli.py`.
 - Isoschizomers are grouped into one row; only commercially available enzymes by default.
@@ -36,17 +36,17 @@ Details are in the [algorithm description](docs/assay_design.md#отбор-и-п
   change the cuts are flagged and excluded.
 - dCAPS design (a primer with a mismatch) when there is no robust assay with a
   natural site.
-- A «Virtual gel» tab in the visualization window.
+- A “Virtual gel” tab in the visualization window.
 
-The 1.2 settings are in the «Advanced» dialog of the «Run» panel (the «Checks»
-group). The parameters of version 1.1.0 are restored with the «As in v1.1.0»
+The 1.2 settings are in the “Advanced” dialog of the “Run” panel (the “Checks”
+group). The parameters of version 1.1.0 are restored with the “As in v1.1.0”
 button there, or with `--preset v1.1` on the command line.
 
 ## Joint design of primers and enzyme
 
 By default the program checks up to **10 Primer3 pairs per SNP**, scores how well
 **REF/REF, REF/ALT and ALT/ALT** can be told apart and reports up to 10 best
-combinations. The «Advanced» dialog sets the number of pairs, the number of
+combinations. The “Advanced” dialog sets the number of pairs, the number of
 results (0: all), the absolute and relative gel resolution and the resolution
 stress factor. The default model parameters (10 bp, 3%, ×1.5) are screening
 assumptions; compare them with the conditions of your own experiment.
@@ -147,7 +147,7 @@ language; `--lang en` or `--lang ru` sets it explicitly.
 
 Download the release archive and run `RFLP-Picker.exe`. Python is not needed on
 the computer. The reference FASTA is not in the archive because of its size;
-choose it in the «Genome» field. The `names/` folder in the archive holds a
+choose it in the “Genome” field. The `names/` folder in the archive holds a
 ready chromosome name mapping for the genome used in the examples.
 
 The release archive is in the Releases section on GitHub. To rebuild the EXE
@@ -162,10 +162,10 @@ The `_internal` and `names` folders must stay next to the EXE.
 In the window, choose:
 
 - a variants file (CSV, TSV or TXT) with the columns `chrom`, `pos`, `ref`, `alt`;
-- a reference genome FASTA: the «Genome» list holds recent genomes and FASTA files
-  from the `genoms/` folder next to the program, «Choose a file…» opens any other;
+- a reference genome FASTA: the “Genome” list holds recent genomes and FASTA files
+  from the `genoms/` folder next to the program, “Choose a file…” opens any other;
 - if needed, a chromosome name mapping file: the program takes
-  `names/<genome name>.txt` by itself, another file is chosen with the «change» link.
+  `names/<genome name>.txt` by itself, another file is chosen with the “change” link.
 
 Single-base SNPs are supported: one character in `REF` and one in `ALT`, only
 `A`, `C`, `G`, `T`. Positions in the file start at 1. Quoted CSV and UTF-8 with
@@ -185,9 +185,9 @@ It applies to both gain/loss and shift. The joint search also requires all
 three genotypes to differ in the presence of bands.
 
 With Primer3 on, the program searches for primer pairs within the given product
-size and Tm range. When no pair is found, the line gets the status «no primers»
+size and Tm range. When no pair is found, the line gets the status “no primers”
 and gives no false enzyme candidates. With Primer3 off, the search runs over the
-whole window and is marked «window search».
+whole window and is marked “window search”.
 
 Checking the coordinates and that `REF` matches the FASTA is always on. The
 option to skip normalization turns off only the automatic REF/ALT swap.
@@ -198,47 +198,48 @@ The window has three columns (see the screenshot at the top of this file).
 
 1. **Run.** SNP file, genome, an optional VCF of known variants, product size,
    Tm, enzyme suppliers and the dCAPS mode. The other parameters are under the
-   «Advanced…» link. The program remembers files and parameters between
-   sessions. After a run the panel collapses; « and » collapse and expand it.
+   “Advanced…” link. The program remembers files and parameters between
+   sessions. After a run the panel collapses; “ and ” collapse and expand it.
 2. **SNP list.** One row for each SNP of the file, in file order. The counters
-   above the list — «Robust», «Good gel only», «No assay», «Data error» — work
+   above the list — “Robust”, “Good gel only”, “No assay”, “Data error” — work
    as filters; the search looks at the ID, the position and the enzyme. The
-   «Note» column holds warnings and hints on what to change when no assay was
+   “Note” column holds warnings and hints on what to change when no assay was
    found. More columns are added with a right click on the header.
 3. **Details of the chosen SNP.** All assays of the SNP; the star marks the
-   assay that goes to Excel (the best one by default). The «Gel», «Map» and
-   «Primers» tabs: the primer card copies «name ⇥ sequence» lines for an oligo
-   order form. «⤢ Enlarge» opens the map with sequences and PNG/SVG export.
+   assay that goes to Excel (the best one by default). The “Gel”, “Map” and
+   “Primers” tabs: the primer card copies “name ⇥ sequence” lines for an oligo
+   order form. “⤢ Enlarge” opens the map with sequences and PNG/SVG export.
 
 When the input file has an `id` column (or `name`, `snp_id`, `rsid`), its values
 appear in the list, in Excel and in the primer names (`DGAT1_F`, `DGAT1_R`).
 
-The theme follows Windows; the «Theme» switch in the status bar selects light
+The theme follows Windows; the “Theme” switch in the status bar selects light
 or dark by hand.
 
 ### Interface language
 
 When Windows uses Russian, the program opens in Russian; with any other
-language it opens in English. The «Language» switch in the status bar selects
-the language by hand («System», «Русский», «English»); a new language applies
+language it opens in English. The “Language” switch in the status bar selects
+the language by hand (“System”, “Русский”, “English”); a new language applies
 after the program is restarted. The window, the notes, the Excel sheets
-«Summary» and «Primers» and the log are translated. The technical sheets
+“Summary” and “Primers” and the log are translated. The technical sheets
 `Results`, `Run` and `Rejected` are the same in both languages; the `reason`
-column of `Results` always holds the original text of the analysis in Russian.
+column of `Results` and the `details` column of `Rejected` always hold the
+original text of the analysis in Russian.
 
 ## Results and export
 
-The «Export to Excel ▾» button saves all SNPs or only the shown ones (after the
+The “Export to Excel ▾” button saves all SNPs or only the shown ones (after the
 filter and the search) to the `results/` folder. Excel sheets:
 
-- «Summary» — one row per SNP for the chosen assay: status, enzyme, primers, Tm,
+- “Summary” — one row per SNP for the chosen assay: status, enzyme, primers, Tm,
   product, bands of the three genotypes, score, note;
-- «Primers» — names and sequences for ordering oligos;
+- “Primers” — names and sequences for ordering oligos;
 - `Results` — all assays of all SNPs, as in 1.2, plus the `snp_id` and
   `selected` columns;
 - `Run` and `Rejected` — run parameters and rejected lines.
 
-«CSV: all assays» saves the contents of the `Results` sheet as UTF-8 with BOM.
+“CSV: all assays” saves the contents of the `Results` sheet as UTF-8 with BOM.
 
 ## Project structure
 

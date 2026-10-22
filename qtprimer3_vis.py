@@ -36,6 +36,17 @@ def detected_language() -> str:
     return i18n.system_language(QLocale.system().uiLanguages())
 
 
+def apply_language(code: str) -> None:
+    """Set the interface language before any window is built.
+
+    In English, numbers in spin boxes use a dot like the rest of the window; the
+    Russian interface keeps the number format of the system, as before.
+    """
+    i18n.set_language(code)
+    if code == 'en':
+        QLocale.setDefault(QLocale(QLocale.Language.English, QLocale.Country.UnitedStates))
+
+
 def startup_language(settings: AppSettings) -> str:
     """The saved language, or the system one for 'system' and unknown values (i18n spec §3.2)."""
     return i18n.resolve_language(settings.value('language', 'system'), detected_language())
@@ -272,7 +283,7 @@ class RFLPPickerGUI(QMainWindow):
     def _on_progress(self, done: int, total: int):
         self.launch.set_progress(done, total)
         if self.list.model.rowCount() == 0:
-            self.list.set_placeholder(t('Идёт расчёт… {done} из {total} SNP', done=done, total=total))
+            self.list.set_placeholder(t('Идёт расчёт… {done} из {count} SNP', done=done, count=total))
 
     def _on_finished(self):
         self.worker = None
@@ -381,7 +392,7 @@ def main() -> None:
         core.logger.warning(f'primer3 недоступен, ошибка импорта: {core._PRIMER3_IMPORT_ERROR}')
     app = QApplication(sys.argv)
     settings = AppSettings()
-    i18n.set_language(startup_language(settings))   # before any window is built
+    apply_language(startup_language(settings))   # before any window is built
     window = RFLPPickerGUI(settings)
     install_exception_hook(window)
     window.show()

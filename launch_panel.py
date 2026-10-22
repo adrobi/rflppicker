@@ -637,7 +637,7 @@ class LaunchPanel(QWidget):
             self.progress_label.setText(t('Подготовка…'))
 
     def set_progress(self, done: int, total: int) -> None:
-        self.progress_label.setText(t('{done} из {total} SNP', done=done, total=total))
+        self.progress_label.setText(t('{done} из {count} SNP', done=done, count=total))
 
     def _toggle_collapsed(self, collapsed: bool):
         self.set_collapsed(collapsed)
