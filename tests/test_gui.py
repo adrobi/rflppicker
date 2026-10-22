@@ -11,27 +11,8 @@ from PyQt6.QtWidgets import QApplication, QMessageBox
 
 import qtprimer3_vis
 from app_settings import AppSettings
-from tests.helpers import HEADER, core_row, dispose, write_text
+from tests.helpers import FIXED_OUTPUT, FOUR_SNPS, HEADER, dispose, run_fake_analysis, write_text
 from theme import ThemeController
-
-FOUR_SNPS = ('chrom\tpos\tref\talt\tid\n11\t37525128\tC\tG\tHOXB13\n1\t41250567\tA\tC\tLEPR\n'
-             '1\t91308651\tC\tT\tOLFML3\n12\t880121\tA\tG\trs7781\n')
-HOX = dict(variant='11:37525128 C>G', mapped_id='NC_056064.1', enzyme='Bse1I', isoschizomers='BsrI',
-           genotype_quality='robust', genotype_margin=15.77, bands_ref_ref='448', bands_alt_alt='212; 236',
-           product_size=475, assay_rank=1, primers_left='TATGAGCTTCTCTCCGCCAG', primers_right='CGCCTCCAAAGTAGCCGTAA',
-           tm_left=59.0, tm_right=60.1)
-FIXED_OUTPUT = (
-    HEADER,
-    [core_row(**HOX),
-     core_row(**dict(HOX, enzyme='BsrDI', isoschizomers='', genotype_margin=12.1, assay_rank=2)),
-     core_row(variant='1:41250567 A>C', enzyme='AciI', genotype_quality='nominal_only', genotype_margin=1.4,
-              bands_ref_ref='292; 140', bands_alt_alt='432', product_size=432, assay_rank=1,
-              weakest_genotypes='REF/REF–REF/ALT'),
-     core_row(variant='1:91308651 C>T', enzyme='', status='no_discriminating_assay',
-              reason='Не найдено сочетание для различения трёх генотипов')],
-    {'summary': {'rows': 4}, 'rejected': [{'chrom': '12', 'pos': 880121, 'ref': 'A', 'alt': 'G',
-                                            'reason': 'ref_not_match', 'details': 'x'}]},
-)
 
 
 class MainWindowTests(unittest.TestCase):
@@ -56,27 +37,7 @@ class MainWindowTests(unittest.TestCase):
         self._dir.cleanup()
 
     def run_with(self, output, variants=FOUR_SNPS):
-        path = write_text(self.tmp, 'variants.tsv', variants)
-        self.window.launch.set_files(path, self.fasta)
-
-        def fake(params, status_cb=None, progress_cb=None, cancel_cb=None, report=None):
-            if isinstance(output, Exception):
-                raise output
-            header, rows, fixed_report = output
-            if report is not None:
-                report.update(fixed_report)
-            if progress_cb:
-                progress_cb(1, 4)
-            return header, rows
-
-        with patch('rflp_core.run_rflp_gui_mode', side_effect=fake):
-            self.window.start_run()
-            worker = self.window.worker
-            self.assertIsNotNone(worker)
-            worker.wait(10000)
-            for _ in range(3):
-                QApplication.processEvents()
-        self.assertIsNone(self.window.worker)
+        run_fake_analysis(self.window, self.tmp, self.fasta, output, variants)
 
     def test_run_fills_list_and_collapses_launch(self):
         self.run_with(FIXED_OUTPUT)
