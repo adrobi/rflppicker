@@ -188,7 +188,8 @@ and the Rejected sheet (rejected variants). The log goes to stderr.''',
     'Разрешение, %%': 'Resolution, %%',
     'Ухудшение разрешения, ×': 'Resolution stress, ×',
     'нормализация': 'normalization',
-    'Не исправлять REF/ALT (проверка REF по FASTA остаётся)': 'Do not fix REF/ALT (REF is still checked against the FASTA)',
+    'Не исправлять REF/ALT (проверка REF по FASTA остаётся)':
+        'Do not fix REF/ALT (REF is still checked against the FASTA)',
     'Сохранять cleaned/rejected в results/normalize': 'Save cleaned/rejected to results/normalize',
     'Не выводить журнал': 'Do not print the log',
     '--out: требуется расширение .csv или .xlsx': '--out: the extension must be .csv or .xlsx',
@@ -219,7 +220,8 @@ and the Rejected sheet (rejected variants). The log goes to stderr.''',
     'Идёт расчёт… {done} из {total} SNP': 'Running… {done} of {total} SNPs',
     'Ошибка расчёта: {message}': 'Run failed: {message}',
     'Расчёт остановлен': 'Run stopped',
-    'Выберите файл SNP и геном слева и нажмите «Запустить»': 'Choose an SNP file and a genome on the left and press «Run»',
+    'Выберите файл SNP и геном слева и нажмите «Запустить»':
+        'Choose an SNP file and a genome on the left and press «Run»',
     'В файле нет SNP': 'The file has no SNPs',
     'Готово: {count} SNP · {parts}': 'Done: {count} SNPs · {parts}',
     'Выгрузка': 'Export',
@@ -234,6 +236,116 @@ and the Rejected sheet (rejected variants). The log goes to stderr.''',
     'Ошибка: {error}. Подробности — в журнале.': 'Error: {error}. Details are in the log.',
     'Ошибка': 'Error',
     '{error}\n\nПодробности — в окне «Журнал».': '{error}\n\nDetails are in the «Log» window.',
+    # launch_panel: the «Запуск» column and the advanced dialog.
+    'Нет': 'No',
+    'Если нет надёжной схемы': 'If there is no robust assay',
+    'Для каждого SNP': 'For every SNP',
+    'Выбрать файл…': 'Choose a file…',
+    'Выберите файл SNP': 'Choose an SNP file',
+    'Выберите геном': 'Choose a genome',
+    'Файл не найден': 'File not found',
+    'Включая непродаваемые': 'Including non-commercial',
+    'Все, включая непродаваемые': 'All, including non-commercial',
+    'Все продаваемые': 'All commercial',
+    '{names} и ещё {count}': '{names} and {count} more',
+    'Видимые фрагменты от, п.н.': 'Visible fragments from, bp',
+    'В совместном поиске — нижняя граница видимых полос. В поиске по одной паре/окну — '
+    'ограничение на каждый фрагмент.':
+        'In the joint search, the lower limit of visible bands. In the single pair or window search, '
+        'a limit on every fragment.',
+    'до, п.н.': 'to, bp',
+    'В совместном поиске — верхняя граница видимых полос. В поиске по одной паре/окну — '
+    'ограничение на каждый фрагмент.':
+        'In the joint search, the upper limit of visible bands. In the single pair or window search, '
+        'a limit on every fragment.',
+    'Наименьшее различие видимых полос REF и ALT.': 'The smallest difference between visible REF and ALT bands.',
+    'Разрешение, %': 'Resolution, %',
+    'Модель полос без учёта яркости. Различие должно превышать максимум из порога в п.н. '
+    'и процента длины. Параметры требуют проверки на вашем геле.':
+        'A band model without brightness. A difference must exceed the larger of the bp threshold '
+        'and the percentage of the length. Check the parameters on your own gel.',
+    'Фланк, п.н.': 'Flank, bp',
+    'Число оснований по обе стороны SNP.': 'Number of bases on each side of the SNP.',
+    'Схем на SNP': 'Assays per SNP',
+    '0 — все схемы.': '0: all assays.',
+    'Макс. разрезов': 'Max. cuts',
+    'Объединять изошизомеры': 'Group isoschizomers',
+    'Одна строка на сайт узнавания для SNP: лучшая схема, остальные ферменты с тем же '
+    'сайтом — в столбце «Изошизомеры».':
+        'One row per recognition site for an SNP: the best assay, with the other enzymes of the same '
+        'site in the «Isoschizomers» column.',
+    'SNP от края ампликона, п.н.': 'SNP from amplicon end, bp',
+    'Primer3 ставит SNP не ближе заданного числа п.н. к каждому концу ампликона, чтобы '
+    'диагностический фрагмент был видим. Значение должно быть не меньше мин. фрагмента. '
+    'Не действует в поиске по окну.':
+        'Primer3 keeps the SNP at least this many bp from each amplicon end, so that the '
+        'diagnostic fragment is visible. The value should be no less than the min. fragment. '
+        'Has no effect in the window search.',
+    'Исключать сайт фермента в праймере': 'Exclude an enzyme site in a primer',
+    'Сайт внутри праймера есть в продукте при любом аллеле, а разрез у самого конца ДНК '
+    'ненадёжен.':
+        'A site inside a primer is in the product with either allele, and a cut at the very end of the DNA '
+        'is unreliable.',
+    'Учитывать повторы (soft-mask)': 'Mind repeats (soft-mask)',
+    'Строчные буквы FASTA (повторы в геномах NCBI/Ensembl) не допускаются на 3′-конце праймера.':
+        'Lower-case FASTA letters (repeats in NCBI/Ensembl genomes) are not allowed at the primer 3′ end.',
+    'Исключать схемы с фоновыми вариантами': 'Exclude assays with background variants',
+    'Схемы, где известные варианты из VCF меняют разрезы или длины полос.':
+        'Assays where known variants from the VCF change cuts or band sizes.',
+    'Несовпадений dCAPS, до': 'dCAPS mismatches, up to',
+    'Наибольшее число несовпадений в праймере dCAPS.': 'The largest number of mismatches in a dCAPS primer.',
+    'Отключите для сравнения с поиском по первой паре Primer3.':
+        'Turn off to compare with the search on the first Primer3 pair.',
+    'Без Primer3 анализируется окно вокруг SNP.': 'Without Primer3 the window around the SNP is analysed.',
+    'Только gain/loss': 'Gain/loss only',
+    'Пропускать нормализацию': 'Skip normalization',
+    'Отключает только перестановку REF/ALT.': 'Turns off only the REF/ALT swap.',
+    'Не сохранять нормализацию': 'Do not save normalization',
+    'Гель': 'Gel',
+    'Поиск': 'Search',
+    'Проверки': 'Checks',
+    'Для сравнения и отладки': 'For comparison and debugging',
+    'Дополнительные параметры': 'Advanced parameters',
+    'Все': 'All',
+    'Не ограничивать': 'No limit',
+    'Сбросить к рекомендуемым': 'Reset to recommended',
+    'Как в v1.1.0': 'As in v1.1.0',
+    'Готово': 'Done',
+    'Запуск': 'Run',
+    'Свернуть панель': 'Collapse the panel',
+    'Данные': 'Data',
+    'CSV или TSV: chrom, pos, ref, alt': 'CSV or TSV: chrom, pos, ref, alt',
+    'Геном': 'Genome',
+    'изменить': 'change',
+    'Без соответствий': 'No mapping',
+    'Автоматически': 'Automatic',
+    'не обязательно': 'optional',
+    'VCF или VCF.gz известных вариантов породы или популяции.':
+        'VCF or VCF.gz of known variants of the breed or population.',
+    'Ферменты': 'Enzymes',
+    'dCAPS: праймер с 1–2 несовпадениями у 3′-конца создаёт сайт фермента только '
+    'в одном аллеле. Различие полос ≈ длине праймера.':
+        'dCAPS: a primer with 1–2 mismatches near the 3′ end creates the enzyme site in one allele '
+        'only. The band difference ≈ the primer length.',
+    'Дополнительно…': 'Advanced…',
+    'Запустить': 'Run',
+    'Развернуть панель «Запуск»': 'Expand the «Run» panel',
+    'Геном FASTA': 'FASTA genome',
+    'FASTA (*.fa *.fasta *.fna);;Все файлы (*)': 'FASTA (*.fa *.fasta *.fna);;All files (*)',
+    'Хромосомы: {name}': 'Chromosomes: {name}',
+    'Хромосомы: как в файле SNP': 'Chromosomes: as in the SNP file',
+    'Хромосомы: {name} (авто)': 'Chromosomes: {name} (auto)',
+    'Файл соответствий хромосом': 'Chromosome name mapping file',
+    'Текст (*.txt);;Все файлы (*)': 'Text (*.txt);;All files (*)',
+    'Файл SNP': 'SNP file',
+    'Таблицы (*.tsv *.csv *.txt);;Все файлы (*)': 'Tables (*.tsv *.csv *.txt);;All files (*)',
+    'VCF известных вариантов': 'VCF of known variants',
+    'VCF (*.vcf *.vcf.gz *.gz);;Все файлы (*)': 'VCF (*.vcf *.vcf.gz *.gz);;All files (*)',
+    'ошибка': 'error',
+    'изменено {count}': 'changed {count}',
+    'Остановить': 'Stop',
+    'Подготовка…': 'Preparing…',
+    '{done} из {total} SNP': '{done} of {total} SNPs',
 }
 
 CORE = [
@@ -254,7 +366,8 @@ CORE = [
     (r'dCAPS: несовпадение в праймере создаёт сайт в аллеле (REF|ALT)\. ',
      r'dCAPS: the primer mismatch creates the site in the \1 allele. '),
     (r'Модуль Primer3 недоступен', 'The Primer3 module is not available'),
-    (r'Primer3 вернул праймеры вне окна или перекрывающие SNP', 'Primer3 returned primers outside the window or over the SNP'),
+    (r'Primer3 вернул праймеры вне окна или перекрывающие SNP',
+     'Primer3 returned primers outside the window or over the SNP'),
     (r'Несогласованные размеры продукта/праймеров Primer3', 'Inconsistent Primer3 product or primer sizes'),
     (r'Последовательности праймеров не совпадают с референсом', 'Primer sequences do not match the reference'),
     (r'Primer3 вернул некорректную оценку', 'Primer3 returned an invalid score'),

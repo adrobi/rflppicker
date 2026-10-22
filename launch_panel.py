@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (
 import icons
 import palette
 from app_settings import AppSettings
+from i18n import N_, core_text, t
 from rflp_core import (
     DEFAULT_PARAMS, RECOMMENDED_PARAMS, _PRIMER3_AVAILABLE, _SUPPLIER_CANON, get_base_dir, validate_params,
 )
@@ -25,30 +26,30 @@ SUPPLIER_TITLES = {'A': 'Agilent', 'E': 'Thermo Fisher', 'F': 'Promega', 'H': 'M
                    'J': 'Nippon Gene', 'K': 'Takara', 'M': 'Roche', 'N': 'NEB',
                    'R': 'Molecular Biology Resources', 'S': 'Sigma', 'T': 'Toyobo', 'V': 'Vivantis', 'Y': 'EURx',
                    'Z': 'SinaClon'}
-DCAPS_CHOICES = (('Нет', 'off'), ('Если нет надёжной схемы', 'fallback'), ('Для каждого SNP', 'always'))
-CHOOSE_FILE = 'Выбрать файл…'
+DCAPS_CHOICES = ((N_('Нет'), 'off'), (N_('Если нет надёжной схемы'), 'fallback'), (N_('Для каждого SNP'), 'always'))
+CHOOSE_FILE = N_('Выбрать файл…')
 COLLAPSED_WIDTH = 36
-_MISSING = {'input_file': 'Выберите файл SNP', 'fasta': 'Выберите геном'}
+_MISSING = {'input_file': N_('Выберите файл SNP'), 'fasta': N_('Выберите геном')}
 
 
 def field_errors(params: dict) -> Dict[str, str]:
-    """Field key → message, from the messages of rflp_core.validate_params."""
+    """Field key → message in the interface language, from the messages of rflp_core.validate_params."""
     errors: Dict[str, str] = {}
     for message in validate_params(params):
         if message.startswith('Не задан параметр: '):
             key = message.split(': ', 1)[1]
-            text = _MISSING.get(key, message)
+            text = t(_MISSING[key]) if key in _MISSING else core_text(message)
         elif message.startswith('Файл не найден ('):
-            key, text = message[len('Файл не найден ('):].split(')', 1)[0], 'Файл не найден'
+            key, text = message[len('Файл не найден ('):].split(')', 1)[0], t('Файл не найден')
         elif 'min_frag/max_frag' in message or 'размер фрагмента' in message:
-            key, text = 'min_frag', message
+            key, text = 'min_frag', core_text(message)
         elif 'prod_min/prod_max' in message or 'размер продукта' in message:
-            key, text = 'prod_min', message
+            key, text = 'prod_min', core_text(message)
         elif 'tm_min/tm_max' in message or ' Tm' in message:
-            key, text = 'tm_min', message
+            key, text = 'tm_min', core_text(message)
         else:
             key = next((k for k in params if message.startswith(f'{k}:')), 'gel_resolution_bp')
-            text = message
+            text = core_text(message)
         errors.setdefault(key, text)
     return errors
 
@@ -87,7 +88,7 @@ class SupplierPicker(QToolButton):
             action.toggled.connect(lambda checked, c=code: self._on_supplier(c, checked))
             self._actions[code] = action
         menu.addSeparator()
-        self._all = menu.addAction('Включая непродаваемые')
+        self._all = menu.addAction(t('Включая непродаваемые'))
         self._all.setCheckable(True)
         self._all.toggled.connect(self._on_all)
         self.setMenu(menu)
@@ -127,62 +128,65 @@ class SupplierPicker(QToolButton):
     def _update_text(self):
         commercial_only, suppliers = self.value()
         if not commercial_only:
-            text = 'Все, включая непродаваемые'
+            text = t('Все, включая непродаваемые')
         elif not suppliers:
-            text = 'Все продаваемые'
+            text = t('Все продаваемые')
         else:
             names = [self._actions[c].text() for c in suppliers]
-            text = ', '.join(names[:2]) + (f' и ещё {len(names) - 2}' if len(names) > 2 else '')
+            text = ', '.join(names[:2])
+            if len(names) > 2:
+                text = t('{names} и ещё {count}', names=text, count=len(names) - 2)
         self.setText(text)
         self.setToolTip(text)
 
 
 # key -> (label, kind, minimum, maximum, step/decimals, tooltip)
 _ADVANCED_FIELDS = {
-    'min_frag': ('Видимые фрагменты от, п.н.', 'int', 10, 5000, 1,
-                 'В совместном поиске — нижняя граница видимых полос. В поиске по одной паре/окну — '
-                 'ограничение на каждый фрагмент.'),
-    'max_frag': ('до, п.н.', 'int', 10, 5000, 1,
-                 'В совместном поиске — верхняя граница видимых полос. В поиске по одной паре/окну — '
-                 'ограничение на каждый фрагмент.'),
-    'delta': ('Порог Δ, п.н.', 'int', 1, 1000, 1, 'Наименьшее различие видимых полос REF и ALT.'),
-    'gel_resolution_bp': ('Разрешение, п.н.', 'float', 0.1, 1000, 2, ''),
-    'gel_resolution_pct': ('Разрешение, %', 'float', 0, 100, 2, ''),
-    'gel_stress_factor': ('Ухудшение разрешения, ×', 'float', 1, 5, 2,
-                          'Модель полос без учёта яркости. Различие должно превышать максимум из порога в п.н. '
-                          'и процента длины. Параметры требуют проверки на вашем геле.'),
-    'flank': ('Фланк, п.н.', 'int', 1, 5000, 1, 'Число оснований по обе стороны SNP.'),
-    'primer_pairs': ('Пар Primer3 на SNP', 'int', 1, 100, 1, ''),
-    'top_results': ('Схем на SNP', 'int', 0, 10000, 1, '0 — все схемы.'),
-    'max_cuts': ('Макс. разрезов', 'int', 1, 10, 1, ''),
-    'group_isoschizomers': ('Объединять изошизомеры', 'bool', 0, 0, 0,
-                            'Одна строка на сайт узнавания для SNP: лучшая схема, остальные ферменты с тем же '
-                            'сайтом — в столбце «Изошизомеры».'),
-    'snp_end_distance': ('SNP от края ампликона, п.н.', 'int', 0, 1000, 1,
-                         'Primer3 ставит SNP не ближе заданного числа п.н. к каждому концу ампликона, чтобы '
-                         'диагностический фрагмент был видим. Значение должно быть не меньше мин. фрагмента. '
-                         'Не действует в поиске по окну.'),
-    'exclude_primer_sites': ('Исключать сайт фермента в праймере', 'bool', 0, 0, 0,
-                             'Сайт внутри праймера есть в продукте при любом аллеле, а разрез у самого конца ДНК '
-                             'ненадёжен.'),
-    'mask_repeats': ('Учитывать повторы (soft-mask)', 'bool', 0, 0, 0,
-                     'Строчные буквы FASTA (повторы в геномах NCBI/Ensembl) не допускаются на 3′-конце праймера.'),
-    'exclude_background_sites': ('Исключать схемы с фоновыми вариантами', 'bool', 0, 0, 0,
-                                 'Схемы, где известные варианты из VCF меняют разрезы или длины полос.'),
-    'dcaps_mismatches': ('Несовпадений dCAPS, до', 'int', 1, 2, 1, 'Наибольшее число несовпадений в праймере dCAPS.'),
-    'joint_design': ('Совместный подбор праймеров и фермента', 'bool', 0, 0, 0,
-                     'Отключите для сравнения с поиском по первой паре Primer3.'),
-    'use_primer3': ('Primer3', 'bool', 0, 0, 0, 'Без Primer3 анализируется окно вокруг SNP.'),
-    'gain_loss_only': ('Только gain/loss', 'bool', 0, 0, 0, ''),
-    'skip_norm': ('Пропускать нормализацию', 'bool', 0, 0, 0, 'Отключает только перестановку REF/ALT.'),
-    'no_save_norm': ('Не сохранять нормализацию', 'bool', 0, 0, 0, ''),
+    'min_frag': (N_('Видимые фрагменты от, п.н.'), 'int', 10, 5000, 1,
+                 N_('В совместном поиске — нижняя граница видимых полос. В поиске по одной паре/окну — '
+                    'ограничение на каждый фрагмент.')),
+    'max_frag': (N_('до, п.н.'), 'int', 10, 5000, 1,
+                 N_('В совместном поиске — верхняя граница видимых полос. В поиске по одной паре/окну — '
+                    'ограничение на каждый фрагмент.')),
+    'delta': (N_('Порог Δ, п.н.'), 'int', 1, 1000, 1, N_('Наименьшее различие видимых полос REF и ALT.')),
+    'gel_resolution_bp': (N_('Разрешение, п.н.'), 'float', 0.1, 1000, 2, ''),
+    'gel_resolution_pct': (N_('Разрешение, %'), 'float', 0, 100, 2, ''),
+    'gel_stress_factor': (N_('Ухудшение разрешения, ×'), 'float', 1, 5, 2,
+                          N_('Модель полос без учёта яркости. Различие должно превышать максимум из порога в п.н. '
+                             'и процента длины. Параметры требуют проверки на вашем геле.')),
+    'flank': (N_('Фланк, п.н.'), 'int', 1, 5000, 1, N_('Число оснований по обе стороны SNP.')),
+    'primer_pairs': (N_('Пар Primer3 на SNP'), 'int', 1, 100, 1, ''),
+    'top_results': (N_('Схем на SNP'), 'int', 0, 10000, 1, N_('0 — все схемы.')),
+    'max_cuts': (N_('Макс. разрезов'), 'int', 1, 10, 1, ''),
+    'group_isoschizomers': (N_('Объединять изошизомеры'), 'bool', 0, 0, 0,
+                            N_('Одна строка на сайт узнавания для SNP: лучшая схема, остальные ферменты с тем же '
+                               'сайтом — в столбце «Изошизомеры».')),
+    'snp_end_distance': (N_('SNP от края ампликона, п.н.'), 'int', 0, 1000, 1,
+                         N_('Primer3 ставит SNP не ближе заданного числа п.н. к каждому концу ампликона, чтобы '
+                            'диагностический фрагмент был видим. Значение должно быть не меньше мин. фрагмента. '
+                            'Не действует в поиске по окну.')),
+    'exclude_primer_sites': (N_('Исключать сайт фермента в праймере'), 'bool', 0, 0, 0,
+                             N_('Сайт внутри праймера есть в продукте при любом аллеле, а разрез у самого конца ДНК '
+                                'ненадёжен.')),
+    'mask_repeats': (N_('Учитывать повторы (soft-mask)'), 'bool', 0, 0, 0,
+                     N_('Строчные буквы FASTA (повторы в геномах NCBI/Ensembl) не допускаются на 3′-конце праймера.')),
+    'exclude_background_sites': (N_('Исключать схемы с фоновыми вариантами'), 'bool', 0, 0, 0,
+                                 N_('Схемы, где известные варианты из VCF меняют разрезы или длины полос.')),
+    'dcaps_mismatches': (N_('Несовпадений dCAPS, до'), 'int', 1, 2, 1,
+                         N_('Наибольшее число несовпадений в праймере dCAPS.')),
+    'joint_design': (N_('Совместный подбор праймеров и фермента'), 'bool', 0, 0, 0,
+                     N_('Отключите для сравнения с поиском по первой паре Primer3.')),
+    'use_primer3': ('Primer3', 'bool', 0, 0, 0, N_('Без Primer3 анализируется окно вокруг SNP.')),
+    'gain_loss_only': (N_('Только gain/loss'), 'bool', 0, 0, 0, ''),
+    'skip_norm': (N_('Пропускать нормализацию'), 'bool', 0, 0, 0, N_('Отключает только перестановку REF/ALT.')),
+    'no_save_norm': (N_('Не сохранять нормализацию'), 'bool', 0, 0, 0, ''),
 }
 _ADVANCED_GROUPS = (
-    ('Гель', ('min_frag', 'max_frag', 'delta', 'gel_resolution_bp', 'gel_resolution_pct', 'gel_stress_factor')),
-    ('Поиск', ('flank', 'primer_pairs', 'top_results', 'max_cuts')),
-    ('Проверки', ('group_isoschizomers', 'snp_end_distance', 'exclude_primer_sites', 'mask_repeats',
+    (N_('Гель'), ('min_frag', 'max_frag', 'delta', 'gel_resolution_bp', 'gel_resolution_pct', 'gel_stress_factor')),
+    (N_('Поиск'), ('flank', 'primer_pairs', 'top_results', 'max_cuts')),
+    (N_('Проверки'), ('group_isoschizomers', 'snp_end_distance', 'exclude_primer_sites', 'mask_repeats',
                   'exclude_background_sites', 'dcaps_mismatches')),
-    ('Для сравнения и отладки', ('joint_design', 'use_primer3', 'gain_loss_only', 'skip_norm', 'no_save_norm')),
+    (N_('Для сравнения и отладки'), ('joint_design', 'use_primer3', 'gain_loss_only', 'skip_norm', 'no_save_norm')),
 )
 
 
@@ -192,7 +196,7 @@ class AdvancedDialog(QDialog):
 
     def __init__(self, params: dict, parent=None):
         super().__init__(parent)
-        self.setWindowTitle('Дополнительные параметры')
+        self.setWindowTitle(t('Дополнительные параметры'))
         self._widgets: Dict[str, QWidget] = {}
         self._errors: Dict[str, QLabel] = {}
         layout = QVBoxLayout(self)
@@ -202,13 +206,13 @@ class AdvancedDialog(QDialog):
             if index % 2 == 0:
                 column = QVBoxLayout()
                 columns.addLayout(column)
-            column.addWidget(_label(title, 'caption'))
+            column.addWidget(_label(t(title), 'caption'))
             grid = QGridLayout()
             column.addLayout(grid)
             for row, key in enumerate(keys):
                 text, kind, low, high, step, tip = _ADVANCED_FIELDS[key]
                 if kind == 'bool':
-                    widget = QCheckBox(text)
+                    widget = QCheckBox(t(text))
                     grid.addWidget(widget, row * 2, 0, 1, 2)
                 else:
                     widget = QSpinBox() if kind == 'int' else QDoubleSpinBox()
@@ -216,10 +220,10 @@ class AdvancedDialog(QDialog):
                     if kind == 'float':
                         widget.setDecimals(step)
                         widget.setSingleStep(0.1)
-                    grid.addWidget(QLabel(text), row * 2, 0)
+                    grid.addWidget(QLabel(t(text)), row * 2, 0)
                     grid.addWidget(widget, row * 2, 1)
                 widget.setObjectName(f'adv_{key}')
-                widget.setToolTip(tip)
+                widget.setToolTip(t(tip) if tip else '')
                 error = _label('', 'error', f'dialog_error_{key}')
                 error.setWordWrap(True)
                 error.hide()
@@ -227,15 +231,15 @@ class AdvancedDialog(QDialog):
                 self._widgets[key] = widget
                 self._errors[key] = error
             column.addStretch()
-        self._widgets['top_results'].setSpecialValueText('Все')
-        self._widgets['snp_end_distance'].setSpecialValueText('Не ограничивать')
+        self._widgets['top_results'].setSpecialValueText(t('Все'))
+        self._widgets['snp_end_distance'].setSpecialValueText(t('Не ограничивать'))
         buttons = QHBoxLayout()
-        for text, preset in (('Сбросить к рекомендуемым', 'recommended'), ('Как в v1.1.0', 'v1.1')):
+        for text, preset in ((t('Сбросить к рекомендуемым'), 'recommended'), (t('Как в v1.1.0'), 'v1.1')):
             button = QPushButton(text)
             button.clicked.connect(lambda _=False, p=preset: self.preset_requested.emit(p))
             buttons.addWidget(button)
         buttons.addStretch()
-        done = QPushButton('Готово')
+        done = QPushButton(t('Готово'))
         done.setProperty('role', 'primary')
         done.clicked.connect(self.accept)
         buttons.addWidget(done)
@@ -284,11 +288,11 @@ class LaunchPanel(QWidget):
         full = QVBoxLayout(self._full)
         full.setContentsMargins(0, 0, 0, 0)
         header = QHBoxLayout()
-        header.addWidget(_label('Запуск', 'title'))
+        header.addWidget(_label(t('Запуск'), 'title'))
         header.addStretch()
         self._collapse_button = QToolButton()
         self._collapse_button.setObjectName('collapse_button')
-        self._collapse_button.setToolTip('Свернуть панель')
+        self._collapse_button.setToolTip(t('Свернуть панель'))
         self._collapse_button.clicked.connect(lambda: self._toggle_collapsed(True))
         header.addWidget(self._collapse_button)
         full.addLayout(header)
@@ -316,58 +320,58 @@ class LaunchPanel(QWidget):
                 row += 1
 
         self._errors = {key: _error_label(key) for key in PANEL_ERROR_KEYS}
-        caption('Данные')
+        caption(t('Данные'))
         self.snp_edit = QLineEdit()
         self.snp_edit.setObjectName('snp_edit')
-        self.snp_edit.setPlaceholderText('CSV или TSV: chrom, pos, ref, alt')
+        self.snp_edit.setPlaceholderText(t('CSV или TSV: chrom, pos, ref, alt'))
         self.snp_edit.textChanged.connect(lambda: self._mark_missing(self.snp_edit))
         field('SNP', self.snp_edit, self._browse_button(self._browse_snp), 'input_file')
         self.genome_combo = QComboBox()
         self.genome_combo.setObjectName('genome_combo')
         self.genome_combo.activated.connect(self._on_genome_activated)
-        field('Геном', self.genome_combo, None, 'fasta')
+        field(t('Геном'), self.genome_combo, None, 'fasta')
         names_row = QHBoxLayout()
         self.names_label = _label('', 'muted', 'names_label')
         self.names_label.setWordWrap(True)
         names_row.addWidget(self.names_label, 1)
         names_change = QToolButton()
-        names_change.setText('изменить')
+        names_change.setText(t('изменить'))
         names_change.setProperty('role', 'link')
         names_change.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         names_menu = QMenu(names_change)
-        names_menu.addAction('Выбрать файл…', self._choose_names_file)
-        names_menu.addAction('Без соответствий', lambda: self._set_names(''))
-        names_menu.addAction('Автоматически', lambda: self._set_names(None))
+        names_menu.addAction(t(CHOOSE_FILE), self._choose_names_file)
+        names_menu.addAction(t('Без соответствий'), lambda: self._set_names(''))
+        names_menu.addAction(t('Автоматически'), lambda: self._set_names(None))
         names_change.setMenu(names_menu)
         names_row.addWidget(names_change)
         form.addLayout(names_row, row, 1, 1, 2)
         row += 1
         self.vcf_edit = QLineEdit()
         self.vcf_edit.setObjectName('vcf_edit')
-        self.vcf_edit.setPlaceholderText('не обязательно')
-        self.vcf_edit.setToolTip('VCF или VCF.gz известных вариантов породы или популяции.')
+        self.vcf_edit.setPlaceholderText(t('не обязательно'))
+        self.vcf_edit.setToolTip(t('VCF или VCF.gz известных вариантов породы или популяции.'))
         self.vcf_edit.textChanged.connect(lambda: self._mark_missing(self.vcf_edit))
         field('VCF', self.vcf_edit, self._browse_button(self._browse_vcf), 'background_vcf')
 
-        caption('Праймеры')
+        caption(t('Праймеры'))
         self.prod_min_spin, self.prod_max_spin = self._range_spins('prod', QSpinBox, 50, 2000)
-        field('Продукт, п.н.', self._pair(self.prod_min_spin, self.prod_max_spin), None, 'prod_min')
+        field(t('Продукт, п.н.'), self._pair(self.prod_min_spin, self.prod_max_spin), None, 'prod_min')
         self.tm_min_spin, self.tm_max_spin = self._range_spins('tm', QDoubleSpinBox, 40.0, 80.0)
         field('Tm, °C', self._pair(self.tm_min_spin, self.tm_max_spin), None, 'tm_min')
 
-        caption('Ферменты')
+        caption(t('Ферменты'))
         self.supplier_picker = SupplierPicker()
-        field('Поставщики', self.supplier_picker)
+        field(t('Поставщики'), self.supplier_picker)
         self.dcaps_combo = QComboBox()
         self.dcaps_combo.setObjectName('dcaps_combo')
         for text, value in DCAPS_CHOICES:
-            self.dcaps_combo.addItem(text, value)
-        self.dcaps_combo.setToolTip('dCAPS: праймер с 1–2 несовпадениями у 3′-конца создаёт сайт фермента только '
-                                    'в одном аллеле. Различие полос ≈ длине праймера.')
+            self.dcaps_combo.addItem(t(text), value)
+        self.dcaps_combo.setToolTip(t('dCAPS: праймер с 1–2 несовпадениями у 3′-конца создаёт сайт фермента только '
+                                      'в одном аллеле. Различие полос ≈ длине праймера.'))
         field('dCAPS', self.dcaps_combo)
 
         advanced_row = QHBoxLayout()
-        self.advanced_link = QPushButton('Дополнительно…')
+        self.advanced_link = QPushButton(t('Дополнительно…'))
         self.advanced_link.setObjectName('advanced_link')
         self.advanced_link.setProperty('role', 'link')
         self.advanced_link.clicked.connect(self.open_advanced)
@@ -385,7 +389,7 @@ class LaunchPanel(QWidget):
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setWidget(self._form)
         full.addWidget(scroll, 1)
-        self.run_button = QPushButton('Запустить')
+        self.run_button = QPushButton(t('Запустить'))
         self.run_button.setObjectName('run_button')
         self.run_button.setProperty('role', 'primary')
         self.run_button.clicked.connect(self._on_run_clicked)
@@ -400,10 +404,10 @@ class LaunchPanel(QWidget):
         strip = QVBoxLayout(self._strip)
         strip.setContentsMargins(0, 0, 0, 0)
         self._expand_button = QToolButton()
-        self._expand_button.setToolTip('Развернуть панель «Запуск»')
+        self._expand_button.setToolTip(t('Развернуть панель «Запуск»'))
         self._expand_button.clicked.connect(lambda: self._toggle_collapsed(False))
         strip.addWidget(self._expand_button)
-        vertical = QLabel('\n'.join('Запуск'))
+        vertical = QLabel('\n'.join(t('Запуск')))
         vertical.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         vertical.setProperty('role', 'muted')
         strip.addWidget(vertical)
@@ -462,7 +466,7 @@ class LaunchPanel(QWidget):
             seen.add(key)
             self.genome_combo.addItem(os.path.basename(path), path)
             self.genome_combo.setItemData(self.genome_combo.count() - 1, path, Qt.ItemDataRole.ToolTipRole)
-        self.genome_combo.addItem(CHOOSE_FILE, None)
+        self.genome_combo.addItem(t(CHOOSE_FILE), None)
         index = self.genome_combo.findData(current) if current else (0 if self.genome_combo.count() > 1 else -1)
         self.genome_combo.setCurrentIndex(index if index >= 0 else -1)
         self.genome_combo.blockSignals(False)
@@ -471,7 +475,8 @@ class LaunchPanel(QWidget):
 
     def _on_genome_activated(self, index: int):
         if self.genome_combo.itemData(index) is None:
-            path, _ = QFileDialog.getOpenFileName(self, 'Геном FASTA', '', 'FASTA (*.fa *.fasta *.fna);;Все файлы (*)')
+            path, _ = QFileDialog.getOpenFileName(self, t('Геном FASTA'), '',
+                                                  t('FASTA (*.fa *.fasta *.fna);;Все файлы (*)'))
             if path:
                 self._settings.add_recent_genome(path)
             self._fill_genomes(path or self._previous_genome)
@@ -488,13 +493,14 @@ class LaunchPanel(QWidget):
         manual = self._settings.names_for_genome(genome) if genome else None
         if manual is not None:
             self._names_path = manual
-            text = f'Хромосомы: {os.path.basename(manual)}' if manual else 'Хромосомы: как в файле SNP'
+            text = (t('Хромосомы: {name}', name=os.path.basename(manual)) if manual
+                    else t('Хромосомы: как в файле SNP'))
         else:
             stem = os.path.splitext(os.path.basename(genome))[0]
             auto = os.path.join(get_base_dir(), 'names', f'{stem}.txt') if genome else ''
             self._names_path = auto if auto and os.path.isfile(auto) else ''
-            text = (f'Хромосомы: {os.path.basename(auto)} (авто)' if self._names_path
-                    else 'Хромосомы: как в файле SNP')
+            text = (t('Хромосомы: {name} (авто)', name=os.path.basename(auto)) if self._names_path
+                    else t('Хромосомы: как в файле SNP'))
         self.names_label.setText(text)
         self.names_label.setToolTip(self._names_path)
 
@@ -509,21 +515,23 @@ class LaunchPanel(QWidget):
         self.refresh_names()
 
     def _choose_names_file(self):
-        path, _ = QFileDialog.getOpenFileName(self, 'Файл соответствий хромосом',
-                                              os.path.join(get_base_dir(), 'names'), 'Текст (*.txt);;Все файлы (*)')
+        path, _ = QFileDialog.getOpenFileName(self, t('Файл соответствий хромосом'),
+                                              os.path.join(get_base_dir(), 'names'), t('Текст (*.txt);;Все файлы (*)'))
         if path:
             self._set_names(path)
 
     # ----- files -----
     def _browse_snp(self):
         start = self._settings.value('last_snp_dir', '') or ''
-        path, _ = QFileDialog.getOpenFileName(self, 'Файл SNP', start, 'Таблицы (*.tsv *.csv *.txt);;Все файлы (*)')
+        path, _ = QFileDialog.getOpenFileName(self, t('Файл SNP'), start,
+                                              t('Таблицы (*.tsv *.csv *.txt);;Все файлы (*)'))
         if path:
             self.snp_edit.setText(path)
             self._settings.set_value('last_snp_dir', os.path.dirname(path))
 
     def _browse_vcf(self):
-        path, _ = QFileDialog.getOpenFileName(self, 'VCF известных вариантов', '', 'VCF (*.vcf *.vcf.gz *.gz);;Все файлы (*)')
+        path, _ = QFileDialog.getOpenFileName(self, t('VCF известных вариантов'), '',
+                                              t('VCF (*.vcf *.vcf.gz *.gz);;Все файлы (*)'))
         if path:
             self.vcf_edit.setText(path)
 
@@ -538,7 +546,7 @@ class LaunchPanel(QWidget):
         path = widget.currentData() if isinstance(widget, QComboBox) else widget.text().strip()
         missing = bool(path) and not os.path.isfile(path)
         widget.setStyleSheet(f"color: {self._colors['error_fg']};" if missing else '')
-        widget.setToolTip('Файл не найден' if missing else (path or ''))
+        widget.setToolTip(t('Файл не найден') if missing else (path or ''))
 
     # ----- parameters -----
     def collect_params(self) -> dict:
@@ -583,9 +591,9 @@ class LaunchPanel(QWidget):
     def _update_badge(self):
         c = self._colors
         if self._advanced_errors:
-            text, fg, bg = 'ошибка', c['error_fg'], c['error_bg']
+            text, fg, bg = t('ошибка'), c['error_fg'], c['error_bg']
         elif self.changed_count():
-            text, fg, bg = f'изменено {self.changed_count()}', c['nominal_fg'], c['nominal_bg']
+            text, fg, bg = t('изменено {count}', count=self.changed_count()), c['nominal_fg'], c['nominal_bg']
         else:
             self.changed_badge.hide()
             return
@@ -622,14 +630,14 @@ class LaunchPanel(QWidget):
     def set_running(self, running: bool) -> None:
         self._running = running
         self._form.setEnabled(not running)
-        self.run_button.setText('Остановить' if running else 'Запустить')
+        self.run_button.setText(t('Остановить') if running else t('Запустить'))
         self.run_button.setIcon(icons.icon('player-stop' if running else 'player-play', self._colors['on_accent']))
         self.progress_label.setVisible(running)
         if running:
-            self.progress_label.setText('Подготовка…')
+            self.progress_label.setText(t('Подготовка…'))
 
     def set_progress(self, done: int, total: int) -> None:
-        self.progress_label.setText(f'{done} из {total} SNP')
+        self.progress_label.setText(t('{done} из {total} SNP', done=done, total=total))
 
     def _toggle_collapsed(self, collapsed: bool):
         self.set_collapsed(collapsed)

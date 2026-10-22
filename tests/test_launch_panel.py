@@ -1,15 +1,18 @@
 import os
+import re
 import tempfile
 import unittest
 from unittest.mock import patch
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 from PyQt6.QtCore import QSettings
-from PyQt6.QtWidgets import QApplication, QComboBox, QLabel, QPushButton
+from PyQt6.QtWidgets import (QAbstractSpinBox, QApplication, QCheckBox, QComboBox, QLabel, QPushButton,
+                             QToolButton, QWidget)
 
+import i18n
 import rflp_core
 from app_settings import AppSettings
-from launch_panel import ADVANCED_PARAMS, KEY_PARAMS, LaunchPanel, SupplierPicker, field_errors
+from launch_panel import ADVANCED_PARAMS, KEY_PARAMS, AdvancedDialog, LaunchPanel, SupplierPicker, field_errors
 from tests.helpers import dispose, write_text
 
 
@@ -155,6 +158,43 @@ class LaunchPanelTests(unittest.TestCase):
         self.assertLessEqual(self.panel.maximumWidth(), 36)
         self.panel.set_collapsed(False)
         self.assertGreater(self.panel.maximumWidth(), 36)
+
+    def test_english_panel_and_advanced_dialog(self):
+        i18n.set_language('en')
+        self.addCleanup(i18n.set_language, 'ru')
+        panel = LaunchPanel(self.settings)
+        self.addCleanup(dispose, panel)
+        self.assertEqual(panel.findChild(QPushButton, 'run_button').text(), 'Run')
+        self.assertEqual(panel.findChild(SupplierPicker, 'supplier_picker').text(), 'All commercial')
+        panel.snp_edit.setText('')
+        panel.genome_combo.setCurrentIndex(-1)
+        self.assertFalse(panel.validate())
+        self.assertEqual(panel.findChild(QLabel, 'error_input_file').text(), 'Choose an SNP file')
+        self.assertEqual(panel.findChild(QLabel, 'error_fasta').text(), 'Choose a genome')
+        self.assertEqual(field_errors(dict(rflp_core.RECOMMENDED_PARAMS, input_file=self.genome, fasta=self.genome,
+                                           prod_min=900, prod_max=100))['prod_min'],
+                         'Minimum product size is greater than maximum')
+        dialog = AdvancedDialog(panel.collect_params(), panel)
+        self.addCleanup(dispose, dialog)
+        self.assertEqual(cyrillic_texts(panel) + cyrillic_texts(dialog), [])
+
+
+def cyrillic_texts(root: QWidget) -> list:
+    """Visible texts, tooltips, placeholders and menu items under root that contain Cyrillic letters."""
+    texts = [root.windowTitle(), root.toolTip()]
+    for widget in root.findChildren(QWidget):
+        texts.append(widget.toolTip())
+        if isinstance(widget, (QLabel, QPushButton, QCheckBox, QToolButton)):
+            texts.append(widget.text())
+        if isinstance(widget, QAbstractSpinBox):
+            texts.append(widget.specialValueText())
+        if isinstance(widget, QComboBox):
+            texts += [widget.itemText(i) for i in range(widget.count())]
+        if hasattr(widget, 'placeholderText'):
+            texts.append(widget.placeholderText())
+        if isinstance(widget, QToolButton) and widget.menu():
+            texts += [action.text() for action in widget.menu().actions()]
+    return [text for text in texts if re.search('[А-Яа-яЁё]', text or '')]
 
 
 if __name__ == '__main__':
