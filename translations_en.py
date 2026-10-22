@@ -346,6 +346,22 @@ and the Rejected sheet (rejected variants). The log goes to stderr.''',
     'Остановить': 'Stop',
     'Подготовка…': 'Preparing…',
     '{done} из {total} SNP': '{done} of {total} SNPs',
+    # snp_list: the SNP list.
+    'Полосы REF | ALT': 'Bands REF | ALT',
+    'Продукт': 'Product',
+    'Схем': 'Assays',
+    'Все {count}': 'All {count}',
+    'Выгрузить в Excel': 'Export to Excel',
+    'Все SNP': 'All SNPs',
+    'Только показанные ({count})': 'Shown only ({count})',
+    'CSV: все схемы': 'CSV: all assays',
+    'Поиск по ID, координате или ферменту': 'Search by ID, position or enzyme',
+    'Сбросить фильтр': 'Reset filter',
+    'Столбцы…': 'Columns…',
+    'как в файле': 'as in file',
+    'по столбцу «{column}»': 'by column «{column}»',
+    'Показано {shown} из {total} · порядок: {order}': 'Shown {shown} of {total} · order: {order}',
+    'Нет SNP с такими условиями': 'No SNPs match these conditions',
 }
 
 CORE = [

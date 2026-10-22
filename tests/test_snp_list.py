@@ -1,4 +1,5 @@
 import os
+import re
 import tempfile
 import unittest
 
@@ -6,9 +7,10 @@ os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 from PyQt6.QtCore import QSettings, Qt
 from PyQt6.QtWidgets import QApplication
 
+import i18n
 import snp_summary
 from app_settings import AppSettings
-from snp_list import DEFAULT_COLUMNS, SORT_ROLE, SnpListView
+from snp_list import COLUMNS, DEFAULT_COLUMNS, SORT_ROLE, SnpListView
 from snp_summary import InputRecord
 from tests.helpers import HEADER, core_row, dispose
 
@@ -155,6 +157,31 @@ class SnpListTests(unittest.TestCase):
         self.view.set_placeholder('Идёт расчёт… 3 из 10 SNP')
         self.assertFalse(self.view.placeholder.isHidden())
         self.assertTrue(self.view.table.isHidden())
+
+    def test_english_list(self):
+        i18n.set_language('en')
+        self.addCleanup(i18n.set_language, 'ru')
+        view = SnpListView(AppSettings(self.qs))
+        self.addCleanup(dispose, view)
+        view.set_summaries(self.summaries, 'fallback', has_ids=True)
+        horizontal = Qt.Orientation.Horizontal
+        self.assertEqual(view.model.headerData(view.column_index('score'), horizontal), 'Score')
+        titles = [view.model.headerData(i, horizontal) for i in range(len(COLUMNS))]
+        self.assertEqual([x for x in titles if re.search('[А-Яа-яЁё]', x)], [])
+        self.assertEqual(view.proxy.index(0, view.column_index('score')).data(), '15.8')
+        self.assertEqual(view.proxy.index(0, 0).data(Qt.ItemDataRole.ToolTipRole), 'Robust')
+        self.assertEqual(view.chips.chip('all').text(), 'All 4')
+        self.assertEqual(view.chips.chip('robust').text(), 'Robust 1')
+        self.assertEqual(view.footer.text(), 'Shown 4 of 4 · order: as in file')
+        self.assertEqual([a.text() for a in view.export_menu.actions()],
+                         ['All SNPs', 'Shown only (4)', 'CSV: all assays'])
+        self.assertEqual(view.export_button.text(), 'Export to Excel')
+        view.search.setText('no such snp')
+        self.assertEqual(view.placeholder.text(), 'No SNPs match these conditions')
+        self.assertEqual(view.reset_filter_button.text(), 'Reset filter')
+        view.search.clear()
+        view._on_header_clicked(view.column_index('score'))
+        self.assertEqual(view.footer.text(), 'Shown 4 of 4 · order: by column «Score»')
 
 
 if __name__ == '__main__':

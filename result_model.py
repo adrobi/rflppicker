@@ -1,5 +1,5 @@
 """Russian titles of the core result columns and statuses."""
-from i18n import N_, t
+from i18n import N_
 
 LABELS = {
     'assay_rank': N_('Ранг для SNP'), 'primer_pair_index': N_('Пара Primer3 №'),
@@ -35,11 +35,6 @@ LABELS = {
     'line': N_('Строка'), 'chrom': N_('Хромосома'), 'pos': N_('Позиция'), 'ref': 'REF',
     'alt': 'ALT', 'details': N_('Подробности'), 'raw': N_('Исходная строка'),
 }
-
-
-def column_title(key: str) -> str:
-    """Title of a core column in the interface language."""
-    return t(LABELS[key]) if key in LABELS else key
 
 
 STATUS_LABELS = {

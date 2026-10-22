@@ -10,15 +10,18 @@ from PyQt6.QtWidgets import (
 import icons
 import palette
 from app_settings import AppSettings
+from i18n import N_, fmt, t
 from result_model import LABELS
-from snp_summary import ERROR, NONE, STATUS_ORDER, STATUS_TITLES, SnpSummary
+from snp_summary import ERROR, NONE, STATUS_ORDER, SnpSummary, status_title
 
 SORT_ROLE = Qt.ItemDataRole.UserRole
 _HIDDEN_KEYS = ('mapped_id', 'site', 'isoschizomers', 'suppliers', 'primers_left', 'primers_right', 'tm_left',
                 'tm_right', 'bands_ref_alt', 'worst_margin', 'diag_delta_bp', 'design', 'repeat_pct',
                 'amplicon_start', 'amplicon_end')
-COLUMNS = [('dot', ''), ('id', 'ID'), ('snp', 'SNP'), ('enzyme', 'Фермент'), ('bands', 'Полосы REF | ALT'),
-           ('product', 'Продукт'), ('score', 'Оценка'), ('schemes', 'Схем'), ('note', 'Примечание')] + [
+# Titles are Russian sources (LABELS too), translated with t() when shown.
+COLUMNS = [('dot', ''), ('id', 'ID'), ('snp', 'SNP'), ('enzyme', N_('Фермент')),
+           ('bands', N_('Полосы REF | ALT')), ('product', N_('Продукт')), ('score', N_('Оценка')),
+           ('schemes', N_('Схем')), ('note', N_('Примечание'))] + [
     (key, LABELS.get(key, key)) for key in _HIDDEN_KEYS]
 DEFAULT_COLUMNS = ('dot', 'id', 'snp', 'enzyme', 'bands', 'product', 'score', 'schemes', 'note')
 _KEYS = [key for key, _ in COLUMNS]
@@ -30,12 +33,6 @@ _WIDTHS = {'dot': 24, 'id': 90, 'snp': 140, 'enzyme': 90, 'bands': 130, 'product
 
 def _chrom_key(chrom: str):
     return (0, int(chrom), '') if chrom.isdigit() else (1, 0, chrom)
-
-
-def _number(value) -> str:
-    if value is None or value == '':
-        return ''
-    return f'{value:.1f}'.replace('.', ',') if isinstance(value, float) else str(value)
 
 
 class SnpListModel(QAbstractTableModel):
@@ -82,7 +79,7 @@ class SnpListModel(QAbstractTableModel):
     def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):
         if orientation == Qt.Orientation.Horizontal and role in (Qt.ItemDataRole.DisplayRole,
                                                                   Qt.ItemDataRole.ToolTipRole):
-            return COLUMNS[section][1]
+            return t(COLUMNS[section][1])
         return None
 
     def _dot(self, status: str) -> QIcon:
@@ -118,10 +115,10 @@ class SnpListModel(QAbstractTableModel):
             return text, text
         if key == 'product':
             value = scheme.get('product_size')
-            return _number(value), value
+            return fmt(value), value
         if key == 'score':
             value = scheme.get('genotype_margin')
-            return _number(value), value
+            return fmt(value), value
         if key == 'schemes':
             return (str(len(s.schemes)), len(s.schemes)) if s.schemes else ('', None)
         if key == 'note':
@@ -130,7 +127,7 @@ class SnpListModel(QAbstractTableModel):
         value = scheme.get(key)
         if value is None or value == '':
             return '', None
-        return (_number(value), value) if isinstance(value, (int, float)) else (str(value), str(value).lower())
+        return (fmt(value), value) if isinstance(value, (int, float)) else (str(value), str(value).lower())
 
     def data(self, index, role=Qt.ItemDataRole.DisplayRole):
         if not index.isValid():
@@ -145,7 +142,7 @@ class SnpListModel(QAbstractTableModel):
             return self._dot(s.status)
         if role == Qt.ItemDataRole.ToolTipRole:
             if key == 'dot':
-                return STATUS_TITLES[s.status]
+                return status_title(s.status)
             if key == 'note':
                 return s.note(self._dcaps_mode) or None
         if role == Qt.ItemDataRole.ForegroundRole:
@@ -234,9 +231,9 @@ class StatusChips(QWidget):
         self._buttons['all'].setChecked(True)
 
     def set_counts(self, counts: Dict[str, int], total: int) -> None:
-        self._buttons['all'].setText(f'Все {total}')
+        self._buttons['all'].setText(t('Все {count}', count=total))
         for key in STATUS_ORDER:
-            self._buttons[key].setText(f'{STATUS_TITLES[key]} {counts.get(key, 0)}')
+            self._buttons[key].setText(f'{status_title(key)} {counts.get(key, 0)}')
         self._buttons[ERROR].setVisible(counts.get(ERROR, 0) > 0)
 
     def apply_colors(self, colors: dict) -> None:
@@ -271,20 +268,20 @@ class SnpListView(QWidget):
         self.chips = StatusChips()
         top.addWidget(self.chips, 1)
         self.export_button = QToolButton()
-        self.export_button.setText('Выгрузить в Excel')
+        self.export_button.setText(t('Выгрузить в Excel'))
         self.export_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.export_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.export_menu = QMenu(self.export_button)
-        self._export_all = self.export_menu.addAction('Все SNP', lambda: self.export_requested.emit('all'))
-        self._export_shown = self.export_menu.addAction('Только показанные (0)',
+        self._export_all = self.export_menu.addAction(t('Все SNP'), lambda: self.export_requested.emit('all'))
+        self._export_shown = self.export_menu.addAction(t('Только показанные ({count})', count=0),
                                                         lambda: self.export_requested.emit('shown'))
-        self.export_menu.addAction('CSV: все схемы', lambda: self.export_requested.emit('csv'))
+        self.export_menu.addAction(t('CSV: все схемы'), lambda: self.export_requested.emit('csv'))
         self.export_button.setMenu(self.export_menu)
         top.addWidget(self.export_button)
         layout.addLayout(top)
 
         self.search = QLineEdit()
-        self.search.setPlaceholderText('Поиск по ID, координате или ферменту')
+        self.search.setPlaceholderText(t('Поиск по ID, координате или ферменту'))
         self.search.setClearButtonEnabled(True)
         layout.addWidget(self.search)
 
@@ -318,12 +315,12 @@ class SnpListView(QWidget):
         placeholder_box = QWidget()
         placeholder_layout = QVBoxLayout(placeholder_box)
         placeholder_layout.addStretch()
-        self.placeholder = QLabel('Выберите файл SNP и геном слева и нажмите «Запустить»')
+        self.placeholder = QLabel(t('Выберите файл SNP и геном слева и нажмите «Запустить»'))
         self.placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.placeholder.setWordWrap(True)
         self.placeholder.setProperty('role', 'muted')
         placeholder_layout.addWidget(self.placeholder)
-        self.reset_filter_button = QPushButton('Сбросить фильтр')
+        self.reset_filter_button = QPushButton(t('Сбросить фильтр'))
         self.reset_filter_button.setProperty('role', 'link')
         self.reset_filter_button.clicked.connect(self.reset_filter)
         placeholder_layout.addWidget(self.reset_filter_button, 0, Qt.AlignmentFlag.AlignHCenter)
@@ -359,11 +356,11 @@ class SnpListView(QWidget):
 
     def _columns_menu(self, position):
         menu = QMenu(self)
-        menu.addSection('Столбцы…')
+        menu.addSection(t('Столбцы…'))
         for key, title in COLUMNS:
             if key == 'dot' or (key == 'id' and not self._has_ids):
                 continue
-            action = menu.addAction(title)
+            action = menu.addAction(t(title))
             action.setCheckable(True)
             action.setChecked(key in self._visible)
             action.toggled.connect(lambda checked, k=key: self.set_column_visible(k, checked))
@@ -447,12 +444,13 @@ class SnpListView(QWidget):
 
     def _update_view(self):
         total, shown = self.model.rowCount(), self.proxy.rowCount()
-        self._export_shown.setText(f'Только показанные ({shown})')
-        order = ('как в файле' if self._sort_column is None
-                 else f'по столбцу «{COLUMNS[self._sort_column][1]}»')
-        self.footer.setText(f'Показано {shown} из {total} · порядок: {order}' if total else '')
+        self._export_shown.setText(t('Только показанные ({count})', count=shown))
+        order = (t('как в файле') if self._sort_column is None
+                 else t('по столбцу «{column}»', column=t(COLUMNS[self._sort_column][1])))
+        self.footer.setText(t('Показано {shown} из {total} · порядок: {order}', shown=shown, total=total, order=order)
+                            if total else '')
         if total and not shown:
-            self.placeholder.setText('Нет SNP с такими условиями')
+            self.placeholder.setText(t('Нет SNP с такими условиями'))
             self.reset_filter_button.show()
             self._show_placeholder(True)
         elif total:
