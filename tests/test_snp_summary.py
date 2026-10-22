@@ -164,5 +164,82 @@ class NoteTests(unittest.TestCase):
                          .note('off'), 'REF не совпадает с FASTA')
 
 
+HOX_SCHEME = dict(variant='11:37525128 C>G', mapped_id='NC_056064.1', enzyme='Bse1I', site='ACTGG',
+                  isoschizomers='BsrI', suppliers='Thermo', design='natural', genotype_quality='robust',
+                  primers_left='TATGAGCTTCTCTCCGCCAG', primers_right='CGCCTCCAAAGTAGCCGTAA',
+                  tm_left=59.04, tm_right=60.1, product_size=475, bands_ref_ref='448',
+                  bands_ref_alt='212; 236; 448', bands_alt_alt='212; 236', genotype_margin=15.77,
+                  worst_margin=10.52, weakest_genotypes='REF/REF–REF/ALT', assay_rank=1)
+
+
+class ExportTests(unittest.TestCase):
+    def setUp(self):
+        records = [rec(2, '11', 37525128, 'C', 'G', 'HOXB13'), rec(3, '1', 91308651, 'C', 'T', 'OLFML3')]
+        self.core_rows = [core_row(**HOX_SCHEME),
+                          core_row(**dict(HOX_SCHEME, enzyme='BsrDI', assay_rank=2, isoschizomers='')),
+                          core_row(variant='1:91308651 C>T', mapped_id='NC_056054.1', enzyme='',
+                                   status='no_discriminating_assay',
+                                   reason='Не найдено сочетание для различения трёх генотипов')]
+        self.summaries = snp_summary.build_summaries(records, HEADER, self.core_rows, [])
+
+    def test_primer_bases(self):                       # Review Focus 3
+        s = [summary(snp_id='DGAT1'), summary(snp_id='DGAT1'), summary(snp_id='ДГАТ1'),
+             summary(snp_id='rs 12/3'), summary(snp_id='')]
+        snp_summary.assign_primer_bases(s)
+        self.assertEqual([x.primer_base for x in s], ['DGAT1', 'DGAT1_2', '1_10', 'rs_12_3', '1_10_2'])
+
+    def test_build_assigns_primer_bases(self):
+        self.assertEqual([s.primer_base for s in self.summaries], ['HOXB13', 'OLFML3'])
+
+    def test_order_lines_and_text(self):
+        hox = self.summaries[0]
+        self.assertEqual(snp_summary.order_lines(hox),
+                         'HOXB13_F\tTATGAGCTTCTCTCCGCCAG\nHOXB13_R\tCGCCTCCAAAGTAGCCGTAA')
+        self.assertEqual(snp_summary.order_lines(self.summaries[1]), '')
+        self.assertEqual(snp_summary.summary_text(hox, 'fallback').splitlines(), [
+            '11:37525128 C>G (HOXB13)',
+            'Статус: Надёжно',
+            'Фермент: Bse1I, сайт ACTGG',
+            'HOXB13_F: TATGAGCTTCTCTCCGCCAG (Tm 59.0 °C)',
+            'HOXB13_R: CGCCTCCAAAGTAGCCGTAA (Tm 60.1 °C)',
+            'Продукт: 475 п.н.',
+            'Полосы: REF/REF 448; REF/ALT 212; 236; 448; ALT/ALT 212; 236',
+        ])
+        self.assertEqual(snp_summary.summary_text(self.summaries[1], 'fallback').splitlines(), [
+            '1:91308651 C>T (OLFML3)',
+            'Статус: Нет схемы',
+            'Примечание: Не найдено сочетание для различения трёх генотипов. Попробуйте dCAPS «Для каждого SNP»',
+        ])
+        self.assertEqual(snp_summary.weakest_text(hox.scheme),
+                         'Труднее всего различить: REF/REF–REF/ALT; оценка при ухудшении 10.5')
+
+    def test_tables(self):
+        header, rows = snp_summary.summary_table(self.summaries, 'fallback')
+        self.assertEqual(len(header), 22)
+        self.assertEqual((header[0], header[-1]), ('ID', 'Строка файла'))
+        self.assertEqual(rows[0][:6], ['HOXB13', '11:37525128 C>G', 'NC_056064.1', 'Надёжно', 'авто', 'Bse1I'])
+        self.assertEqual(rows[1][:6], ['OLFML3', '1:91308651 C>T', 'NC_056054.1', 'Нет схемы', '', None])
+        self.assertEqual(rows[0][-1], 2)
+        header, rows = snp_summary.primer_table(self.summaries)
+        self.assertEqual(header, snp_summary.PRIMER_HEADER)
+        self.assertEqual(rows, [['HOXB13_F', 'TATGAGCTTCTCTCCGCCAG', 20, 59.04, '11:37525128 C>G', 'Bse1I'],
+                                ['HOXB13_R', 'CGCCTCCAAAGTAGCCGTAA', 20, 60.1, '11:37525128 C>G', 'Bse1I']])
+        header, rows = snp_summary.results_table(self.summaries, HEADER, self.core_rows)
+        self.assertEqual(header[-2:], ['snp_id', 'selected'])
+        self.assertEqual([r[-1] for r in rows], [True, False, False])
+        self.assertEqual([r[-2] for r in rows], ['HOXB13', 'HOXB13', 'OLFML3'])
+
+    def test_manual_choice_in_tables(self):
+        self.summaries[0].choose(1)
+        _, rows = snp_summary.summary_table(self.summaries, 'fallback')
+        self.assertEqual(rows[0][4:6], ['вручную', 'BsrDI'])
+        _, rows = snp_summary.results_table(self.summaries, HEADER, self.core_rows)
+        self.assertEqual([r[-1] for r in rows], [False, True, False])
+
+    def test_results_table_for_a_subset(self):
+        _, rows = snp_summary.results_table(self.summaries[1:], HEADER, self.core_rows)
+        self.assertEqual([r[HEADER.index('variant')] for r in rows], ['1:91308651 C>T'])
+
+
 if __name__ == '__main__':
     unittest.main()

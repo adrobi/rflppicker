@@ -5,6 +5,7 @@ rejected lines. The window, the Excel export and the CLI need the opposite
 view: every line of the user's file in file order, with its schemes, its
 status and a plain-language note. This module builds that view.
 """
+import re
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
@@ -187,4 +188,111 @@ def build_summaries(records: List[InputRecord], header: List[str], rows: List[li
             failure=next((values for values in found if not values.get('enzyme')), None),
             rejection=rejection,
         ))
+    assign_primer_bases(summaries)
     return summaries
+
+
+def _clean_name(text: str) -> Tuple[str, int]:
+    """Primer-name characters only, and how many characters had to be replaced."""
+    cleaned, replaced = re.subn(r'[^A-Za-z0-9_.-]', '_', text)
+    return cleaned, replaced
+
+
+def assign_primer_bases(summaries: List[SnpSummary]) -> None:
+    """Unique primer name stems: the SNP ID, or the coordinate when the ID is empty or mostly unusable."""
+    seen: Dict[str, int] = {}
+    for s in summaries:
+        base, replaced = _clean_name(s.record.snp_id)
+        if not s.record.snp_id or replaced > len(re.findall(r'[A-Za-z0-9]', base)):
+            base = _clean_name(f'{s.record.chrom}_{s.record.pos}')[0]
+        seen[base] = seen.get(base, 0) + 1
+        s.primer_base = base if seen[base] == 1 else f'{base}_{seen[base]}'
+
+
+def order_lines(summary: SnpSummary) -> str:
+    scheme = summary.scheme
+    if scheme is None or not scheme.get('primers_left'):
+        return ''
+    return (f"{summary.primer_base}_F\t{scheme['primers_left']}\n"
+            f"{summary.primer_base}_R\t{scheme['primers_right']}")
+
+
+def summary_text(summary: SnpSummary, dcaps_mode: str) -> str:
+    """The «Копировать всё» text for a lab notebook."""
+    snp_id = summary.record.snp_id
+    lines = [f'{summary.label} ({snp_id})' if snp_id else summary.label,
+             f'Статус: {STATUS_TITLES[summary.status]}']
+    scheme = summary.scheme
+    if scheme is not None:
+        lines.append(f"Фермент: {scheme.get('enzyme')}, сайт {scheme.get('site')}")
+        for side, primer, tm in (('F', 'primers_left', 'tm_left'), ('R', 'primers_right', 'tm_right')):
+            if scheme.get(primer):
+                tm_text = f" (Tm {scheme[tm]:.1f} °C)" if scheme.get(tm) is not None else ''
+                lines.append(f'{summary.primer_base}_{side}: {scheme[primer]}{tm_text}')
+        lines.append(f"Продукт: {scheme.get('product_size')} п.н.")
+        lines.append(f"Полосы: REF/REF {scheme.get('bands_ref_ref')}; REF/ALT {scheme.get('bands_ref_alt')}; "
+                     f"ALT/ALT {scheme.get('bands_alt_alt')}")
+    note = summary.note(dcaps_mode)
+    if note:
+        lines.append(f'Примечание: {note}')
+    return '\n'.join(lines)
+
+
+def weakest_text(scheme: dict) -> str:
+    """The line under the gel: which genotype pair the score rests on."""
+    text = f"Труднее всего различить: {scheme.get('weakest_genotypes')}"
+    if scheme.get('worst_margin') is not None:
+        text += f"; оценка при ухудшении {scheme['worst_margin']:.1f}"
+    return text
+
+
+SUMMARY_HEADER = ['ID', 'SNP', 'Хромосома в геноме', 'Статус', 'Выбор', 'Фермент', 'Сайт', 'Изошизомеры',
+                  'Поставщики', 'Тип схемы', 'Праймер F 5′→3′', 'Праймер R 5′→3′', 'Tm F', 'Tm R',
+                  'Продукт, п.н.', 'Полосы REF/REF', 'Полосы REF/ALT', 'Полосы ALT/ALT', 'Оценка',
+                  'Оценка при ухудшении', 'Примечание', 'Строка файла']
+PRIMER_HEADER = ['Имя', 'Последовательность 5′→3′', 'Длина', 'Tm', 'SNP', 'Фермент']
+_DESIGN_TITLES = {'natural': 'природный сайт', 'dCAPS': 'dCAPS'}
+_SCHEME_COLUMNS = ('enzyme', 'site', 'isoschizomers', 'suppliers', 'design', 'primers_left', 'primers_right',
+                   'tm_left', 'tm_right', 'product_size', 'bands_ref_ref', 'bands_ref_alt', 'bands_alt_alt',
+                   'genotype_margin', 'worst_margin')
+
+
+def summary_table(summaries: List[SnpSummary], dcaps_mode: str) -> Tuple[List[str], List[list]]:
+    rows = []
+    for s in summaries:
+        scheme = s.scheme or {}
+        source = s.scheme or s.failure or {}
+        values = [scheme.get(name) for name in _SCHEME_COLUMNS]
+        values[_SCHEME_COLUMNS.index('design')] = _DESIGN_TITLES.get(scheme.get('design'), scheme.get('design'))
+        choice = ('вручную' if s.manual else 'авто') if s.scheme is not None else ''
+        rows.append([s.record.snp_id, s.label, source.get('mapped_id'), STATUS_TITLES[s.status], choice,
+                     *values, s.note(dcaps_mode), s.record.line])
+    return list(SUMMARY_HEADER), rows
+
+
+def primer_table(summaries: List[SnpSummary]) -> Tuple[List[str], List[list]]:
+    rows = []
+    for s in summaries:
+        scheme = s.scheme
+        if scheme is None or not scheme.get('primers_left'):
+            continue
+        for side, primer, tm in (('F', 'primers_left', 'tm_left'), ('R', 'primers_right', 'tm_right')):
+            sequence = scheme.get(primer) or ''
+            rows.append([f'{s.primer_base}_{side}', sequence, len(sequence), scheme.get(tm), s.label,
+                         scheme.get('enzyme')])
+    return list(PRIMER_HEADER), rows
+
+
+def results_table(summaries: List[SnpSummary], header: List[str], rows: List[list]) -> Tuple[List[str], List[list]]:
+    """Core rows of these SNPs in core order, with the SNP ID and whether the row is the chosen scheme."""
+    owner: Dict[str, SnpSummary] = {}
+    selected = set()
+    for s in summaries:
+        for values in s.schemes + ([s.failure] if s.failure else []):
+            owner.setdefault(values.get('variant'), s)
+        if s.scheme is not None:
+            selected.add(s.scheme['_index'])
+    variant = header.index('variant')
+    table = [list(row) + [owner[row[variant]].record.snp_id, index in selected]
+             for index, row in enumerate(rows) if row[variant] in owner]
+    return list(header) + ['snp_id', 'selected'], table
