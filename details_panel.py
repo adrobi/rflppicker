@@ -4,8 +4,8 @@ from typing import List, Optional
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
-    QApplication, QGridLayout, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QPushButton, QTabWidget,
-    QToolButton, QVBoxLayout, QWidget,
+    QApplication, QGridLayout, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QPushButton, QSizePolicy,
+    QTabWidget, QToolButton, QVBoxLayout, QWidget,
 )
 
 import icons
@@ -54,7 +54,8 @@ class DetailsPanel(QWidget):
         header = QHBoxLayout()
         header.addWidget(self.title_label, 1)
         self.status_badge = self._label('status_badge')
-        header.addWidget(self.status_badge)
+        self.status_badge.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
+        header.addWidget(self.status_badge, 0, Qt.AlignmentFlag.AlignTop)
         layout.addLayout(header)
         layout.addWidget(self.subtitle_label)
 
@@ -95,6 +96,10 @@ class DetailsPanel(QWidget):
         self.large_button.clicked.connect(self.open_large)
         self.tabs.setCornerWidget(self.large_button)
         layout.addWidget(self.tabs, 1)
+        # Takes the free height when there are no tabs (SNP without a scheme or with an error).
+        self._filler = QWidget()
+        self._filler.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+        layout.addWidget(self._filler, 1)
 
         self.apply_colors(self._colors)
         self.show_summary(None, 'off')
@@ -177,6 +182,7 @@ class DetailsPanel(QWidget):
         has_schemes = bool(summary and summary.schemes)
         for widget in (self.schemes_caption, self.schemes_list, self.tabs):
             widget.setVisible(has_schemes)
+        self._filler.setVisible(not has_schemes)
         self.raw_label.hide()
         if summary is None:
             self.title_label.setText('')

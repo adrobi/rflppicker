@@ -102,6 +102,16 @@ class DetailsPanelTests(unittest.TestCase):
         self.assertTrue(self.panel.findChild(QTabWidget, 'tabs').isHidden())
         self.assertEqual(self.panel.findChild(QLabel, 'status_badge').text(), 'Нет схемы')
 
+    def test_summary_without_scheme_keeps_a_compact_layout(self):
+        self.panel.resize(600, 800)
+        self.panel.show()
+        self.panel.show_summary(self.olfml3, 'fallback')
+        QApplication.processEvents()
+        badge = self.panel.findChild(QLabel, 'status_badge')
+        message = self.panel.findChild(QLabel, 'message_label')
+        self.assertLess(badge.height(), 40)
+        self.assertLess(message.geometry().bottom(), 200)
+
     def test_parse_error_shows_the_raw_line(self):
         self.panel.show_summary(self.bad, 'fallback')
         self.assertIn('Строка не прочитана', self.panel.findChild(QLabel, 'message_label').text())
