@@ -70,5 +70,99 @@ class JoinTests(unittest.TestCase):
         self.assertEqual(s[1].rejection['reason'], 'ref_not_match')
 
 
+def summary(schemes=(), failure=None, rejection=None, snp_id=''):
+    return SnpSummary(record=rec(2, '1', 10, 'A', 'G', snp_id), schemes=[dict(s) for s in schemes],
+                      failure=failure, rejection=rejection)
+
+
+class StatusTests(unittest.TestCase):
+    def test_status_follows_chosen_scheme(self):
+        s = summary(schemes=[dict(enzyme='Bse1I', genotype_quality='robust'),
+                             dict(enzyme='HinfI', genotype_quality='nominal_only',
+                                  weakest_genotypes='REF/REF–REF/ALT')])
+        self.assertEqual(s.status, snp_summary.ROBUST)
+        self.assertFalse(s.manual)
+        self.assertEqual(s.scheme['enzyme'], 'Bse1I')
+        s.choose(1)
+        self.assertTrue(s.manual)
+        self.assertEqual(s.status, snp_summary.NOMINAL)
+        self.assertEqual(s.note('fallback'), 'Выбрано вручную, лучшая — Bse1I; '
+                                             'Только при исходном разрешении; труднее всего: REF/REF–REF/ALT')
+        with self.assertRaises(IndexError):
+            s.choose(2)
+        with self.assertRaises(IndexError):
+            s.choose(-1)
+
+    def test_statuses(self):
+        self.assertEqual(summary(failure=dict(status='no_primers', reason='x')).status, snp_summary.NONE)
+        self.assertEqual(summary(failure=dict(status='primer3_error', reason='x')).status, snp_summary.NONE)
+        self.assertEqual(summary(failure=dict(status='no_enzyme_found', reason='x')).status, snp_summary.NONE)
+        self.assertEqual(summary(rejection=dict(reason='bad_chrom')).status, snp_summary.ERROR)
+        self.assertEqual(summary(failure=dict(status='analysis_error', reason='REF не совпадает с FASTA')).status,
+                         snp_summary.ERROR)
+        self.assertIsNone(summary().scheme)
+        self.assertEqual(snp_summary.STATUS_TITLES[snp_summary.NOMINAL], 'Только на хорошем геле')
+        self.assertEqual(snp_summary.STATUS_ORDER, ('robust', 'nominal', 'none', 'error'))
+
+    def test_line_without_any_result_is_an_error(self):            # Review Focus 1
+        s = summary()
+        self.assertEqual((s.status, s.note('off')), (snp_summary.ERROR, 'Нет результата для этой строки'))
+
+    def test_ambiguous_scheme_has_no_assay_status(self):            # Review Focus 2
+        s = summary(schemes=[dict(enzyme='AluI', genotype_quality='ambiguous')])
+        self.assertEqual(s.status, snp_summary.NONE)
+        self.assertTrue(s.note('off').startswith('Три генотипа неразличимы по присутствию полос'))
+
+
+class NoteTests(unittest.TestCase):
+    def test_note_order_for_scheme_warnings(self):
+        s = summary(schemes=[dict(enzyme='HinfI', genotype_quality='robust', design='dCAPS',
+                                  primer_mismatches="right 3'-2 G>C", primer_site='HinfI', background_variants=2,
+                                  background_site_variants='37525140 A>G', repeat_pct=52.5)])
+        self.assertEqual(s.note('always'), "dCAPS: right 3'-2 G>C; Сайт фермента в праймере; "
+                         "Фоновые варианты меняют разрезы: 37525140 A>G; Повторы 52.5% ампликона")
+
+    def test_other_scheme_notes(self):
+        robust = dict(enzyme='BamHI', genotype_quality='robust', design='natural')
+        self.assertEqual(summary(schemes=[robust]).note('fallback'), '')
+        self.assertEqual(summary(schemes=[dict(robust, background_variants=3, background_site_variants='')])
+                         .note('fallback'), 'Известных вариантов в ампликоне: 3')
+        self.assertEqual(summary(schemes=[dict(robust, repeat_pct=49.9)]).note('fallback'), '')
+        self.assertEqual(summary(schemes=[dict(robust, status='window_only')]).note('fallback'),
+                         'Поиск по окну, праймеры не подобраны')
+
+    def test_failure_hints(self):
+        reason = 'Не найдено сочетание для различения трёх генотипов'
+        s = summary(failure=dict(status='no_discriminating_assay', reason=reason))
+        self.assertEqual(s.status, snp_summary.NONE)
+        self.assertEqual(s.note('fallback'), f'{reason}. Попробуйте dCAPS «Для каждого SNP»')
+        self.assertEqual(s.note('always'), f'{reason}. Попробуйте другой диапазон продукта')
+        self.assertEqual(summary(failure=dict(status='no_enzyme_found', reason='Подходящий фермент не найден'))
+                         .note('off'), 'Подходящий фермент не найден. Попробуйте dCAPS «Для каждого SNP»')
+        self.assertEqual(summary(failure=dict(status='no_primers', reason='Primer3 не вернул подходящих пар'))
+                         .note('off'), 'Primer3 не вернул подходящих пар. '
+                                       'Попробуйте расширить диапазон продукта или Tm')
+        self.assertEqual(summary(failure=dict(status='primer3_error', reason='bad input')).note('off'),
+                         'bad input. Проверьте параметры Primer3 в окне «Дополнительно»')
+
+    def test_errors(self):
+        def note(**rejection):
+            return summary(rejection=rejection).note('off')
+        self.assertEqual(note(reason='bad_chrom', details='x'), 'Хромосома не найдена в геноме')
+        self.assertEqual(note(reason='parse_error', details='Ожидалось минимум 4 поля'),
+                         'Строка не прочитана: Ожидалось минимум 4 поля')
+        self.assertEqual(note(reason='pos_oob', details='x'), 'Позиция за пределами хромосомы')
+        self.assertEqual(note(reason='bad_ref_chars', details='x'), 'Не одиночная замена A/C/G/T')
+        self.assertEqual(note(reason='bad_alt_chars', details='x'), 'Не одиночная замена A/C/G/T')
+        self.assertEqual(note(reason='minus_strand_like', details='x'), 'REF похож на обратную цепь')
+        self.assertEqual(note(reason='multi_alt_contains_ref', details='x'), 'ALT совпадает с геномом')
+        self.assertEqual(note(reason='ref_not_match', details='x'), 'REF не совпадает с геномом')
+        self.assertEqual(note(reason='unsupported_variant', details='Поддерживаются только одиночные SNP A/C/G/T'),
+                         'Поддерживаются только одиночные SNP A/C/G/T')
+        self.assertEqual(note(reason='something_new'), 'something_new')
+        self.assertEqual(summary(failure=dict(status='analysis_error', reason='REF не совпадает с FASTA'))
+                         .note('off'), 'REF не совпадает с FASTA')
+
+
 if __name__ == '__main__':
     unittest.main()
