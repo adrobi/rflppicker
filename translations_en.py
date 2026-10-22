@@ -198,6 +198,42 @@ and the Rejected sheet (rejected variants). The log goes to stderr.''',
     'с robust-кандидатами {robust}':
         '[INFO] Saved: {out} · rows {rows} · SNPs accepted {accepted}, with candidates {candidates}, '
         'with robust candidates {robust}',
+    # qtprimer3_vis, theme: the main window.
+    'Системная': 'System',
+    'Светлая': 'Light',
+    'Тёмная': 'Dark',
+    'Журнал расчёта': 'Run log',
+    'Копировать': 'Copy',
+    'Журнал': 'Log',
+    'Тема: {mode} ▾': 'Theme: {mode} ▾',
+    'Системный': 'System',
+    'системный': 'system',
+    'Язык: {name} ▾': 'Language: {name} ▾',
+    'Язык': 'Language',
+    'Язык изменится после перезапуска программы.': 'The language will change after the program is restarted.',
+    'Новый расчёт': 'New run',
+    'Ручной выбор у {count} SNP будет сброшен. Запустить?':
+        'Choices made by hand for {count} SNPs will be reset. Run?',
+    'Идёт расчёт…': 'Running…',
+    'Останавливаю расчёт…': 'Stopping the run…',
+    'Идёт расчёт… {done} из {total} SNP': 'Running… {done} of {total} SNPs',
+    'Ошибка расчёта: {message}': 'Run failed: {message}',
+    'Расчёт остановлен': 'Run stopped',
+    'Выберите файл SNP и геном слева и нажмите «Запустить»': 'Choose an SNP file and a genome on the left and press «Run»',
+    'В файле нет SNP': 'The file has no SNPs',
+    'Готово: {count} SNP · {parts}': 'Done: {count} SNPs · {parts}',
+    'Выгрузка': 'Export',
+    'Сначала выполните расчёт.': 'Run the analysis first.',
+    'Файл занят другой программой. Закройте его и повторите выгрузку.':
+        'The file is open in another program. Close it and export again.',
+    'Нет доступа к папке {folder}. Запустите программу из папки, куда разрешена запись.':
+        'No access to the folder {folder}. Start the program from a folder where writing is allowed.',
+    'Не удалось сохранить: {error}': 'Could not save: {error}',
+    'Сохранено: {path}': 'Saved: {path}',
+    'Результаты сохранены:\n{path}': 'Results saved:\n{path}',
+    'Ошибка: {error}. Подробности — в журнале.': 'Error: {error}. Details are in the log.',
+    'Ошибка': 'Error',
+    '{error}\n\nПодробности — в окне «Журнал».': '{error}\n\nDetails are in the «Log» window.',
 }
 
 CORE = [

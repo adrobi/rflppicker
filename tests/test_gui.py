@@ -199,6 +199,32 @@ class MainWindowTests(unittest.TestCase):
         self.assertEqual((self.window.minimumWidth(), self.window.minimumHeight()), (1000, 640))
         self.assertTrue(self.window.windowTitle().startswith('RFLP Picker'))
 
+    def test_language_switch_is_saved_and_needs_restart(self):
+        self.assertEqual(self.window.language_button.text(), 'Язык: системный ▾')
+        self.assertEqual([a.text() for a in self.window.language_button.menu().actions()],
+                         ['Системный', 'Русский', 'English'])
+        with patch.object(QMessageBox, 'information') as info:
+            self.window.set_language_mode('en')
+        self.assertEqual(self.settings.value('language'), 'en')
+        self.assertIn('перезапуска', info.call_args[0][2])
+        self.assertEqual(self.window.language_button.text(), 'Язык: English ▾')
+        with patch.object(QMessageBox, 'information') as info:
+            self.window.set_language_mode('ru')          # the language of this session: nothing to restart
+        info.assert_not_called()
+        self.assertEqual(self.settings.value('language'), 'ru')
+
+    def test_startup_language(self):                     # Review Focus 2
+        self.settings.set_value('language', 'fr')
+        with patch('qtprimer3_vis.QLocale') as locale:
+            locale.system.return_value.uiLanguages.return_value = ['de-DE']
+            self.assertEqual(qtprimer3_vis.startup_language(self.settings), 'en')
+            locale.system.return_value.uiLanguages.return_value = ['ru-RU', 'en-US']
+            self.assertEqual(qtprimer3_vis.startup_language(self.settings), 'ru')
+            self.settings.set_value('language', 'en')
+            self.assertEqual(qtprimer3_vis.startup_language(self.settings), 'en')
+            self.settings.set_value('language', 'system')
+            self.assertEqual(qtprimer3_vis.startup_language(self.settings), 'ru')
+
 
 if __name__ == '__main__':
     unittest.main()

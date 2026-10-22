@@ -5,26 +5,40 @@ import traceback
 from datetime import datetime
 from typing import List, Optional
 
-from PyQt6.QtCore import QByteArray, Qt, QThread, pyqtSignal
+from PyQt6.QtCore import QByteArray, QLocale, Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import (
     QApplication, QDialog, QHBoxLayout, QLabel, QMainWindow, QMenu, QMessageBox, QPlainTextEdit, QPushButton,
     QSplitter, QStatusBar, QToolButton, QVBoxLayout, QWidget,
 )
 
+import i18n
 import resources_rc  # noqa: F401  (window icon)
 import reporting
 import rflp_core as core
 from app_settings import AppSettings
 from details_panel import DetailsPanel
+from i18n import core_text, t
 from launch_panel import LaunchPanel
 from snp_list import SnpListView
 from snp_summary import (
-    ERROR, STATUS_ORDER, STATUS_TITLES, build_summaries, excel_sheets, read_input_records, results_table,
+    ERROR, STATUS_ORDER, build_summaries, excel_sheets, read_input_records, results_table, status_title,
 )
 from theme import MODE_TITLES, MODES, ThemeController
 
 LAUNCH_WIDTH = 300
+LANGUAGE_MODES = ('system', 'ru', 'en')
+# The names of the languages are always written in their own language.
+LANGUAGE_NAMES = {'ru': 'Русский', 'en': 'English'}
+
+
+def detected_language() -> str:
+    return i18n.system_language(QLocale.system().uiLanguages())
+
+
+def startup_language(settings: AppSettings) -> str:
+    """The saved language, or the system one for 'system' and unknown values (i18n spec §3.2)."""
+    return i18n.resolve_language(settings.value('language', 'system'), detected_language())
 
 
 class CalcThread(QThread):
@@ -57,7 +71,7 @@ class CalcThread(QThread):
 class LogWindow(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle('Журнал расчёта')
+        self.setWindowTitle(t('Журнал расчёта'))
         self.resize(760, 480)
         layout = QVBoxLayout(self)
         self.text = QPlainTextEdit()
@@ -65,7 +79,7 @@ class LogWindow(QDialog):
         layout.addWidget(self.text, 1)
         row = QHBoxLayout()
         row.addStretch()
-        copy = QPushButton('Копировать')
+        copy = QPushButton(t('Копировать'))
         copy.clicked.connect(lambda: QApplication.clipboard().setText(self.text.toPlainText()))
         row.addWidget(copy)
         layout.addLayout(row)
@@ -114,16 +128,24 @@ class RFLPPickerGUI(QMainWindow):
         status = QStatusBar()
         self.status_message = QLabel()
         status.addWidget(self.status_message, 1)
-        log_button = QPushButton('Журнал')
+        log_button = QPushButton(t('Журнал'))
         log_button.clicked.connect(self.log.show)
         status.addPermanentWidget(log_button)
         self.theme_button = QToolButton()
         self.theme_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         theme_menu = QMenu(self.theme_button)
         for mode in MODES:
-            theme_menu.addAction(MODE_TITLES[mode], lambda m=mode: self.set_theme_mode(m))
+            theme_menu.addAction(t(MODE_TITLES[mode]), lambda m=mode: self.set_theme_mode(m))
         self.theme_button.setMenu(theme_menu)
         status.addPermanentWidget(self.theme_button)
+        self.language_button = QToolButton()
+        self.language_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        language_menu = QMenu(self.language_button)
+        for mode in LANGUAGE_MODES:
+            title = t('Системный') if mode == 'system' else LANGUAGE_NAMES[mode]
+            language_menu.addAction(title, lambda m=mode: self.set_language_mode(m))
+        self.language_button.setMenu(language_menu)
+        status.addPermanentWidget(self.language_button)
         status.addPermanentWidget(QLabel(f'RFLP Picker {core.APP_VERSION}'))
         self.setStatusBar(status)
 
@@ -136,6 +158,7 @@ class RFLPPickerGUI(QMainWindow):
         self.theme.changed.connect(self._apply_colors)
         self._apply_colors(self.theme.colors)
         self._update_theme_button()
+        self._update_language_button()
         self._restore_layout()
 
     # ----- theme -----
@@ -148,7 +171,24 @@ class RFLPPickerGUI(QMainWindow):
         self._update_theme_button()
 
     def _update_theme_button(self):
-        self.theme_button.setText(f'Тема: {MODE_TITLES[self.theme.mode].lower()} ▾')
+        self.theme_button.setText(t('Тема: {mode} ▾', mode=t(MODE_TITLES[self.theme.mode]).lower()))
+
+    # ----- language -----
+    def _language_mode(self) -> str:
+        mode = self.settings.value('language', 'system')
+        return mode if mode in LANGUAGE_MODES else 'system'
+
+    def set_language_mode(self, mode: str) -> None:
+        """Save the language for the next launch; the window keeps its language until then."""
+        self.settings.set_value('language', mode)
+        self._update_language_button()
+        if startup_language(self.settings) != i18n.language():
+            QMessageBox.information(self, t('Язык'), t('Язык изменится после перезапуска программы.'))
+
+    def _update_language_button(self):
+        mode = self._language_mode()
+        name = t('системный') if mode == 'system' else LANGUAGE_NAMES[mode]
+        self.language_button.setText(t('Язык: {name} ▾', name=name))
 
     def _apply_colors(self, colors: dict):
         for widget in (self.launch, self.list, self.details):
@@ -192,7 +232,8 @@ class RFLPPickerGUI(QMainWindow):
         return sum(s.manual for s in self.list.model.summaries())
 
     def confirm_rerun(self, manual: int) -> bool:
-        answer = QMessageBox.question(self, 'Новый расчёт', f'Ручной выбор у {manual} SNP будет сброшен. Запустить?')
+        answer = QMessageBox.question(self, t('Новый расчёт'),
+                                      t('Ручной выбор у {count} SNP будет сброшен. Запустить?', count=manual))
         return answer == QMessageBox.StandardButton.Yes
 
     def start_run(self) -> None:
@@ -204,7 +245,7 @@ class RFLPPickerGUI(QMainWindow):
         params = self.launch.collect_params()
         self.launch.save_settings()
         self.log.text.clear()
-        self.status_message.setText('Идёт расчёт…')
+        self.status_message.setText(t('Идёт расчёт…'))
         self.launch.set_running(True)
         worker = CalcThread(params)
         worker.status.connect(self._on_status)
@@ -219,9 +260,10 @@ class RFLPPickerGUI(QMainWindow):
     def stop_run(self) -> None:
         if self.worker is not None:
             self.worker.requestInterruption()
-            self.status_message.setText('Останавливаю расчёт…')
+            self.status_message.setText(t('Останавливаю расчёт…'))
 
     def _on_status(self, message: str):
+        message = core_text(message)
         self.log.append(message)
         last = next((line.strip() for line in reversed(message.splitlines()) if line.strip()), '')
         if last.startswith('[INFO]'):
@@ -230,25 +272,25 @@ class RFLPPickerGUI(QMainWindow):
     def _on_progress(self, done: int, total: int):
         self.launch.set_progress(done, total)
         if self.list.model.rowCount() == 0:
-            self.list.set_placeholder(f'Идёт расчёт… {done} из {total} SNP')
+            self.list.set_placeholder(t('Идёт расчёт… {done} из {total} SNP', done=done, total=total))
 
     def _on_finished(self):
         self.worker = None
         self.launch.set_running(False)
 
     def _on_failed(self, message: str):
-        self.status_message.setText(f'Ошибка расчёта: {message}')
+        self.status_message.setText(t('Ошибка расчёта: {message}', message=core_text(message)))
         self._restore_list()
 
     def _on_cancelled(self):
-        self.status_message.setText('Расчёт остановлен')
+        self.status_message.setText(t('Расчёт остановлен'))
         self._restore_list()
 
     def _restore_list(self):
         if self.list.model.rowCount():
             self.list.set_summaries(self.list.model.summaries(), self.params.get('dcaps', 'off'), self._has_ids)
         else:
-            self.list.set_placeholder('Выберите файл SNP и геном слева и нажмите «Запустить»')
+            self.list.set_placeholder(t('Выберите файл SNP и геном слева и нажмите «Запустить»'))
 
     def on_succeeded(self, header: list, rows: list, report: dict, params: Optional[dict] = None) -> None:
         self.header, self.rows, self.report = list(header), list(rows), dict(report)
@@ -259,12 +301,13 @@ class RFLPPickerGUI(QMainWindow):
         self.details.show_summary(None, self.params['dcaps'])
         self.list.set_summaries(self.summaries, self.params['dcaps'], self._has_ids)
         if not self.summaries:
-            self.list.set_placeholder('В файле нет SNP')
-            self.status_message.setText('В файле нет SNP')
+            self.list.set_placeholder(t('В файле нет SNP'))
+            self.status_message.setText(t('В файле нет SNP'))
             return
         counts = self.list.model.counts()
-        parts = [f'{STATUS_TITLES[s].lower()} {counts[s]}' for s in STATUS_ORDER if counts[s]]
-        self.status_message.setText(f"Готово: {len(self.summaries)} SNP · {', '.join(parts)}")
+        parts = [f'{status_title(s).lower()} {counts[s]}' for s in STATUS_ORDER if counts[s]]
+        self.status_message.setText(t('Готово: {count} SNP · {parts}', count=len(self.summaries),
+                                      parts=', '.join(parts)))
         if counts[ERROR] < len(self.summaries):
             # When every SNP is a data error, the fix (file, genome, names) is in «Запуск»: keep it open.
             self.launch.set_collapsed(True)
@@ -279,7 +322,7 @@ class RFLPPickerGUI(QMainWindow):
     def export(self, kind: str, path: Optional[str] = None) -> Optional[str]:
         """Write 'all' or 'shown' SNPs to Excel, or 'csv' (all schemes). Return the path, or None."""
         if not self.summaries:
-            QMessageBox.information(self, 'Выгрузка', 'Сначала выполните расчёт.')
+            QMessageBox.information(self, t('Выгрузка'), t('Сначала выполните расчёт.'))
             return None
         interactive = path is None
         folder = os.path.dirname(path) if path else os.path.join(core.get_base_dir(), 'results')
@@ -299,20 +342,21 @@ class RFLPPickerGUI(QMainWindow):
                     extra_sheets=excel_sheets(summaries, self.params.get('dcaps', 'off')))
         except PermissionError:
             if path and os.path.exists(path):
-                message = 'Файл занят другой программой. Закройте его и повторите выгрузку.'
+                message = t('Файл занят другой программой. Закройте его и повторите выгрузку.')
             else:
-                message = f'Нет доступа к папке {folder}. Запустите программу из папки, куда разрешена запись.'
-            QMessageBox.warning(self, 'Выгрузка', message)
+                message = t('Нет доступа к папке {folder}. Запустите программу из папки, куда разрешена запись.',
+                            folder=folder)
+            QMessageBox.warning(self, t('Выгрузка'), message)
             return None
         except Exception as exc:
             # Never let an export error close the window with the user's choices.
             self.log.append(traceback.format_exc())
             core.logger.error(traceback.format_exc())
-            QMessageBox.warning(self, 'Выгрузка', f'Не удалось сохранить: {exc}')
+            QMessageBox.warning(self, t('Выгрузка'), t('Не удалось сохранить: {error}', error=exc))
             return None
-        self.status_message.setText(f'Сохранено: {path}')
+        self.status_message.setText(t('Сохранено: {path}', path=path))
         if interactive:
-            QMessageBox.information(self, 'Выгрузка', f'Результаты сохранены:\n{path}')
+            QMessageBox.information(self, t('Выгрузка'), t('Результаты сохранены:\n{path}', path=path))
         return path
 
     # ----- selection -----
@@ -326,8 +370,8 @@ def install_exception_hook(window: RFLPPickerGUI) -> None:
         text = ''.join(traceback.format_exception(exc_type, exc, tb))
         core.logger.error(text)
         window.log.append(text)
-        window.status_message.setText(f'Ошибка: {exc}. Подробности — в журнале.')
-        QMessageBox.critical(window, 'Ошибка', f'{exc}\n\nПодробности — в окне «Журнал».')
+        window.status_message.setText(t('Ошибка: {error}. Подробности — в журнале.', error=exc))
+        QMessageBox.critical(window, t('Ошибка'), t('{error}\n\nПодробности — в окне «Журнал».', error=exc))
 
     sys.excepthook = hook
 
@@ -336,7 +380,9 @@ def main() -> None:
     if not core._PRIMER3_AVAILABLE:
         core.logger.warning(f'primer3 недоступен, ошибка импорта: {core._PRIMER3_IMPORT_ERROR}')
     app = QApplication(sys.argv)
-    window = RFLPPickerGUI()
+    settings = AppSettings()
+    i18n.set_language(startup_language(settings))   # before any window is built
+    window = RFLPPickerGUI(settings)
     install_exception_hook(window)
     window.show()
     sys.exit(app.exec())

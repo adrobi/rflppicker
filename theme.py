@@ -4,9 +4,10 @@ from PyQt6.QtGui import QColor, QFont, QFontDatabase, QPalette
 from PyQt6.QtWidgets import QApplication
 
 import palette
+from i18n import N_
 
 MODES = ('system', 'light', 'dark')
-MODE_TITLES = {'system': 'Системная', 'light': 'Светлая', 'dark': 'Тёмная'}
+MODE_TITLES = {'system': N_('Системная'), 'light': N_('Светлая'), 'dark': N_('Тёмная')}
 
 
 def stylesheet(c: dict) -> str:
