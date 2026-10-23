@@ -104,6 +104,21 @@ class CliTests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertEqual(log.strip(), 'Parameter error: Minimum product size is greater than maximum')
 
+    def test_dcaps_settings_from_the_command_line(self):
+        base = ['--fasta', str(self.fasta), '--variants', str(self.variants), '--out', 'x.csv']
+        params = rflp_cli.params_from_args(rflp_cli.build_parser().parse_args(
+            base + ['--dcaps-tm-max', '68', '--dcaps-prod-min', '100', '--dcaps-prod-max', '250',
+                    '--dcaps-delta', '18']))
+        self.assertEqual((params['dcaps_tm_max'], params['dcaps_prod_min'], params['dcaps_prod_max'],
+                          params['dcaps_delta']), (68.0, 100, 250, 18))
+        defaults = rflp_cli.params_from_args(rflp_cli.build_parser().parse_args(base))
+        self.assertEqual((defaults['dcaps_tm_max'], defaults['dcaps_delta']), (70.0, 20))
+
+    def test_invalid_dcaps_delta_is_a_parameter_error(self):
+        code, log = self.run_cli('--out', str(self.root / 'x.csv'), '--dcaps-delta', '0')
+        self.assertEqual(code, 2)
+        self.assertIn('Ошибка параметров: dcaps_delta: требуется целое число от 1 до 1000', log)
+
     def test_english_core_log_lines(self):
         records = []
         handler = logging.Handler()

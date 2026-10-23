@@ -82,6 +82,14 @@ def build_parser():
                         help=t('Праймеры с несовпадением (dCAPS): fallback — только если нет robust-схемы'))
     choice.add_argument('--dcaps-mismatches', dest='dcaps_mismatches', type=int, choices=(1, 2),
                         help=t('Наибольшее число несовпадений в праймере dCAPS'))
+    choice.add_argument('--dcaps-tm-max', dest='dcaps_tm_max', type=float, metavar='C',
+                        help=t('dCAPS: верхняя граница Tm обоих праймеров, °C (нижняя — --tm-min)'))
+    choice.add_argument('--dcaps-prod-min', dest='dcaps_prod_min', type=int, metavar='BP',
+                        help=t('dCAPS: мин. размер продукта, п.н.'))
+    choice.add_argument('--dcaps-prod-max', dest='dcaps_prod_max', type=int, metavar='BP',
+                        help=t('dCAPS: макс. размер продукта, п.н.'))
+    choice.add_argument('--dcaps-delta', dest='dcaps_delta', type=int, metavar='BP',
+                        help=t('dCAPS: порог Δ, п.н. (вместо --delta для схем dCAPS)'))
 
     primers = parser.add_argument_group(t('праймеры и совместный подбор'))
     primers.add_argument('--primer3', dest='use_primer3', action=argparse.BooleanOptionalAction,

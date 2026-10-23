@@ -173,6 +173,12 @@ and the Rejected sheet (rejected variants). The log goes to stderr.''',
     'Праймеры с несовпадением (dCAPS): fallback — только если нет robust-схемы':
         'Mismatch primers (dCAPS): fallback — only when there is no robust assay',
     'Наибольшее число несовпадений в праймере dCAPS': 'Maximum number of mismatches in a dCAPS primer',
+    'dCAPS: верхняя граница Tm обоих праймеров, °C (нижняя — --tm-min)':
+        'dCAPS: upper Tm limit of both primers, °C (the lower one is --tm-min)',
+    'dCAPS: мин. размер продукта, п.н.': 'dCAPS: min. product size, bp',
+    'dCAPS: макс. размер продукта, п.н.': 'dCAPS: max. product size, bp',
+    'dCAPS: порог Δ, п.н. (вместо --delta для схем dCAPS)':
+        'dCAPS: Δ threshold, bp (instead of --delta for dCAPS assays)',
     'праймеры и совместный подбор': 'primers and joint design',
     'Подбирать праймеры Primer3 (--no-primer3 — поиск по окну)':
         'Design primers with Primer3 (--no-primer3: window search)',
