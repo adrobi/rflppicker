@@ -133,6 +133,9 @@ class LaunchPanelTests(unittest.TestCase):
         self.assertTrue(errors['dcaps_delta'].startswith('dcaps_delta: требуется целое число'))
         self.assertNotIn('prod_min', errors)
         self.assertNotIn('tm_min', errors)
+        self.assertEqual(field_errors(dict(params, dcaps_tm_max='x'))['dcaps_tm_max'],
+                         'Некорректный параметр: dcaps_tm_max')
+        self.assertEqual(field_errors(dict(params, dcaps='off', tm_min=71.0, tm_max=75.0)), {})
         self.panel.set_params(params)
         self.assertFalse(self.panel.validate())
         self.assertEqual(self.panel.findChild(QLabel, 'changed_badge').text(), 'ошибка')

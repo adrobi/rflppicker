@@ -114,6 +114,11 @@ class CliTests(unittest.TestCase):
         defaults = rflp_cli.params_from_args(rflp_cli.build_parser().parse_args(base))
         self.assertEqual((defaults['dcaps_tm_max'], defaults['dcaps_delta']), (70.0, 20))
 
+    def test_high_tm_runs_without_dcaps_as_in_1_3_0(self):
+        code, log = self.run_cli('--out', str(self.root / 'x.csv'), '--preset', 'v1.1', '--no-primer3',
+                                 '--tm-min', '71', '--tm-max', '75')
+        self.assertEqual(code, 0, log)
+
     def test_invalid_dcaps_delta_is_a_parameter_error(self):
         code, log = self.run_cli('--out', str(self.root / 'x.csv'), '--dcaps-delta', '0')
         self.assertEqual(code, 2)

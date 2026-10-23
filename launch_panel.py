@@ -45,7 +45,7 @@ def field_errors(params: dict) -> Dict[str, str]:
         # The dCAPS checks mention «размер продукта» and «Tm» too: they belong to the dCAPS fields.
         elif 'dcaps_prod_min/dcaps_prod_max' in message or 'размер продукта dCAPS' in message:
             key, text = 'dcaps_prod_min', core_text(message)
-        elif 'tm_min/dcaps_tm_max' in message or 'Tm праймеров dCAPS' in message:
+        elif 'dcaps_tm_max' in message or 'Tm праймеров dCAPS' in message:
             key, text = 'dcaps_tm_max', core_text(message)
         elif 'min_frag/max_frag' in message or 'размер фрагмента' in message:
             key, text = 'min_frag', core_text(message)

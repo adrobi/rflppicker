@@ -51,30 +51,48 @@ def validate_params(params: dict) -> list[str]:
         value = str(params.get(key, '') or '').strip()
         if value and not os.path.isfile(value):
             errors.append(f"Файл не найден ({key}): {value}")
+    def positive(*values):
+        try:
+            numbers = [float(value) for value in values]
+        except (TypeError, ValueError):
+            return None
+        return numbers if all(math.isfinite(x) and x > 0 for x in numbers) else None
+
+    def integer_in(key, default, low, high):
+        value = params.get(key, default)
+        if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
+            errors.append(f"{key}: требуется целое число от {low} до {high}")
+
     for lo, hi, label in (('min_frag', 'max_frag', 'размер фрагмента'),
                           ('prod_min', 'prod_max', 'размер продукта'),
-                          ('tm_min', 'tm_max', 'Tm'),
-                          ('dcaps_prod_min', 'dcaps_prod_max', 'размер продукта dCAPS'),
-                          ('tm_min', 'dcaps_tm_max', 'Tm праймеров dCAPS')):
-        try:
-            # Parameter sets written before the dCAPS settings existed get their defaults.
-            lower, upper = (float(params.get(key, DEFAULT_PARAMS[key]) if key.startswith('dcaps_')
-                                  else params.get(key)) for key in (lo, hi))
-            if not all(math.isfinite(x) and x > 0 for x in (lower, upper)):
-                errors.append(f"Некорректный параметр: {lo}/{hi}")
-            elif lower > upper:
-                errors.append(f"Минимальный {label} больше максимального")
-        except (TypeError, ValueError):
+                          ('tm_min', 'tm_max', 'Tm')):
+        numbers = positive(params.get(lo), params.get(hi))
+        if numbers is None:
             errors.append(f"Некорректный параметр: {lo}/{hi}")
+        elif numbers[0] > numbers[1]:
+            errors.append(f"Минимальный {label} больше максимального")
     for key, default, low, high in (
         ('primer_pairs', 10, 1, 100), ('top_results', 10, 0, 10000),
         ('flank', 300, 1, 100000), ('max_cuts', 3, 0, 100),
         ('delta', 25, 1, 100000), ('snp_end_distance', 0, 0, 5000), ('dcaps_mismatches', 1, 1, 2),
-        ('dcaps_delta', 20, 1, 1000),
     ):
-        value = params.get(key, default)
-        if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
-            errors.append(f"{key}: требуется целое число от {low} до {high}")
+        integer_in(key, default, low, high)
+    # The dCAPS settings matter only when mismatch primers are designed; parameter sets
+    # written before they existed get their defaults.
+    if params.get('dcaps', 'off') in ('fallback', 'always') and params.get('use_primer3', True):
+        dcaps = {key: params.get(key, DEFAULT_PARAMS[key])
+                 for key in ('dcaps_prod_min', 'dcaps_prod_max', 'dcaps_tm_max', 'dcaps_delta')}
+        numbers = positive(dcaps['dcaps_prod_min'], dcaps['dcaps_prod_max'])
+        if numbers is None:
+            errors.append("Некорректный параметр: dcaps_prod_min/dcaps_prod_max")
+        elif numbers[0] > numbers[1]:
+            errors.append("Минимальный размер продукта dCAPS больше максимального")
+        ceiling = positive(dcaps['dcaps_tm_max'])
+        if ceiling is None:
+            errors.append("Некорректный параметр: dcaps_tm_max")
+        elif positive(params.get('tm_min')) and float(params['tm_min']) > ceiling[0]:
+            errors.append("Минимальный Tm праймеров dCAPS больше максимального")
+        integer_in('dcaps_delta', dcaps['dcaps_delta'], 1, 1000)
     if params.get('dcaps', 'off') not in ('off', 'fallback', 'always'):
         errors.append("dcaps: допустимо off, fallback или always")
     try:

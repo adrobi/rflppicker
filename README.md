@@ -195,7 +195,8 @@ Tm of both primers up to 70 °C, product 120–300 bp, Δ threshold 20 bp. A lon
 primer moves the cut away from the product end, and on a short product a ~20 bp
 difference is easy to see on a gel. Ordinary assays are not affected. By default
 dCAPS is tried only for SNPs without a robust assay with a natural site; the
-“For every SNP” mode of the “Run” panel always offers it. On the command line:
+“For every SNP” mode of the “Run” panel always offers it, and then dCAPS assays
+are ranked together with ordinary ones. On the command line:
 `--dcaps-tm-max`, `--dcaps-prod-min`, `--dcaps-prod-max`, `--dcaps-delta`.
 
 Checking the coordinates and that `REF` matches the FASTA is always on. The

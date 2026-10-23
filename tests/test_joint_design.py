@@ -424,6 +424,17 @@ class DcapsSettingsTests(unittest.TestCase):
                          ['dcaps_delta: требуется целое число от 1 до 1000'])
         self.assertEqual(core.validate_params(dict(base, dcaps_prod_max='x')),
                          ['Некорректный параметр: dcaps_prod_min/dcaps_prod_max'])
+        self.assertEqual(core.validate_params(dict(base, dcaps_tm_max='x')), ['Некорректный параметр: dcaps_tm_max'])
+
+    def test_dcaps_settings_are_checked_only_when_dcaps_runs(self):    # review: 1.3.0 runs must not break
+        v11 = dict(core.DEFAULT_PARAMS, fasta=__file__, input_file=__file__)   # dCAPS off
+        self.assertEqual(core.validate_params(dict(v11, tm_min=71.0, tm_max=75.0)), [])
+        self.assertEqual(core.validate_params(dict(v11, dcaps_tm_max=50.0, dcaps_prod_min=400, dcaps_delta=0)), [])
+        on = dict(core.RECOMMENDED_PARAMS, fasta=__file__, input_file=__file__)   # fallback
+        self.assertEqual(core.validate_params(dict(on, use_primer3=False, dcaps_tm_max=50.0, dcaps_delta=0)), [])
+        self.assertEqual(core.validate_params(dict(on, tm_min=71.0, tm_max=75.0)),
+                         ['Минимальный Tm праймеров dCAPS больше максимального'])
+        self.assertEqual(core.validate_params(dict(on, tm_min=float('nan'))), ['Некорректный параметр: tm_min/tm_max'])
 
 
 if __name__ == '__main__':
