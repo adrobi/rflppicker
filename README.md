@@ -189,6 +189,7 @@ size and Tm range. When no pair is found, the line gets the status “no primers
 and gives no false enzyme candidates. With Primer3 off, the search runs over the
 whole window and is marked “window search”.
 
+*Coming in the next version (release 1.3.0 does not have these settings yet):*
 dCAPS assays (a mismatch primer that creates the enzyme site in one allele) are
 designed with their own settings — the “dCAPS” group of the “Advanced” dialog:
 Tm of both primers up to 70 °C, product 120–300 bp, Δ threshold 20 bp. A longer
