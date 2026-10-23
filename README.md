@@ -189,6 +189,15 @@ size and Tm range. When no pair is found, the line gets the status “no primers
 and gives no false enzyme candidates. With Primer3 off, the search runs over the
 whole window and is marked “window search”.
 
+dCAPS assays (a mismatch primer that creates the enzyme site in one allele) are
+designed with their own settings — the “dCAPS” group of the “Advanced” dialog:
+Tm of both primers up to 70 °C, product 120–300 bp, Δ threshold 20 bp. A longer
+primer moves the cut away from the product end, and on a short product a ~20 bp
+difference is easy to see on a gel. Ordinary assays are not affected. By default
+dCAPS is tried only for SNPs without a robust assay with a natural site; the
+“For every SNP” mode of the “Run” panel always offers it. On the command line:
+`--dcaps-tm-max`, `--dcaps-prod-min`, `--dcaps-prod-max`, `--dcaps-delta`.
+
 Checking the coordinates and that `REF` matches the FASTA is always on. The
 option to skip normalization turns off only the automatic REF/ALT swap.
 
