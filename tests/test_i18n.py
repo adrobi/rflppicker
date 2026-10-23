@@ -67,11 +67,11 @@ CORE_SAMPLES = [
     ('[INFO] Отбор: только продаваемые ферменты; изошизомеры объединены (одна строка на сайт); '
      'без сайта фермента в праймерах; повторы (строчные буквы FASTA) не на 3′-концах праймеров; '
      'без фоновых вариантов, меняющих разрезы; SNP не ближе 100 п.н. к концам ампликона; '
-     'dCAPS если нет robust-схемы, несовпадений до 1',
+     'dCAPS если нет robust-схемы, несовпадений до 1, Tm до 70 °C, продукт 120–300 п.н., Δ 20 п.н.',
      '[INFO] Filters: commercial enzymes only; isoschizomers grouped (one row per site); '
      'no enzyme site in primers; repeats (lower-case FASTA) not at primer 3′ ends; '
      'no background variants that change cuts; SNP at least 100 bp from amplicon ends; '
-     'dCAPS if no robust assay, mismatches up to 1'),
+     'dCAPS if no robust assay, mismatches up to 1, Tm up to 70 °C, product 120–300 bp, Δ 20 bp'),
     ('dCAPS для каждого SNP, несовпадений до 2', 'dCAPS for every SNP, mismatches up to 2'),
     ('[INFO] Фоновые варианты: 12 в окнах SNP из 15000 записей VCF',
      '[INFO] Background variants: 12 in SNP windows out of 15000 VCF records'),

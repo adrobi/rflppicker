@@ -1114,7 +1114,10 @@ def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, 
             options.append(f"SNP не ближе {params['snp_end_distance']} п.н. к концам ампликона")
         if use_primer3 and params['dcaps'] != 'off':
             when = 'если нет robust-схемы' if params['dcaps'] == 'fallback' else 'для каждого SNP'
-            options.append(f"dCAPS {when}, несовпадений до {params['dcaps_mismatches']}")
+            options.append(f"dCAPS {when}, несовпадений до {params['dcaps_mismatches']}, "
+                           f"Tm до {params['dcaps_tm_max']:g} °C, "
+                           f"продукт {params['dcaps_prod_min']}–{params['dcaps_prod_max']} п.н., "
+                           f"Δ {params['dcaps_delta']} п.н.")
         if options:
             status_cb('[INFO] Отбор: ' + '; '.join(options))
 
@@ -1243,7 +1246,8 @@ def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, 
                 visible_r = [x for x in fr if model.min_visible <= x <= model.max_visible]
                 visible_a = [x for x in fal if model.min_visible <= x <= model.max_visible]
                 actual_delta = diagnostic_delta(visible_r, visible_a)
-                if actual_delta < params['delta']:
+                threshold = params['dcaps_delta'] if record.get('design') == 'dCAPS' else params['delta']
+                if actual_delta < threshold:
                     return None
                 scores = score_genotypes(fr, fal, model)
                 if joint and scores['genotype_quality'] == 'ambiguous':
@@ -1312,13 +1316,13 @@ def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, 
                     template = ''.join(template)
                     terminal = off - 1 if side == 'left' else off + 1
                     primer = None if mask and raw[terminal].islower() else dcaps_primer(
-                        template, off, side, params['tm_min'], params['tm_max'], excluded)
+                        template, off, side, params['tm_min'], params['dcaps_tm_max'], excluded)
                     if primer is None:
                         counters['dcaps_no_primer'] += 1
                         continue
                     counters['dcaps_designs'] += 1
-                    pres = primer3_pick(template, off, params['prod_min'], params['prod_max'],
-                                        params['tm_min'], params['tm_max'],
+                    pres = primer3_pick(template, off, params['dcaps_prod_min'], params['dcaps_prod_max'],
+                                        params['tm_min'], params['dcaps_tm_max'],
                                         num_return=params['primer_pairs'] if joint else 1,
                                         lowercase_masking=mask, excluded_regions=excluded,
                                         fixed_left=primer[1] if side == 'left' else None,
@@ -1342,7 +1346,7 @@ def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, 
                         right = ''.join(c.lower() if b - 1 - i in lowered else c
                                         for i, c in enumerate(pair['primers_right']))
                         record = amplicon_record(pair, a, b, design='dCAPS', primers_left=left,
-                                                 primers_right=right,
+                                                 primers_right=right, delta_threshold_bp=params['dcaps_delta'],
                                                  primer_mismatches=describe_mismatches(seq, off, side, changes))
                         for enz in design_enzymes:
                             hit = evaluate(enz, refamp, altamp, record, a, b)

@@ -251,7 +251,8 @@ class DcapsTests(unittest.TestCase):
         (self.root / 'toy.fa').write_text('>1\n' + seq + '\n')
         (self.root / 'v.tsv').write_text('chrom\tpos\tref\talt\n1\t301\tC\tT\n')
         self.params = dict(core.DEFAULT_PARAMS, fasta=str(self.root / 'toy.fa'), input_file=str(self.root / 'v.tsv'),
-                           flank=300, prod_min=120, prod_max=300, tm_min=55, tm_max=65, delta=10, top_results=0)
+                           flank=300, prod_min=120, prod_max=300, tm_min=55, tm_max=65, delta=10, top_results=0,
+                           dcaps_tm_max=65, dcaps_delta=10)
 
     def test_mismatch_sets_and_description(self):
         sets = core.dcaps_mismatch_sets([TaqI], self.seq, 300, 'C', 'T', 1)
@@ -289,6 +290,44 @@ class DcapsTests(unittest.TestCase):
         with patch.object(core, 'AllEnzymes', [TaqI]):
             header, rows = core.run_rflp_gui_mode(dict(self.params, dcaps='off'))
         self.assertEqual(dict(zip(header, rows[0]))['status'], 'no_discriminating_assay')
+
+    def test_dcaps_branch_uses_its_own_tm_and_product_range(self):
+        with patch.object(core, 'AllEnzymes', [TaqI]), \
+                patch.object(core, 'primer3_pick', wraps=core.primer3_pick) as pick, \
+                patch.object(core, 'dcaps_primer', wraps=core.dcaps_primer) as mismatch:
+            core.run_rflp_gui_mode(dict(self.params, dcaps='always', dcaps_tm_max=70.0,
+                                        dcaps_prod_min=130, dcaps_prod_max=280))
+        fixed = [c for c in pick.call_args_list if c.kwargs.get('fixed_left') or c.kwargs.get('fixed_right')]
+        self.assertTrue(fixed)
+        for c in fixed:
+            self.assertEqual(c.args[2:6], (130, 280, 55, 70.0))
+        self.assertTrue(mismatch.call_args_list)
+        self.assertTrue(all(c.args[3:5] == (55, 70.0) for c in mismatch.call_args_list))
+        natural = [c for c in pick.call_args_list if c not in fixed]
+        self.assertTrue(natural)
+        self.assertTrue(all(c.args[2:6] == (120, 300, 55, 65) for c in natural))
+
+    def test_longer_mismatch_primer_with_a_higher_tm_ceiling(self):
+        template = self.seq[:302] + 'G' + self.seq[303:]
+        _, short = core.dcaps_primer(template, 300, 'right', 55, 62)
+        _, long = core.dcaps_primer(template, 300, 'right', 55, 70)
+        self.assertGreater(len(long), len(short))
+
+    def dcaps_hits(self, **overrides):
+        with patch.object(core, 'AllEnzymes', [TaqI]):
+            header, table = core.run_rflp_gui_mode(dict(self.params, dcaps='always', **overrides))
+        return [hit for hit in (dict(zip(header, row)) for row in table) if hit['enzyme']]
+
+    def test_dcaps_delta_governs_only_dcaps_rows(self):          # Review Focus 4: Tm of both primers
+        hits = self.dcaps_hits(delta=1000, dcaps_delta=1, dcaps_tm_max=70.0)
+        self.assertTrue(hits)
+        self.assertEqual({(h['design'], h['delta_threshold_bp']) for h in hits}, {('dCAPS', 1)})
+        for h in hits:
+            self.assertTrue(55 <= h['tm_left'] <= 70.0 and 55 <= h['tm_right'] <= 70.0, (h['tm_left'], h['tm_right']))
+        self.assertEqual(self.dcaps_hits(delta=1, dcaps_delta=1000), [])
+
+    def test_unreachable_dcaps_product_range_ends_cleanly(self):  # Review Focus 3
+        self.assertEqual(self.dcaps_hits(dcaps_prod_min=30, dcaps_prod_max=40), [])
 
     def test_fallback_only_without_robust_natural_assay(self):
         natural = self.seq[:300] + 'TCGA' + self.seq[304:]   # REF already has a natural TaqI site
@@ -344,6 +383,30 @@ class SiteGroupingTests(unittest.TestCase):
 
 class DcapsSettingsTests(unittest.TestCase):
     """dcaps_tm_max, dcaps_prod_min/max and dcaps_delta apply to mismatch designs only (dCAPS spec §3–§5)."""
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        rng = random.Random(19)                       # the natural EcoRI scenario of JointDesignTests
+        sequence = ''.join(rng.choice('ACGT') for _ in range(400))
+        sequence = sequence[:197] + 'GAATTC' + sequence[203:]
+        (root / 'toy.fa').write_text('>1\n' + sequence + '\n')
+        (root / 'variants.tsv').write_text('chrom\tpos\tref\talt\n1\t200\tA\tG\n')
+        self.params = dict(fasta=str(root / 'toy.fa'), input_file=str(root / 'variants.tsv'), names2_file='',
+                           flank=500, min_frag=80, max_frag=800, delta=25, gain_loss_only=False, max_cuts=3,
+                           suppliers=[], use_primer3=True, prod_min=200, prod_max=500, tm_min=50, tm_max=70,
+                           no_save_norm=True, joint_design=True, primer_pairs=2, top_results=0)
+
+    def test_dcaps_settings_do_not_touch_natural_assays(self):
+        def natural(**overrides):
+            with patch.object(core, 'AllEnzymes', [EcoRI, TaqI]):
+                header, table = core.run_rflp_gui_mode(dict(self.params, dcaps='always', **overrides))
+            rank = header.index('assay_rank')   # dCAPS rows may change the places, never the natural rows
+            return [row[:rank] + row[rank + 1:] for row in table if dict(zip(header, row))['design'] != 'dCAPS']
+        self.assertTrue(natural())
+        self.assertEqual(natural(), natural(dcaps_tm_max=80.0, dcaps_prod_min=50, dcaps_prod_max=2000,
+                                            dcaps_delta=1))
 
     def test_defaults_in_both_presets(self):
         for preset in (core.RECOMMENDED_PARAMS, core.DEFAULT_PARAMS):

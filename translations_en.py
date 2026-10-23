@@ -567,6 +567,8 @@ CORE = [
     (r'SNP не ближе (\d+) п\.н\. к концам ампликона', r'SNP at least \1 bp from amplicon ends'),
     (r'dCAPS если нет robust-схемы, несовпадений до (\d+)', r'dCAPS if no robust assay, mismatches up to \1'),
     (r'dCAPS для каждого SNP, несовпадений до (\d+)', r'dCAPS for every SNP, mismatches up to \1'),
+    (r', Tm до ([\d.]+) °C, продукт (\d+)–(\d+) п\.н\., Δ (\d+) п\.н\.',
+     r', Tm up to \1 °C, product \2–\3 bp, Δ \4 bp'),
     (r'Фоновые варианты: (\d+) в окнах SNP из (\d+) записей VCF',
      r'Background variants: \1 in SNP windows out of \2 VCF records'),
     (r': пар (\d+), кандидатов (\d+), неразличимых (\d+)', r': pairs \1, candidates \2, indistinguishable \3'),
