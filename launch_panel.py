@@ -42,6 +42,11 @@ def field_errors(params: dict) -> Dict[str, str]:
             text = t(_MISSING[key]) if key in _MISSING else core_text(message)
         elif message.startswith('Файл не найден ('):
             key, text = message[len('Файл не найден ('):].split(')', 1)[0], t('Файл не найден')
+        # The dCAPS checks mention «размер продукта» and «Tm» too: they belong to the dCAPS fields.
+        elif 'dcaps_prod_min/dcaps_prod_max' in message or 'размер продукта dCAPS' in message:
+            key, text = 'dcaps_prod_min', core_text(message)
+        elif 'tm_min/dcaps_tm_max' in message or 'Tm праймеров dCAPS' in message:
+            key, text = 'dcaps_tm_max', core_text(message)
         elif 'min_frag/max_frag' in message or 'размер фрагмента' in message:
             key, text = 'min_frag', core_text(message)
         elif 'prod_min/prod_max' in message or 'размер продукта' in message:
@@ -173,8 +178,18 @@ _ADVANCED_FIELDS = {
                      N_('Строчные буквы FASTA (повторы в геномах NCBI/Ensembl) не допускаются на 3′-конце праймера.')),
     'exclude_background_sites': (N_('Исключать схемы с фоновыми вариантами'), 'bool', 0, 0, 0,
                                  N_('Схемы, где известные варианты из VCF меняют разрезы или длины полос.')),
-    'dcaps_mismatches': (N_('Несовпадений dCAPS, до'), 'int', 1, 2, 1,
-                         N_('Наибольшее число несовпадений в праймере dCAPS.')),
+    'dcaps_mismatches': (N_('Несовпадений, до'), 'int', 1, 2, 1,
+                         N_('Только для схем dCAPS: наибольшее число несовпадений в праймере.')),
+    'dcaps_tm_max': (N_('Tm праймеров до, °C'), 'float', 40, 80, 1,
+                     N_('Только для схем dCAPS: верхняя граница Tm праймера с несовпадением и второго праймера '
+                        '(нижняя — Tm на панели «Запуск»). Длинный праймер отодвигает разрез от конца продукта '
+                        'и увеличивает различие полос.')),
+    'dcaps_prod_min': (N_('Продукт от, п.н.'), 'int', 50, 2000, 1,
+                       N_('Только для схем dCAPS: на коротком продукте различие ~20 п.н. хорошо видно на геле.')),
+    'dcaps_prod_max': (N_('до, п.н.'), 'int', 50, 2000, 1,
+                       N_('Только для схем dCAPS: наибольший размер продукта.')),
+    'dcaps_delta': (N_('Порог Δ, п.н.'), 'int', 1, 1000, 1,
+                    N_('Только для схем dCAPS: наименьшее различие видимых полос REF и ALT; заменяет общий порог Δ.')),
     'joint_design': (N_('Совместный подбор праймеров и фермента'), 'bool', 0, 0, 0,
                      N_('Отключите для сравнения с поиском по первой паре Primer3.')),
     'use_primer3': ('Primer3', 'bool', 0, 0, 0, N_('Без Primer3 анализируется окно вокруг SNP.')),
@@ -182,12 +197,15 @@ _ADVANCED_FIELDS = {
     'skip_norm': (N_('Пропускать нормализацию'), 'bool', 0, 0, 0, N_('Отключает только перестановку REF/ALT.')),
     'no_save_norm': (N_('Не сохранять нормализацию'), 'bool', 0, 0, 0, ''),
 }
-_ADVANCED_GROUPS = (
-    (N_('Гель'), ('min_frag', 'max_frag', 'delta', 'gel_resolution_bp', 'gel_resolution_pct', 'gel_stress_factor')),
-    (N_('Поиск'), ('flank', 'primer_pairs', 'top_results', 'max_cuts')),
-    (N_('Проверки'), ('group_isoschizomers', 'snp_end_distance', 'exclude_primer_sites', 'mask_repeats',
-                  'exclude_background_sites', 'dcaps_mismatches')),
-    (N_('Для сравнения и отладки'), ('joint_design', 'use_primer3', 'gain_loss_only', 'skip_norm', 'no_save_norm')),
+# Columns of groups (title, keys); the two columns are of about the same height.
+_ADVANCED_COLUMNS = (
+    ((N_('Гель'), ('min_frag', 'max_frag', 'delta', 'gel_resolution_bp', 'gel_resolution_pct', 'gel_stress_factor')),
+     (N_('Поиск'), ('flank', 'primer_pairs', 'top_results', 'max_cuts')),
+     (N_('Для сравнения и отладки'), ('joint_design', 'use_primer3', 'gain_loss_only', 'skip_norm', 'no_save_norm'))),
+    ((N_('Проверки'), ('group_isoschizomers', 'snp_end_distance', 'exclude_primer_sites', 'mask_repeats',
+                       'exclude_background_sites')),
+     (N_('dCAPS (праймер с несовпадением)'), ('dcaps_mismatches', 'dcaps_tm_max', 'dcaps_prod_min',
+                                             'dcaps_prod_max', 'dcaps_delta'))),
 )
 
 
@@ -203,34 +221,11 @@ class AdvancedDialog(QDialog):
         layout = QVBoxLayout(self)
         columns = QHBoxLayout()
         layout.addLayout(columns)
-        for index, (title, keys) in enumerate(_ADVANCED_GROUPS):
-            if index % 2 == 0:
-                column = QVBoxLayout()
-                columns.addLayout(column)
-            column.addWidget(_label(t(title), 'caption'))
-            grid = QGridLayout()
-            column.addLayout(grid)
-            for row, key in enumerate(keys):
-                text, kind, low, high, step, tip = _ADVANCED_FIELDS[key]
-                if kind == 'bool':
-                    widget = QCheckBox(t(text))
-                    grid.addWidget(widget, row * 2, 0, 1, 2)
-                else:
-                    widget = QSpinBox() if kind == 'int' else QDoubleSpinBox()
-                    widget.setRange(low, high)
-                    if kind == 'float':
-                        widget.setDecimals(step)
-                        widget.setSingleStep(0.1)
-                    grid.addWidget(QLabel(t(text)), row * 2, 0)
-                    grid.addWidget(widget, row * 2, 1)
-                widget.setObjectName(f'adv_{key}')
-                widget.setToolTip(t(tip) if tip else '')
-                error = _label('', 'error', f'dialog_error_{key}')
-                error.setWordWrap(True)
-                error.hide()
-                grid.addWidget(error, row * 2 + 1, 0, 1, 2)
-                self._widgets[key] = widget
-                self._errors[key] = error
+        for groups in _ADVANCED_COLUMNS:
+            column = QVBoxLayout()
+            columns.addLayout(column)
+            for title, keys in groups:
+                self._add_group(column, title, keys)
             column.addStretch()
         self._widgets['top_results'].setSpecialValueText(t('Все'))
         self._widgets['snp_end_distance'].setSpecialValueText(t('Не ограничивать'))
@@ -246,6 +241,32 @@ class AdvancedDialog(QDialog):
         buttons.addWidget(done)
         layout.addLayout(buttons)
         self.set_params(params)
+
+    def _add_group(self, column: QVBoxLayout, title: str, keys) -> None:
+        column.addWidget(_label(t(title), 'caption'))
+        grid = QGridLayout()
+        column.addLayout(grid)
+        for row, key in enumerate(keys):
+            text, kind, low, high, step, tip = _ADVANCED_FIELDS[key]
+            if kind == 'bool':
+                widget = QCheckBox(t(text))
+                grid.addWidget(widget, row * 2, 0, 1, 2)
+            else:
+                widget = QSpinBox() if kind == 'int' else QDoubleSpinBox()
+                widget.setRange(low, high)
+                if kind == 'float':
+                    widget.setDecimals(step)
+                    widget.setSingleStep(0.1)
+                grid.addWidget(QLabel(t(text)), row * 2, 0)
+                grid.addWidget(widget, row * 2, 1)
+            widget.setObjectName(f'adv_{key}')
+            widget.setToolTip(t(tip) if tip else '')
+            error = _label('', 'error', f'dialog_error_{key}')
+            error.setWordWrap(True)
+            error.hide()
+            grid.addWidget(error, row * 2 + 1, 0, 1, 2)
+            self._widgets[key] = widget
+            self._errors[key] = error
 
     def params(self) -> dict:
         values = {}

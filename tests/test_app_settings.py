@@ -43,6 +43,11 @@ class AppSettingsTests(unittest.TestCase):
         self.qs.setValue('params', 'not json')
         self.assertEqual(AppSettings(self.reopen()).params(), RECOMMENDED)
 
+    def test_settings_without_dcaps_keys_get_the_defaults(self):   # Review Focus 1: settings of 1.3.0
+        self.settings.set_value('params', {'delta': 30})
+        params = self.settings.params()
+        self.assertEqual((params['delta'], params['dcaps_tm_max'], params['dcaps_delta']), (30, 70.0, 20))
+
     def test_set_params_ignores_file_keys(self):
         self.settings.set_params(dict(RECOMMENDED, background_vcf='x.vcf', fasta='g.fa'))
         self.assertEqual(self.settings.params(), RECOMMENDED)

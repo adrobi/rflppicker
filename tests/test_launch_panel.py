@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 from PyQt6.QtCore import QSettings
-from PyQt6.QtWidgets import QApplication, QCheckBox, QComboBox, QLabel, QPushButton
+from PyQt6.QtWidgets import QApplication, QCheckBox, QComboBox, QLabel, QPushButton, QWidget
 
 import i18n
 import rflp_core
@@ -107,6 +107,35 @@ class LaunchPanelTests(unittest.TestCase):
         self.assertEqual(errors['prod_min'], 'Минимальный размер продукта больше максимального')
         self.assertEqual(errors['tm_min'], 'Минимальный Tm больше максимального')
         self.assertTrue(errors['primer_pairs'].startswith('primer_pairs: требуется целое число'))
+
+    def test_dcaps_group_in_advanced_dialog(self):
+        dialog = AdvancedDialog(self.panel.collect_params(), self.panel)
+        self.addCleanup(dispose, dialog)
+        values = dialog.params()
+        self.assertEqual((values['dcaps_tm_max'], values['dcaps_prod_min'], values['dcaps_prod_max'],
+                          values['dcaps_delta']), (70.0, 120, 300, 20))
+        captions = [label.text() for label in dialog.findChildren(QLabel) if label.property('role') == 'caption']
+        self.assertEqual(captions, ['Гель', 'Поиск', 'Для сравнения и отладки', 'Проверки',
+                                    'dCAPS (праймер с несовпадением)'])
+        self.assertTrue(dialog.findChild(QWidget, 'adv_dcaps_tm_max').toolTip().startswith('Только для схем dCAPS'))
+        self.assertLessEqual(dialog.sizeHint().height(), 1000)   # fits a 1920×1080 screen
+        self.panel.set_params(dict(self.panel.collect_params(), dcaps_delta=15))
+        self.assertEqual(self.panel.changed_count(), 1)
+        self.panel.apply_preset('recommended')
+        self.assertEqual(self.panel.collect_params()['dcaps_delta'], 20)
+
+    def test_dcaps_errors_go_to_the_dcaps_fields(self):          # Review Focus 2
+        params = dict(rflp_core.RECOMMENDED_PARAMS, input_file=self.genome, fasta=self.genome,
+                      dcaps_prod_min=400, dcaps_tm_max=57.0, dcaps_delta=0)
+        errors = field_errors(params)
+        self.assertEqual(errors['dcaps_prod_min'], 'Минимальный размер продукта dCAPS больше максимального')
+        self.assertEqual(errors['dcaps_tm_max'], 'Минимальный Tm праймеров dCAPS больше максимального')
+        self.assertTrue(errors['dcaps_delta'].startswith('dcaps_delta: требуется целое число'))
+        self.assertNotIn('prod_min', errors)
+        self.assertNotIn('tm_min', errors)
+        self.panel.set_params(params)
+        self.assertFalse(self.panel.validate())
+        self.assertEqual(self.panel.findChild(QLabel, 'changed_badge').text(), 'ошибка')
 
     def test_genome_list_and_names_label(self):
         self.settings.add_recent_genome(self.genome)

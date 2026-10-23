@@ -293,8 +293,24 @@ and the Rejected sheet (rejected variants). The log goes to stderr.''',
     'Исключать схемы с фоновыми вариантами': 'Exclude assays with background variants',
     'Схемы, где известные варианты из VCF меняют разрезы или длины полос.':
         'Assays where known variants from the VCF change cuts or band sizes.',
-    'Несовпадений dCAPS, до': 'dCAPS mismatches, up to',
-    'Наибольшее число несовпадений в праймере dCAPS.': 'The largest number of mismatches in a dCAPS primer.',
+    'dCAPS (праймер с несовпадением)': 'dCAPS (mismatch primer)',
+    'Несовпадений, до': 'Mismatches, up to',
+    'Только для схем dCAPS: наибольшее число несовпадений в праймере.':
+        'dCAPS assays only: the largest number of mismatches in the primer.',
+    'Tm праймеров до, °C': 'Primer Tm up to, °C',
+    'Только для схем dCAPS: верхняя граница Tm праймера с несовпадением и второго праймера '
+    '(нижняя — Tm на панели «Запуск»). Длинный праймер отодвигает разрез от конца продукта '
+    'и увеличивает различие полос.':
+        'dCAPS assays only: the upper Tm limit of the mismatch primer and the second primer '
+        '(the lower one is the Tm of the “Run” panel). A longer primer moves the cut away from the product end '
+        'and enlarges the band difference.',
+    'Продукт от, п.н.': 'Product from, bp',
+    'Только для схем dCAPS: на коротком продукте различие ~20 п.н. хорошо видно на геле.':
+        'dCAPS assays only: on a short product a ~20 bp difference is easy to see on a gel.',
+    'Только для схем dCAPS: наибольший размер продукта.': 'dCAPS assays only: the largest product size.',
+    'Только для схем dCAPS: наименьшее различие видимых полос REF и ALT; заменяет общий порог Δ.':
+        'dCAPS assays only: the smallest difference between visible REF and ALT bands; '
+        'replaces the general Δ threshold.',
     'Отключите для сравнения с поиском по первой паре Primer3.':
         'Turn off to compare with the search on the first Primer3 pair.',
     'Без Primer3 анализируется окно вокруг SNP.': 'Without Primer3 the window around the SNP is analysed.',
