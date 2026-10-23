@@ -27,6 +27,9 @@ DEFAULT_PARAMS = dict(
     commercial_only=False, group_isoschizomers=False, snp_end_distance=0,
     exclude_primer_sites=False, mask_repeats=False,
     background_vcf='', exclude_background_sites=False, dcaps='off', dcaps_mismatches=1,
+    # dCAPS designs only: a longer mismatch primer moves the created cut away from the
+    # product end, and a short product shows the ~20 bp difference on a gel.
+    dcaps_tm_max=70.0, dcaps_prod_min=120, dcaps_prod_max=300, dcaps_delta=20,
 )
 # Settings chosen from the validation on published assays (GUI and CLI default).
 RECOMMENDED_PARAMS = dict(DEFAULT_PARAMS, commercial_only=True, group_isoschizomers=True,
@@ -50,9 +53,13 @@ def validate_params(params: dict) -> list[str]:
             errors.append(f"Файл не найден ({key}): {value}")
     for lo, hi, label in (('min_frag', 'max_frag', 'размер фрагмента'),
                           ('prod_min', 'prod_max', 'размер продукта'),
-                          ('tm_min', 'tm_max', 'Tm')):
+                          ('tm_min', 'tm_max', 'Tm'),
+                          ('dcaps_prod_min', 'dcaps_prod_max', 'размер продукта dCAPS'),
+                          ('tm_min', 'dcaps_tm_max', 'Tm праймеров dCAPS')):
         try:
-            lower, upper = float(params.get(lo)), float(params.get(hi))
+            # Parameter sets written before the dCAPS settings existed get their defaults.
+            lower, upper = (float(params.get(key, DEFAULT_PARAMS[key]) if key.startswith('dcaps_')
+                                  else params.get(key)) for key in (lo, hi))
             if not all(math.isfinite(x) and x > 0 for x in (lower, upper)):
                 errors.append(f"Некорректный параметр: {lo}/{hi}")
             elif lower > upper:
@@ -63,6 +70,7 @@ def validate_params(params: dict) -> list[str]:
         ('primer_pairs', 10, 1, 100), ('top_results', 10, 0, 10000),
         ('flank', 300, 1, 100000), ('max_cuts', 3, 0, 100),
         ('delta', 25, 1, 100000), ('snp_end_distance', 0, 0, 5000), ('dcaps_mismatches', 1, 1, 2),
+        ('dcaps_delta', 20, 1, 1000),
     ):
         value = params.get(key, default)
         if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
@@ -1044,7 +1052,8 @@ def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, 
                            group_isoschizomers=False, snp_end_distance=0,
                            exclude_primer_sites=False, mask_repeats=False,
                            background_vcf='', exclude_background_sites=False, dcaps='off',
-                           dcaps_mismatches=1).items():
+                           dcaps_mismatches=1, dcaps_tm_max=70.0, dcaps_prod_min=120, dcaps_prod_max=300,
+                           dcaps_delta=20).items():
         params.setdefault(key, value)
     errors = validate_params(params)
     if errors:

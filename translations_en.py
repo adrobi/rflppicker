@@ -543,6 +543,8 @@ CORE = [
     (r'Минимальный размер продукта больше максимального', 'Minimum product size is greater than maximum'),
     (r'Минимальный размер фрагмента больше максимального', 'Minimum fragment size is greater than maximum'),
     (r'Минимальный Tm больше максимального', 'Minimum Tm is greater than maximum'),
+    (r'Минимальный размер продукта dCAPS больше максимального', 'Minimum dCAPS product size is greater than maximum'),
+    (r'Минимальный Tm праймеров dCAPS больше максимального', 'Minimum dCAPS primer Tm is greater than maximum'),
     (r': требуется целое число от (-?\d+) до (-?\d+)', r': an integer from \1 to \2 is required'),
     (r'dcaps: допустимо off, fallback или always', 'dcaps: allowed values are off, fallback or always'),
     (r'Параметры модели полос должны быть конечными числами', 'Band model parameters must be finite numbers'),

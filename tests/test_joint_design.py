@@ -342,5 +342,26 @@ class SiteGroupingTests(unittest.TestCase):
         self.assertEqual(row['isoschizomers'], 'BsiSI; HapII; HpaII')
 
 
+class DcapsSettingsTests(unittest.TestCase):
+    """dcaps_tm_max, dcaps_prod_min/max and dcaps_delta apply to mismatch designs only (dCAPS spec §3–§5)."""
+
+    def test_defaults_in_both_presets(self):
+        for preset in (core.RECOMMENDED_PARAMS, core.DEFAULT_PARAMS):
+            self.assertEqual((preset['dcaps_tm_max'], preset['dcaps_prod_min'], preset['dcaps_prod_max'],
+                              preset['dcaps_delta']), (70.0, 120, 300, 20))
+
+    def test_validation_messages(self):
+        base = dict(core.RECOMMENDED_PARAMS, fasta=__file__, input_file=__file__)
+        self.assertEqual(core.validate_params(base), [])
+        self.assertEqual(core.validate_params(dict(base, dcaps_prod_min=400)),
+                         ['Минимальный размер продукта dCAPS больше максимального'])
+        self.assertEqual(core.validate_params(dict(base, dcaps_tm_max=57.0)),
+                         ['Минимальный Tm праймеров dCAPS больше максимального'])
+        self.assertEqual(core.validate_params(dict(base, dcaps_delta=0)),
+                         ['dcaps_delta: требуется целое число от 1 до 1000'])
+        self.assertEqual(core.validate_params(dict(base, dcaps_prod_max='x')),
+                         ['Некорректный параметр: dcaps_prod_min/dcaps_prod_max'])
+
+
 if __name__ == '__main__':
     unittest.main()

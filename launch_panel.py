@@ -20,6 +20,7 @@ KEY_PARAMS = ('prod_min', 'prod_max', 'tm_min', 'tm_max', 'commercial_only', 'su
 ADVANCED_PARAMS = ('min_frag', 'max_frag', 'delta', 'gel_resolution_bp', 'gel_resolution_pct', 'gel_stress_factor',
                    'flank', 'primer_pairs', 'top_results', 'max_cuts', 'group_isoschizomers', 'snp_end_distance',
                    'exclude_primer_sites', 'mask_repeats', 'exclude_background_sites', 'dcaps_mismatches',
+                   'dcaps_tm_max', 'dcaps_prod_min', 'dcaps_prod_max', 'dcaps_delta',
                    'joint_design', 'use_primer3', 'gain_loss_only', 'skip_norm', 'no_save_norm')
 PANEL_ERROR_KEYS = ('input_file', 'fasta', 'background_vcf', 'prod_min', 'tm_min')
 SUPPLIER_TITLES = {'A': 'Agilent', 'E': 'Thermo Fisher', 'F': 'Promega', 'H': 'Minotech', 'I': 'SibEnzyme',
