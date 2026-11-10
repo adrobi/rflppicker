@@ -201,6 +201,10 @@ and the Rejected sheet (rejected variants). The log goes to stderr.''',
     '--out: требуется расширение .csv или .xlsx': '--out: the extension must be .csv or .xlsx',
     'Ошибка параметров: {error}': 'Parameter error: {error}',
     'Анализ прерван.': 'Analysis interrupted.',
+    '{key}: папка не существует: {folder}': '{key}: the folder does not exist: {folder}',
+    'Ошибка: {error}': 'Error: {error}',
+    '[WARN] Ни один SNP не принят: проверьте геном и файл соответствий названий хромосом.':
+        '[WARN] No SNP was accepted: check the genome and the chromosome name mapping file.',
     '[INFO] Сохранено: {out} · строк {rows} · SNP принято {accepted}, с кандидатами {candidates}, '
     'с robust-кандидатами {robust}':
         '[INFO] Saved: {out} · rows {rows} · SNPs accepted {accepted}, with candidates {candidates}, '

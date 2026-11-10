@@ -80,6 +80,52 @@ class CliTests(unittest.TestCase):
         with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
             self.run_cli('--out', str(self.root / 'x.txt'))
 
+    def test_missing_output_folders_are_reported_before_the_run(self):
+        for key, other in (('--out', ()), ('--rejected', ('--out', str(self.root / 'out.csv')))):
+            with self.subTest(key=key), patch.object(core, 'run_rflp_gui_mode') as run:
+                stderr = io.StringIO()
+                with contextlib.redirect_stderr(stderr), self.assertRaises(SystemExit) as raised:
+                    rflp_cli.main(['--lang', 'ru', '--fasta', str(self.fasta), '--variants', str(self.variants),
+                                   key, str(self.root / 'nodir' / 'file.csv'), *other])
+                self.assertEqual(raised.exception.code, 2)
+                self.assertIn(f'{key}: папка не существует', stderr.getvalue())
+                run.assert_not_called()
+
+    def test_broken_fasta_gives_a_message_not_a_traceback(self):
+        self.fasta.write_text('not a fasta\n')
+        out = self.root / 'out.csv'
+        code, log = self.run_cli('--out', str(out), '-q')
+        self.assertEqual(code, 1)
+        self.assertIn('Ошибка:', log)
+        self.assertNotIn('Traceback', log)
+        self.assertFalse(out.exists())
+
+    def test_write_error_gives_a_message_not_a_traceback(self):
+        with patch.object(rflp_cli, 'export_csv', side_effect=PermissionError('занято')):
+            code, log = self.run_cli('--out', str(self.root / 'out.csv'), '--no-primer3', '-q')
+        self.assertEqual(code, 1)
+        self.assertIn('Ошибка: занято', log)
+
+    def test_warns_when_no_snp_is_accepted(self):
+        self.variants.write_text('chrom\tpos\tref\talt\nX\t5\tA\tG\n')
+        code, log = self.run_cli('--out', str(self.root / 'out.csv'), '-q')
+        self.assertEqual(code, 0)
+        self.assertIn('Ни один SNP не принят', log)
+
+    def test_english_error_and_warning(self):
+        self.variants.write_text('chrom\tpos\tref\talt\nX\t5\tA\tG\n')
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            rflp_cli.main(['--lang', 'en', '--fasta', str(self.fasta), '--variants', str(self.variants),
+                           '--out', str(self.root / 'out.csv'), '-q'])
+            self.fasta.write_text('not a fasta\n')
+            code = rflp_cli.main(['--lang', 'en', '--fasta', str(self.fasta), '--variants', str(self.variants),
+                                  '--out', str(self.root / 'out.csv'), '-q'])
+        self.assertEqual(code, 1)
+        self.assertIn('No SNP was accepted', stderr.getvalue())
+        self.assertIn('Error:', stderr.getvalue())
+        self.assertIsNone(re.search('[А-Яа-яЁё]', stderr.getvalue()), stderr.getvalue())
+
     def test_english_help_has_no_cyrillic(self):
         out = io.StringIO()
         with contextlib.redirect_stdout(out), self.assertRaises(SystemExit):

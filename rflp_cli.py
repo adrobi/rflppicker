@@ -176,6 +176,11 @@ def main(argv=None):
     out = Path(args.out)
     if out.suffix.lower() not in ('.csv', '.xlsx'):
         parser.error(t('--out: требуется расширение .csv или .xlsx'))
+    # Before the analysis: a mistyped folder must not cost a finished run.
+    for key, target in (('--out', args.out), ('--rejected', args.rejected)):
+        if target and not Path(target).expanduser().absolute().parent.is_dir():
+            parser.error(t('{key}: папка не существует: {folder}', key=key,
+                           folder=Path(target).expanduser().absolute().parent))
     params = params_from_args(args)
     errors = core.validate_params(params)
     if errors:
@@ -194,6 +199,27 @@ def main(argv=None):
     except KeyboardInterrupt:
         print(t('Анализ прерван.'), file=sys.stderr)
         return 130
+    except Exception as exc:   # an unreadable FASTA or VCF, a file that disappeared, …
+        print(t('Ошибка: {error}', error=core_text(str(exc) or type(exc).__name__)), file=sys.stderr)
+        return 1
+    try:
+        save_results(args, out, params, report, header, rows, started)
+    except Exception as exc:   # the destination is open in Excel, the disk is full, …
+        print(t('Ошибка: {error}', error=str(exc) or type(exc).__name__), file=sys.stderr)
+        return 1
+    summary = report.get('summary', {})
+    if not summary.get('accepted') and report.get('rejected'):
+        # Shown even with --quiet: the files are written, but they hold no assay.
+        print(t('[WARN] Ни один SNP не принят: проверьте геном и файл соответствий названий хромосом.'),
+              file=sys.stderr)
+    log(t('[INFO] Сохранено: {out} · строк {rows} · SNP принято {accepted}, с кандидатами {candidates}, '
+          'с robust-кандидатами {robust}', out=out, rows=len(rows), accepted=summary.get('accepted', 0),
+          candidates=summary.get('variants_with_candidates', 0),
+          robust=summary.get('variants_with_robust_candidates', 0)))
+    return 0
+
+
+def save_results(args, out, params, report, header, rows, started) -> None:
     summary = report.get('summary', {})
     # One summary per line of the variants file; the best scheme is the chosen one.
     records, _ = read_input_records(params['input_file'])
@@ -214,11 +240,6 @@ def main(argv=None):
             names += [key for key in item if key not in names]
         names = names or ['line', 'chrom', 'pos', 'ref', 'alt', 'reason', 'details']
         export_csv(args.rejected, names, [[item.get(name) for name in names] for item in rejected])
-    log(t('[INFO] Сохранено: {out} · строк {rows} · SNP принято {accepted}, с кандидатами {candidates}, '
-          'с robust-кандидатами {robust}', out=out, rows=len(rows), accepted=summary.get('accepted', 0),
-          candidates=summary.get('variants_with_candidates', 0),
-          robust=summary.get('variants_with_robust_candidates', 0)))
-    return 0
 
 
 if __name__ == '__main__':

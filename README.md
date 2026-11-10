@@ -138,7 +138,7 @@ By default the settings are the same as in the program window
 (`--preset recommended`). `--preset v1.1` reproduces the parameters and results
 of version 1.1.0. Any parameter can be overridden, for example
 `--pairs 20 --top 0 --prod-min 150 --prod-max 1000`. Exit codes: 0 — success,
-2 — parameter error, 130 — interrupted (Ctrl+C).
+1 — the analysis or saving failed, 2 — parameter error, 130 — interrupted (Ctrl+C).
 
 The help, the messages and the Summary and Primers sheets follow the system
 language; `--lang en` or `--lang ru` sets it explicitly.
