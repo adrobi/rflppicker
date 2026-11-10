@@ -12,7 +12,7 @@ from typing import Dict, List, Optional, Tuple
 from i18n import N_, core_text, t
 from palette import EXCEL_STATUS_FILLS
 from reporting import ExtraSheet
-from rflp_core import parse_fields, read_input_table
+from rflp_core import clean_chrom, parse_fields, read_input_table
 
 
 @dataclass(frozen=True)
@@ -42,7 +42,7 @@ def _record(line_no: int, parts: List[str], columns: Dict[str, Optional[int]], d
         except (IndexError, ValueError):
             pass
     # The core rejects this line; keep what can be read for display.
-    return InputRecord(line_no, snp_id, text('chrom', 0).replace('chr', '').strip(), None,
+    return InputRecord(line_no, snp_id, clean_chrom(text('chrom', 0)), None,
                        text('ref', 2).strip().upper(), text('alt', 3).strip().upper(), raw)
 
 

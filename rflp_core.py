@@ -303,6 +303,23 @@ def read_input_table(path: str) -> Tuple[Dict[str, Optional[int]], List[Tuple[in
     return columns, lines, delim
 
 
+def clean_chrom(text: str) -> str:
+    """A chromosome name of the input file without the leading "chr"."""
+    return text.strip().removeprefix('chr').strip()
+
+
+def resolve_contig(chrom: str, names: Dict[str, str], has_contig) -> str:
+    """The FASTA contig of an input chromosome name.
+
+    The names file wins; a genome whose contigs are called chr1, chr2, …
+    is found without one. An unknown name is returned as it is.
+    """
+    mapped = names.get(chrom, chrom)
+    if not has_contig(mapped) and has_contig('chr' + chrom):
+        return 'chr' + chrom
+    return mapped
+
+
 def parse_fields(parts: List[str], columns: Dict[str, Optional[int]]) -> Tuple[str, int, str, str]:
     """(chrom, pos, ref, alt) of one data line; raises IndexError/ValueError."""
     def field(name, default_index):
@@ -310,7 +327,7 @@ def parse_fields(parts: List[str], columns: Dict[str, Optional[int]]) -> Tuple[s
         return parts[index if index is not None else default_index]
 
     return (
-        field("chrom", 0).replace("chr", "").strip(),
+        clean_chrom(field("chrom", 0)),
         int(field("pos", 1)),
         field("ref", 2).strip().upper(),
         field("alt", 3).strip().upper(),
@@ -464,7 +481,7 @@ def normalize_variants_for_rflp(
         check_cache = FastaBlockCache(fasta_path, block_bp=block_bp)
         names2_skip = load_names2(names2_path) if names2_path else {}
         for line_no, (chrom, pos, ref, alt) in enumerate(variants_raw, start=1):
-            mapped = names2_skip.get(chrom, chrom)
+            mapped = resolve_contig(chrom, names2_skip, check_cache.has_contig)
             reason = ''
             details = ''
             if not is_simple_snp(ref, alt):
@@ -528,7 +545,7 @@ def normalize_variants_for_rflp(
         if progress_cb:
             progress_cb(i, max(1, total))
         orig_chrom = chrom
-        mapped_chrom = names2.get(orig_chrom, orig_chrom)
+        mapped_chrom = resolve_contig(orig_chrom, names2, cache.has_contig)
 
         if progress_every and (i % progress_every == 0) and status_cb:
             status_cb(f"[NORMALIZE] {i}/{total} {orig_chrom}:{pos}")
@@ -748,6 +765,7 @@ def load_background_variants(path: str, regions: Dict[str, list], names: Optiona
     with open(path, 'rb') as probe:
         opener = gzip.open if probe.read(2) == b'\x1f\x8b' else open
     records = 0
+    contigs = {}   # VCF contig name -> FASTA contig ('' when it has no SNP window)
     with opener(path, 'rt', encoding='utf-8', errors='replace') as stream:
         for line in stream:
             if line.startswith('#'):
@@ -758,7 +776,12 @@ def load_background_variants(path: str, regions: Dict[str, list], names: Optiona
             fields = line.split('\t', 5)
             if len(fields) < 5:
                 continue
-            contig = names.get(fields[0], fields[0])
+            contig = contigs.get(fields[0])
+            if contig is None:
+                # As for the input file: the names file, then with or without "chr".
+                name = fields[0]
+                contig = contigs[name] = next(
+                    (c for c in (names.get(name, name), 'chr' + name, name.removeprefix('chr')) if c in merged), '')
             spans = merged.get(contig)
             if spans is None:
                 continue
@@ -1154,29 +1177,33 @@ def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, 
     def append_record(record):
         out_rows.append([record.get(key) for key in header])
 
-    background = None
-    if params['background_vcf']:
-        regions = {}
-        for chrom, pos, _, _ in cleaned:
-            regions.setdefault(names.get(chrom, chrom), []).append(
-                (pos - params['flank'], pos + params['flank']))
-        background, records = load_background_variants(params['background_vcf'], regions, names, cancel_cb)
-        counters['background_variants_loaded'] = sum(map(len, background.values()))
-        if status_cb:
-            status_cb(f"[INFO] Фоновые варианты: {counters['background_variants_loaded']} в окнах SNP "
-                      f"из {records} записей VCF")
-
-    dcaps = params['dcaps'] if use_primer3 and _PRIMER3_AVAILABLE else 'off'
-    # Without a known cut position the fragment lengths are unknown.
-    dcaps_enzymes = [e for e in enzymes if not e.is_unknown()]
-
     # Always release the FASTA handle, including cancellation and exceptions.
     fa = Fasta(params['fasta'], as_raw=True)
     masked_windows = 0
+
+    def contig_of(chrom):
+        return resolve_contig(chrom, names, lambda name: name in fa)
+
     try:
+        background = None
+        if params['background_vcf']:
+            regions = {}
+            for chrom, pos, _, _ in cleaned:
+                regions.setdefault(contig_of(chrom), []).append(
+                    (pos - params['flank'], pos + params['flank']))
+            background, records = load_background_variants(params['background_vcf'], regions, names, cancel_cb)
+            counters['background_variants_loaded'] = sum(map(len, background.values()))
+            if status_cb:
+                status_cb(f"[INFO] Фоновые варианты: {counters['background_variants_loaded']} в окнах SNP "
+                          f"из {records} записей VCF")
+
+        dcaps = params['dcaps'] if use_primer3 and _PRIMER3_AVAILABLE else 'off'
+        # Without a known cut position the fragment lengths are unknown.
+        dcaps_enzymes = [e for e in enzymes if not e.is_unknown()]
+
         for vi, (chrom, pos, ref, alt) in enumerate(cleaned, 1):
             check_cancel()
-            mapped_id = names.get(chrom, chrom)
+            mapped_id = contig_of(chrom)
             start = max(1, pos - params['flank'])
             end = min(len(fa[mapped_id]), pos + params['flank'])
             # Soft-masked FASTA: lower case marks repeats; the analysis uses upper case.

@@ -30,6 +30,11 @@ class InputRecordTests(unittest.TestCase):
                          [(2, 'DGAT1', '1', 10), (3, 'bad', '1', None), (4, '', '2', 5)])
         self.assertEqual(records[1].raw, '1\tx\tA\tG\tbad')
 
+    def test_chr_inside_a_name_is_kept_for_a_rejected_line(self):
+        path = write_text(self.tmp, 'v.tsv', 'chrom\tpos\tref\talt\nscaffold_chr5\tx\tA\tG\nchr5\tx\tA\tG\n')
+        records, _ = snp_summary.read_input_records(path)
+        self.assertEqual([r.chrom for r in records], ['scaffold_chr5', '5'])
+
     def test_records_without_id_column(self):
         path = write_text(self.tmp, 'v.csv', 'chrom,pos,ref,alt\n1,10,A,G\n')
         records, has_ids = snp_summary.read_input_records(path)

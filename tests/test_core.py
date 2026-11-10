@@ -157,3 +157,57 @@ class InputTableTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ContigNameTests(unittest.TestCase):
+    """Genomes whose contigs are named chr1, chr2, … work without a names file."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        rng = random.Random(3)
+        sequence = ''.join(rng.choice('ACGT') for _ in range(400))
+        self.sequence = sequence[:197] + 'GAATTC' + sequence[203:]
+
+    def run_core(self, fasta_contig, input_chrom, report=None, **extra):
+        fasta = write_text(self.temp.name, 'toy.fa', f'>{fasta_contig}\n{self.sequence}\n')
+        variants = write_text(self.temp.name, 'variants.tsv', f'chrom\tpos\tref\talt\n{input_chrom}\t200\tA\tG\n')
+        params = dict(rflp_core.DEFAULT_PARAMS, fasta=fasta, input_file=variants, use_primer3=False,
+                      flank=150, min_frag=20, **extra)
+        header, rows = run_rflp_gui_mode(params, report=report)
+        return [dict(zip(header, row)) for row in rows]
+
+    def test_chr_prefixed_fasta_without_names_file(self):
+        for chrom in ('chr1', '1'):
+            with self.subTest(input_chrom=chrom):
+                records = self.run_core('chr1', chrom)
+                self.assertTrue(records)
+                self.assertEqual({r['variant'] for r in records}, {'1:200 A>G'})
+                self.assertEqual({r['mapped_id'] for r in records}, {'chr1'})
+                self.assertIn('EcoRI', {r['enzyme'] for r in records})
+
+    def test_bare_fasta_with_chr_input_is_unchanged(self):
+        records = self.run_core('1', 'chr1')
+        self.assertEqual({r['variant'] for r in records}, {'1:200 A>G'})
+        self.assertEqual({r['mapped_id'] for r in records}, {'1'})
+
+    def test_chr_inside_a_contig_name_is_kept(self):
+        self.assertEqual(rflp_core.clean_chrom(' scaffold_chr5 '), 'scaffold_chr5')
+        self.assertEqual(rflp_core.clean_chrom('chr5'), '5')
+        records = self.run_core('scaffold_chr5', 'scaffold_chr5')
+        self.assertEqual({r['mapped_id'] for r in records}, {'scaffold_chr5'})
+
+    def test_unknown_contig_is_still_rejected_with_its_name(self):
+        report = {}
+        self.assertEqual(self.run_core('chr1', '7', report=report), [])
+        self.assertEqual(report['rejected'][0]['reason'], 'bad_chrom')
+        self.assertIn("'7'", report['rejected'][0]['details'])
+
+    def test_background_vcf_contig_names_with_and_without_chr(self):
+        for fasta_contig, vcf_contig in (('chr1', 'chr1'), ('chr1', '1'), ('1', 'chr1')):
+            with self.subTest(fasta=fasta_contig, vcf=vcf_contig):
+                vcf = write_text(self.temp.name, 'known.vcf', '##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n'
+                                 f'{vcf_contig}\t150\t.\t{self.sequence[149]}\tN\t.\t.\t.\n')
+                report = {}
+                self.run_core(fasta_contig, '1', report=report, background_vcf=vcf)
+                self.assertEqual(report['summary']['background_variants_loaded'], 1)
