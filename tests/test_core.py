@@ -65,6 +65,20 @@ class CoreTests(unittest.TestCase):
             self.assertEqual(cleaned, [])
             self.assertEqual(report['rejected'][0]['reason'], 'ref_not_match')
 
+    def test_rejected_variants_carry_the_line_of_the_input_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            fasta = write_text(d, 'toy.fa', '>1\nACGTACGTACGT\n')
+            variants = write_text(d, 'variants.tsv', 'chrom\tpos\tref\talt\n\nbad\tline\n1\t2\tN\tG\n1\t3\tG\tA\n')
+            for skip_norm, reason in ((True, 'ref_not_match'), (False, 'bad_ref_chars')):
+                with self.subTest(skip_norm=skip_norm):
+                    report = {}
+                    cleaned, _, _, _ = normalize_variants_for_rflp(fasta, variants, None, skip_norm=skip_norm,
+                                                                   save_files=False, report=report)
+                    self.assertEqual(cleaned, [('1', 3, 'G', 'A')])
+                    self.assertEqual([(item['line'], item['reason']) for item in report['rejected']],
+                                     [(3, 'parse_error'), (4, reason)])
+                    self.assertEqual(list(report['rejected'][1])[0], 'line')
+
     def test_threshold_is_applied_for_gain_loss_and_reported(self):
         self.assertEqual(diagnostic_delta([500], [100, 400]), 400)
         with tempfile.TemporaryDirectory() as d:

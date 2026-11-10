@@ -335,7 +335,12 @@ def parse_fields(parts: List[str], columns: Dict[str, Optional[int]]) -> Tuple[s
 
 
 def parse_input(path: str, report: Optional[dict] = None) -> List[Tuple[str, int, str, str]]:
-    rows: List[Tuple[str, int, str, str]] = []
+    return [variant for _, variant in parse_input_lines(path, report)]
+
+
+def parse_input_lines(path: str, report: Optional[dict] = None) -> List[Tuple[int, Tuple[str, int, str, str]]]:
+    """The variants of the input file with the numbers of their lines."""
+    rows: List[Tuple[int, Tuple[str, int, str, str]]] = []
     try:
         columns, lines, delim = read_input_table(path)
         for line_no, parts in lines:
@@ -344,7 +349,7 @@ def parse_input(path: str, report: Optional[dict] = None) -> List[Tuple[str, int
                     report.setdefault('rejected', []).append({'line': line_no, 'reason': 'parse_error', 'details': 'Ожидалось минимум 4 поля', 'raw': delim.join(parts)})
                 continue
             try:
-                rows.append(parse_fields(parts, columns))
+                rows.append((line_no, parse_fields(parts, columns)))
             except Exception as e2:
                 logger.error(f"Ошибка парсинга строки: {e2}")
                 if report is not None:
@@ -461,7 +466,7 @@ def normalize_variants_for_rflp(
       cleaned_path: путь к .cleaned.tsv (или "" если не сохраняли)
       rejected_path: путь к .rejected.tsv (или "" если не сохраняли)
     """
-    variants_raw = parse_input(input_path, report=report)
+    variants_raw = parse_input_lines(input_path, report=report)
     total = len(variants_raw)
 
     if report is not None:
@@ -480,7 +485,7 @@ def normalize_variants_for_rflp(
         valid = []
         check_cache = FastaBlockCache(fasta_path, block_bp=block_bp)
         names2_skip = load_names2(names2_path) if names2_path else {}
-        for line_no, (chrom, pos, ref, alt) in enumerate(variants_raw, start=1):
+        for index, (line_no, (chrom, pos, ref, alt)) in enumerate(variants_raw, start=1):
             mapped = resolve_contig(chrom, names2_skip, check_cache.has_contig)
             reason = ''
             details = ''
@@ -498,7 +503,7 @@ def normalize_variants_for_rflp(
             else:
                 valid.append((chrom, pos, ref, alt))
             if progress_cb:
-                progress_cb(line_no, max(1, total))
+                progress_cb(index, max(1, total))
         if report is not None:
             report.setdefault('summary', {}).update(accepted=len(valid), rejected=len(report.get('rejected', [])))
         try:
@@ -527,7 +532,7 @@ def normalize_variants_for_rflp(
     )
 
     cleaned: List[Tuple[str, int, str, str]] = []
-    rejected: List[Tuple[str, int, str, str, str, str]] = []
+    rejected: List[Tuple[int, str, int, str, str, str, str]] = []   # the input line first
 
     def ref_matches(mapped_chrom: str, pos1: int, ref: str) -> bool:
         end = pos1 + len(ref) - 1
@@ -535,7 +540,7 @@ def normalize_variants_for_rflp(
             return False
         return cache.slice(mapped_chrom, pos1, end) == ref
 
-    for i, (chrom, pos, ref, alt) in enumerate(variants_raw, start=1):
+    for i, (line_no, (chrom, pos, ref, alt)) in enumerate(variants_raw, start=1):
         if cancel_cb and cancel_cb():
             try:
                 cache.fa.close()
@@ -552,38 +557,28 @@ def normalize_variants_for_rflp(
 
         if not cache.has_contig(mapped_chrom):
             stats["rejected_bad_chrom"] += 1
-            rejected.append(
-                (orig_chrom, pos, ref, alt, "bad_chrom", f"CHROM '{mapped_chrom}' not in FASTA")
-            )
+            rejected.append((line_no, orig_chrom, pos, ref, alt, "bad_chrom", f"CHROM '{mapped_chrom}' not in FASTA"))
             continue
 
         clen = cache.contig_len(mapped_chrom)
         if pos < 1 or pos > clen:
             stats["rejected_pos_oob"] += 1
-            rejected.append(
-                (orig_chrom, pos, ref, alt, "pos_oob", f"POS {pos} out of [1,{clen}]")
-            )
+            rejected.append((line_no, orig_chrom, pos, ref, alt, "pos_oob", f"POS {pos} out of [1,{clen}]"))
             continue
 
         if (not ref) or (not set(ref) <= DNA):
             stats["rejected_bad_ref_chars"] += 1
-            rejected.append(
-                (orig_chrom, pos, ref, alt, "bad_ref_chars", "REF must be A/C/G/T only")
-            )
+            rejected.append((line_no, orig_chrom, pos, ref, alt, "bad_ref_chars", "REF must be A/C/G/T only"))
             continue
 
         if not is_simple_snp(ref, alt):
             stats["rejected_bad_alt_chars"] += 1
-            rejected.append(
-                (orig_chrom, pos, ref, alt, "unsupported_variant", "Поддерживаются только одиночные SNP A/C/G/T")
-            )
+            rejected.append((line_no, orig_chrom, pos, ref, alt, "unsupported_variant", "Поддерживаются только одиночные SNP A/C/G/T"))
             continue
 
         if not alt_ok(alt):
             stats["rejected_bad_alt_chars"] += 1
-            rejected.append(
-                (orig_chrom, pos, ref, alt, "bad_alt_chars", "ALT must be A/C/G/T or '-'")
-            )
+            rejected.append((line_no, orig_chrom, pos, ref, alt, "bad_alt_chars", "ALT must be A/C/G/T or '-'"))
             continue
 
         alt_parts = [p for p in alt.split(",") if p != ""]
@@ -605,22 +600,16 @@ def normalize_variants_for_rflp(
         refbase = cache.base(mapped_chrom, pos)
         if len(ref) == 1 and rc(ref) == refbase:
             stats["rejected_minus_strand_like"] += 1
-            rejected.append(
-                (orig_chrom, pos, ref, alt, "minus_strand_like", "rc(REF) equals reference base")
-            )
+            rejected.append((line_no, orig_chrom, pos, ref, alt, "minus_strand_like", "rc(REF) equals reference base"))
             continue
 
         if any(a == refbase for a in alt_parts):
             stats["rejected_multi_alt_contains_ref"] += 1
-            rejected.append(
-                (orig_chrom, pos, ref, alt, "multi_alt_contains_ref", "one ALT equals reference base")
-            )
+            rejected.append((line_no, orig_chrom, pos, ref, alt, "multi_alt_contains_ref", "one ALT equals reference base"))
             continue
 
         stats["rejected_ref_not_match"] += 1
-        rejected.append(
-            (orig_chrom, pos, ref, alt, "ref_not_match", "REF does not match reference and no allowed fix")
-        )
+        rejected.append((line_no, orig_chrom, pos, ref, alt, "ref_not_match", "REF does not match reference and no allowed fix"))
 
     # ----- сохранение cleaned/rejected в results/normalize (если включено) -----
     cleaned_path = ""
@@ -644,7 +633,7 @@ def normalize_variants_for_rflp(
             w = csv.writer(fw, delimiter="\t")
             w.writerow(["CHROM", "POS", "REF", "ALT", "reason", "details"])
             for row in rejected:
-                w.writerow(list(row))
+                w.writerow(list(row[1:]))
 
     # ----- SUMMARY -----
     summary_lines = []
@@ -674,7 +663,7 @@ def normalize_variants_for_rflp(
     if report is not None:
         report.setdefault('summary', {}).update(accepted=len(cleaned), rejected=len(rejected))
         report['rejected'] = report.get('rejected', []) + [
-            {'chrom': r[0], 'pos': r[1], 'ref': r[2], 'alt': r[3], 'reason': r[4], 'details': r[5]}
+            dict(zip(('line', 'chrom', 'pos', 'ref', 'alt', 'reason', 'details'), r))
             for r in rejected
         ]
     try:

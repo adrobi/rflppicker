@@ -176,8 +176,9 @@ class SnpSummary:
 
 def build_summaries(records: List[InputRecord], header: List[str], rows: List[list],
                     rejected: List[dict]) -> List[SnpSummary]:
-    # Only parse errors carry the file line. With skip_norm the core numbers
-    # rejected variants 1, 2, ..., so entries with coordinates match by value.
+    # Parse errors have no coordinates and match by the file line. Entries with
+    # coordinates match by value: reports written before 1.4.0 numbered them
+    # 1, 2, ... (with skip_norm) or carried no line at all.
     by_line = {item['line']: item for item in rejected
                if item.get('line') is not None and item.get('chrom') is None}
     by_values = {}
