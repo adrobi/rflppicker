@@ -2,6 +2,7 @@ import sys
 import bisect
 import csv
 import gzip
+import locale
 import os
 import re
 import logging
@@ -947,6 +948,16 @@ def enzyme_suppliers_human(enzyme) -> str:
 PRIMER_MIN_SIZE = 18  # Primer3 default; stated explicitly when a wider target relies on it
 
 
+def _use_c_numeric_locale() -> None:
+    """Primer3 parses its numbers with the C library and needs a decimal point.
+
+    Qt sets the locale of the system at startup (on Linux and macOS), and with a
+    decimal comma Primer3 rejects "60.0". Qt itself formats numbers with QLocale.
+    """
+    if locale.localeconv()['decimal_point'] != '.':
+        locale.setlocale(locale.LC_NUMERIC, 'C')
+
+
 def primer3_pick(
     amplicon: str,
     snp_off: int,
@@ -973,6 +984,7 @@ def primer3_pick(
     if not _PRIMER3_AVAILABLE:
         primer3_pick.last_error = "Модуль Primer3 недоступен"
         return None
+    _use_c_numeric_locale()
     seq_args = {"SEQUENCE_TEMPLATE": amplicon,
                 "SEQUENCE_TARGET": [snp_off - target_flank, 2 * target_flank + 1]}
     if excluded_regions:

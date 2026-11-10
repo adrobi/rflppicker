@@ -1,3 +1,4 @@
+import locale
 import random
 import re
 import tempfile
@@ -17,6 +18,26 @@ from rflp_core import (
     run_rflp_gui_mode,
     snp_site_enzymes,
 )
+
+
+class NumericLocaleTests(unittest.TestCase):
+    def test_primer3_works_with_decimal_comma_locale(self):
+        # Qt switches LC_NUMERIC to the system locale; Primer3 then reads "60.0" as invalid.
+        saved = locale.setlocale(locale.LC_NUMERIC)
+        self.addCleanup(locale.setlocale, locale.LC_NUMERIC, saved)
+        for name in ('ru_RU.UTF-8', 'de_DE.UTF-8', 'Russian_Russia'):
+            try:
+                locale.setlocale(locale.LC_NUMERIC, name)
+                break
+            except locale.Error:
+                continue
+        else:
+            self.skipTest('no decimal-comma locale installed')
+        self.assertEqual(locale.localeconv()['decimal_point'], ',')
+        rng = random.Random(1)
+        sequence = ''.join(rng.choice('ACGT') for _ in range(601))
+        result = rflp_core.primer3_pick(sequence, 300, 120, 300, 55.0, 65.0, num_return=2)
+        self.assertIsNotNone(result, rflp_core.primer3_pick.last_error)
 
 
 class CoreTests(unittest.TestCase):
