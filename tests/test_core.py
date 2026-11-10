@@ -79,6 +79,28 @@ class CoreTests(unittest.TestCase):
                                      [(3, 'parse_error'), (4, reason)])
                     self.assertEqual(list(report['rejected'][1])[0], 'line')
 
+    def test_optional_params_take_their_defaults_from_default_params(self):
+        with tempfile.TemporaryDirectory() as d:
+            fasta = write_text(d, 'toy.fa', '>1\nACGTACGTACGT\n')
+            variants = write_text(d, 'variants.tsv', 'chrom\tpos\tref\talt\n1\t2\tC\tT\n')
+            given = {key: value for key, value in rflp_core.DEFAULT_PARAMS.items()
+                     if key not in rflp_core.OPTIONAL_PARAMS}
+            given.update(fasta=fasta, input_file=variants, use_primer3=False, flank=5, min_frag=1)
+            report = {}
+            run_rflp_gui_mode(given, report=report)
+        self.assertEqual(len(rflp_core.OPTIONAL_PARAMS), 19)
+        self.assertEqual(set(report['parameters']), set(given) | set(rflp_core.OPTIONAL_PARAMS))
+        for key in rflp_core.OPTIONAL_PARAMS:
+            self.assertEqual(report['parameters'][key], rflp_core.DEFAULT_PARAMS[key], key)
+
+    def test_skip_norm_can_be_cancelled(self):
+        with tempfile.TemporaryDirectory() as d:
+            fasta = write_text(d, 'toy.fa', '>1\nACGTACGTACGT\n')
+            variants = write_text(d, 'variants.tsv', 'chrom\tpos\tref\talt\n1\t2\tC\tT\n')
+            with self.assertRaises(AnalysisCancelled):
+                normalize_variants_for_rflp(fasta, variants, None, skip_norm=True, save_files=False,
+                                            cancel_cb=lambda: True)
+
     def test_threshold_is_applied_for_gain_loss_and_reported(self):
         self.assertEqual(diagnostic_delta([500], [100, 400]), 400)
         with tempfile.TemporaryDirectory() as d:

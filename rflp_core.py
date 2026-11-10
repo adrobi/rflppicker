@@ -32,6 +32,13 @@ DEFAULT_PARAMS = dict(
     # product end, and a short product shows the ~20 bp difference on a gel.
     dcaps_tm_max=70.0, dcaps_prod_min=120, dcaps_prod_max=300, dcaps_delta=20,
 )
+# Parameters a caller may leave out: run_rflp_gui_mode() takes them from DEFAULT_PARAMS.
+OPTIONAL_PARAMS = (
+    'joint_design', 'primer_pairs', 'top_results', 'gel_resolution_bp', 'gel_resolution_pct',
+    'gel_stress_factor', 'commercial_only', 'group_isoschizomers', 'snp_end_distance',
+    'exclude_primer_sites', 'mask_repeats', 'background_vcf', 'exclude_background_sites', 'dcaps',
+    'dcaps_mismatches', 'dcaps_tm_max', 'dcaps_prod_min', 'dcaps_prod_max', 'dcaps_delta',
+)
 # Settings chosen from the validation on published assays (GUI and CLI default).
 RECOMMENDED_PARAMS = dict(DEFAULT_PARAMS, commercial_only=True, group_isoschizomers=True,
                           snp_end_distance=100, exclude_primer_sites=True, mask_repeats=True,
@@ -373,18 +380,6 @@ def revcomp(s: str) -> str:
     return s.translate(RC_MAP)[::-1]
 
 
-def alt_ok(alt: str) -> bool:
-    parts = [p for p in alt.split(",") if p != ""]
-    if not parts:
-        return True
-    for p in parts:
-        if p == "-":
-            continue
-        if not set(p) <= DNA:
-            return False
-    return True
-
-
 def is_simple_snp(ref: str, alt: str) -> bool:
     parts = [p for p in alt.split(",") if p != ""]
     return (len(ref) == 1) and (len(parts) == 1) and (parts[0] in DNA)
@@ -485,31 +480,32 @@ def normalize_variants_for_rflp(
         valid = []
         check_cache = FastaBlockCache(fasta_path, block_bp=block_bp)
         names2_skip = load_names2(names2_path) if names2_path else {}
-        for index, (line_no, (chrom, pos, ref, alt)) in enumerate(variants_raw, start=1):
-            mapped = resolve_contig(chrom, names2_skip, check_cache.has_contig)
-            reason = ''
-            details = ''
-            if not is_simple_snp(ref, alt):
-                reason, details = 'unsupported_variant', 'Поддерживаются только одиночные SNP A/C/G/T'
-            elif not check_cache.has_contig(mapped):
-                reason, details = 'bad_chrom', f"CHROM '{mapped}' отсутствует в FASTA"
-            elif pos < 1 or pos > check_cache.contig_len(mapped):
-                reason, details = 'pos_oob', 'Позиция вне FASTA'
-            elif check_cache.base(mapped, pos).upper() != ref.upper():
-                reason, details = 'ref_not_match', 'REF не совпадает с FASTA'
-            if reason:
-                if report is not None:
-                    report.setdefault('rejected', []).append({'line': line_no, 'chrom': chrom, 'pos': pos, 'ref': ref, 'alt': alt, 'reason': reason, 'details': details})
-            else:
-                valid.append((chrom, pos, ref, alt))
-            if progress_cb:
-                progress_cb(index, max(1, total))
+        try:
+            for index, (line_no, (chrom, pos, ref, alt)) in enumerate(variants_raw, start=1):
+                if cancel_cb and cancel_cb():
+                    raise AnalysisCancelled()
+                mapped = resolve_contig(chrom, names2_skip, check_cache.has_contig)
+                reason = ''
+                details = ''
+                if not is_simple_snp(ref, alt):
+                    reason, details = 'unsupported_variant', 'Поддерживаются только одиночные SNP A/C/G/T'
+                elif not check_cache.has_contig(mapped):
+                    reason, details = 'bad_chrom', f"CHROM '{mapped}' отсутствует в FASTA"
+                elif pos < 1 or pos > check_cache.contig_len(mapped):
+                    reason, details = 'pos_oob', 'Позиция вне FASTA'
+                elif check_cache.base(mapped, pos).upper() != ref.upper():
+                    reason, details = 'ref_not_match', 'REF не совпадает с FASTA'
+                if reason:
+                    if report is not None:
+                        report.setdefault('rejected', []).append({'line': line_no, 'chrom': chrom, 'pos': pos, 'ref': ref, 'alt': alt, 'reason': reason, 'details': details})
+                else:
+                    valid.append((chrom, pos, ref, alt))
+                if progress_cb:
+                    progress_cb(index, max(1, total))
+        finally:
+            check_cache.fa.close()
         if report is not None:
             report.setdefault('summary', {}).update(accepted=len(valid), rejected=len(report.get('rejected', [])))
-        try:
-            check_cache.fa.close()
-        except Exception:
-            pass
         return valid, summary_lines, "", ""
 
     if status_cb:
@@ -576,36 +572,21 @@ def normalize_variants_for_rflp(
             rejected.append((line_no, orig_chrom, pos, ref, alt, "unsupported_variant", "Поддерживаются только одиночные SNP A/C/G/T"))
             continue
 
-        if not alt_ok(alt):
-            stats["rejected_bad_alt_chars"] += 1
-            rejected.append((line_no, orig_chrom, pos, ref, alt, "bad_alt_chars", "ALT must be A/C/G/T or '-'"))
-            continue
-
-        alt_parts = [p for p in alt.split(",") if p != ""]
-
+        # From here on REF and ALT are single bases.
         if ref_matches(mapped_chrom, pos, ref):
             cleaned.append((orig_chrom, pos, ref, alt))
             stats["kept"] += 1
             continue
 
-        if is_simple_snp(ref, alt) and len(alt_parts) == 1:
-            refbase = cache.base(mapped_chrom, pos)
-            if alt_parts[0] == refbase and ref != refbase:
-                new_ref, new_alt = alt_parts[0], ref
-                if ref_matches(mapped_chrom, pos, new_ref):
-                    cleaned.append((orig_chrom, pos, new_ref, new_alt))
-                    stats["kept_swapped_snp"] += 1
-                    continue
-
         refbase = cache.base(mapped_chrom, pos)
-        if len(ref) == 1 and rc(ref) == refbase:
-            stats["rejected_minus_strand_like"] += 1
-            rejected.append((line_no, orig_chrom, pos, ref, alt, "minus_strand_like", "rc(REF) equals reference base"))
+        if alt == refbase:
+            cleaned.append((orig_chrom, pos, alt, ref))
+            stats["kept_swapped_snp"] += 1
             continue
 
-        if any(a == refbase for a in alt_parts):
-            stats["rejected_multi_alt_contains_ref"] += 1
-            rejected.append((line_no, orig_chrom, pos, ref, alt, "multi_alt_contains_ref", "one ALT equals reference base"))
+        if rc(ref) == refbase:
+            stats["rejected_minus_strand_like"] += 1
+            rejected.append((line_no, orig_chrom, pos, ref, alt, "minus_strand_like", "rc(REF) equals reference base"))
             continue
 
         stats["rejected_ref_not_match"] += 1
@@ -1088,15 +1069,8 @@ def _primer_candidates(pres, sequence, snp_off):
 
 def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, report=None):
     params = dict(params)
-    for key, value in dict(joint_design=True, primer_pairs=10, top_results=10,
-                           gel_resolution_bp=10.0, gel_resolution_pct=3.0,
-                           gel_stress_factor=1.5, commercial_only=False,
-                           group_isoschizomers=False, snp_end_distance=0,
-                           exclude_primer_sites=False, mask_repeats=False,
-                           background_vcf='', exclude_background_sites=False, dcaps='off',
-                           dcaps_mismatches=1, dcaps_tm_max=70.0, dcaps_prod_min=120, dcaps_prod_max=300,
-                           dcaps_delta=20).items():
-        params.setdefault(key, value)
+    for key in OPTIONAL_PARAMS:
+        params.setdefault(key, DEFAULT_PARAMS[key])
     errors = validate_params(params)
     if errors:
         raise ValueError('; '.join(errors))
