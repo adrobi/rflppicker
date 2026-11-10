@@ -69,6 +69,40 @@ class MainWindowTests(unittest.TestCase):
         self.assertIn('boom', self.window.status_message.text())
         self.assertEqual(self.window.launch.run_button.text(), 'Запустить')
 
+    def test_window_stays_open_until_the_analysis_thread_has_stopped(self):
+        class SlowWorker:
+            interrupted = False
+
+            def requestInterruption(self):
+                self.interrupted = True
+
+            def wait(self, _milliseconds):
+                return False   # still running after the timeout
+
+        worker = SlowWorker()
+        self.window.worker = worker
+        self.window.show()
+        self.assertFalse(self.window.close())
+        self.assertTrue(worker.interrupted)
+        self.assertTrue(self.window.isVisible())
+        self.assertEqual(self.window.status_message.text(), 'Останавливаю расчёт…')
+        self.window._on_finished()   # the thread has ended
+        self.assertFalse(self.window.isVisible())
+
+    def test_window_closes_at_once_when_the_thread_stops_in_time(self):
+        class QuickWorker:
+            def requestInterruption(self):
+                pass
+
+            def wait(self, _milliseconds):
+                return True
+
+        self.window.worker = QuickWorker()
+        self.window.show()
+        self.assertTrue(self.window.close())
+        self.assertFalse(self.window.isVisible())
+        self.window.worker = None
+
     def test_invalid_input_does_not_start(self):
         self.window.start_run()
         self.assertIsNone(self.window.worker)

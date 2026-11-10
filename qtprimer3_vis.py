@@ -105,6 +105,7 @@ class RFLPPickerGUI(QMainWindow):
         self.settings = settings or AppSettings()
         self.theme = theme or ThemeController(QApplication.instance(), self._stored_theme_mode())
         self.worker: Optional[CalcThread] = None
+        self._close_when_finished = False
         self.header: List[str] = []
         self.rows: List[list] = []
         self.report: dict = {}
@@ -234,7 +235,12 @@ class RFLPPickerGUI(QMainWindow):
         self.settings.set_value('geometry', bytes(self.saveGeometry().toBase64()).decode())
         if self.worker is not None:
             self.worker.requestInterruption()
-            self.worker.wait(5000)
+            if not self.worker.wait(5000):
+                # Destroying a running thread aborts the program: close when it has ended.
+                self._close_when_finished = True
+                self.status_message.setText(t('Останавливаю расчёт…'))
+                event.ignore()
+                return
         self.log.close()
         super().closeEvent(event)
 
@@ -288,6 +294,9 @@ class RFLPPickerGUI(QMainWindow):
     def _on_finished(self):
         self.worker = None
         self.launch.set_running(False)
+        if self._close_when_finished:
+            self._close_when_finished = False
+            self.close()
 
     def _on_failed(self, message: str):
         self.status_message.setText(t('Ошибка расчёта: {message}', message=core_text(message)))
