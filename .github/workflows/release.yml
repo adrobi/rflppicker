@@ -5,6 +5,7 @@ name: release
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:   # a trial build of a branch: the archive is kept as a run artifact
 
 permissions:
   contents: write
@@ -34,7 +35,14 @@ jobs:
       - name: Pack
         shell: pwsh
         run: Compress-Archive -Path dist\RFLP-Picker -DestinationPath "RFLP-Picker-${{ github.ref_name }}-windows.zip"
+      - name: Keep the archive of a trial build
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: RFLP-Picker-windows
+          path: RFLP-Picker-*-windows.zip
       - name: Create the draft release
+        if: github.ref_type == 'tag'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}

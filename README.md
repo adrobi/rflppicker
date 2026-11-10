@@ -23,7 +23,9 @@ reports fragment sizes and draws a map of the amplicon.
 - The `Rejected` sheet holds the input line number of every rejected variant.
 - The program is distributed under the [GPL v3 or later](#license).
 
-Assays with a natural site are the same as in 1.3. The list of changes is in the
+Assays with a natural site are the same as in 1.3, unless a known-variants VCF
+named its contigs differently from the genome (`chr1` and `1`): such a VCF used
+to be ignored and is now applied. The list of changes is in the
 [CHANGELOG](CHANGELOG.md) (in Russian).
 
 ## What's new in 1.3

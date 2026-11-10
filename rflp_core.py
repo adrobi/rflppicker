@@ -118,11 +118,23 @@ def gel_model_from_params(params):
 
 
 # ====== primer3 ======
+def _use_c_numeric_locale() -> None:
+    """Primer3 parses its numbers with the C library and needs a decimal point.
+
+    Qt sets the locale of the system at startup (on Linux and macOS), and with a
+    decimal comma Primer3 rejects "60.0"; its thermodynamic tables,
+    read at import, would silently get wrong values. Qt itself formats numbers with QLocale.
+    """
+    if locale.localeconv()['decimal_point'] != '.':
+        locale.setlocale(locale.LC_NUMERIC, 'C')
+
+
 _PRIMER3_AVAILABLE = False
 _PRIMER3_USE_NEW = False
 _PRIMER3_IMPORT_ERROR = ""
 
 try:
+    _use_c_numeric_locale()
     import primer3
     _PRIMER3_AVAILABLE = True
     _PRIMER3_USE_NEW = hasattr(primer3.bindings, "design_primers")
@@ -579,8 +591,9 @@ def normalize_variants_for_rflp(
             continue
 
         refbase = cache.base(mapped_chrom, pos)
-        if alt == refbase:
-            cleaned.append((orig_chrom, pos, alt, ref))
+        alt_base = alt.replace(",", "")   # "G," is read as G, as before
+        if alt_base == refbase:
+            cleaned.append((orig_chrom, pos, alt_base, ref))
             stats["kept_swapped_snp"] += 1
             continue
 
@@ -939,16 +952,6 @@ def enzyme_suppliers_human(enzyme) -> str:
 
 # ====== primer3 обёртка ======
 PRIMER_MIN_SIZE = 18  # Primer3 default; stated explicitly when a wider target relies on it
-
-
-def _use_c_numeric_locale() -> None:
-    """Primer3 parses its numbers with the C library and needs a decimal point.
-
-    Qt sets the locale of the system at startup (on Linux and macOS), and with a
-    decimal comma Primer3 rejects "60.0". Qt itself formats numbers with QLocale.
-    """
-    if locale.localeconv()['decimal_point'] != '.':
-        locale.setlocale(locale.LC_NUMERIC, 'C')
 
 
 def primer3_pick(

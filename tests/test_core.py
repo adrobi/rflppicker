@@ -1,6 +1,8 @@
 import locale
 import random
 import re
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -191,10 +193,6 @@ class InputTableTests(unittest.TestCase):
             rflp_core.parse_fields(['1', 'x', 'A', 'G'], columns)
 
 
-if __name__ == '__main__':
-    unittest.main()
-
-
 class ContigNameTests(unittest.TestCase):
     """Genomes whose contigs are named chr1, chr2, … work without a names file."""
 
@@ -247,3 +245,38 @@ class ContigNameTests(unittest.TestCase):
                 report = {}
                 self.run_core(fasta_contig, '1', report=report, background_vcf=vcf)
                 self.assertEqual(report['summary']['background_variants_loaded'], 1)
+
+
+class ReviewFixTests(unittest.TestCase):
+    def test_swap_with_a_stray_comma_in_alt_as_in_1_3_0(self):
+        with tempfile.TemporaryDirectory() as d:
+            fasta = write_text(d, 'toy.fa', '>1\nACGTACGTACGT\n')
+            variants = write_text(d, 'variants.tsv', 'chrom\tpos\tref\talt\n1\t3\tT\tG,\n1\t2\tA\t,C\n')
+            cleaned, _, _, _ = normalize_variants_for_rflp(fasta, variants, None, save_files=False, report={})
+        self.assertEqual(cleaned, [('1', 3, 'G', 'T'), ('1', 2, 'C', 'A')])
+
+    def test_primer3_tables_are_read_with_a_decimal_point(self):
+        # Primer3 parses its thermodynamic tables when it is imported: with a decimal
+        # comma active at that moment the hairpin and dimer values were silently wrong.
+        code = ("import locale, sys\n"
+                "if sys.argv[1] != 'C':\n"
+                "    locale.setlocale(locale.LC_ALL, sys.argv[1])\n"
+                "import rflp_core, primer3\n"
+                "print(repr(primer3.bindings.calc_hairpin('CCCCCATCCGATCAGGGGG').dg))\n")
+        root = str(Path(rflp_core.__file__).resolve().parent)
+
+        def hairpin(name):
+            done = subprocess.run([sys.executable, '-c', code, name], cwd=root, capture_output=True, text=True)
+            return done.returncode, done.stdout.strip()
+
+        for name in ('ru_RU.UTF-8', 'de_DE.UTF-8', 'Russian_Russia'):
+            code_comma, value = hairpin(name)
+            if code_comma == 0:
+                break
+        else:
+            self.skipTest('no decimal-comma locale installed')
+        self.assertEqual(value, hairpin('C')[1])
+
+
+if __name__ == '__main__':
+    unittest.main()

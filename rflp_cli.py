@@ -10,6 +10,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from pyfaidx import FastaIndexingError
+
 import rflp_core as core
 from i18n import LANGS, N_, core_text, locale_language, set_language, t
 from reporting import export_csv, export_excel
@@ -199,12 +201,12 @@ def main(argv=None):
     except KeyboardInterrupt:
         print(t('Анализ прерван.'), file=sys.stderr)
         return 130
-    except Exception as exc:   # an unreadable FASTA or VCF, a file that disappeared, …
+    except (OSError, ValueError, FastaIndexingError) as exc:   # an unreadable FASTA or VCF, a lost file, …
         print(t('Ошибка: {error}', error=core_text(str(exc) or type(exc).__name__)), file=sys.stderr)
         return 1
     try:
         save_results(args, out, params, report, header, rows, started)
-    except Exception as exc:   # the destination is open in Excel, the disk is full, …
+    except (OSError, ValueError) as exc:   # the destination is open in Excel, over the Excel limits, …
         print(t('Ошибка: {error}', error=str(exc) or type(exc).__name__), file=sys.stderr)
         return 1
     summary = report.get('summary', {})

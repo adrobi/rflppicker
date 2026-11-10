@@ -106,6 +106,11 @@ class CliTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn('Ошибка: занято', log)
 
+    def test_a_programming_error_keeps_its_traceback(self):
+        with patch.object(core, 'run_rflp_gui_mode', side_effect=KeyError('enzyme_table')):
+            with self.assertRaises(KeyError):
+                self.run_cli('--out', str(self.root / 'out.csv'), '-q')
+
     def test_warns_when_no_snp_is_accepted(self):
         self.variants.write_text('chrom\tpos\tref\talt\nX\t5\tA\tG\n')
         code, log = self.run_cli('--out', str(self.root / 'out.csv'), '-q')

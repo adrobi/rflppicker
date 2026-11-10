@@ -33,6 +33,9 @@ if (-not $pythonExe) {
   --collect-all primer3 `
   --runtime-hook rth_qt6_path.py `
   qtprimer3_vis.py
+if ($LASTEXITCODE -ne 0) {
+  throw "PyInstaller failed with exit code $LASTEXITCODE"
+}
 
 $distDir = Join-Path $PSScriptRoot 'dist\RFLP-Picker'
 $namesSource = Join-Path $PSScriptRoot 'names'
