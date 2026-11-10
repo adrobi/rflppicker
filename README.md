@@ -151,7 +151,7 @@ choose it in the “Genome” field. The `names/` folder in the archive holds a
 ready chromosome name mapping for the genome used in the examples.
 
 The release archive is in the Releases section on GitHub. To rebuild the EXE
-from source you need Python 3.13 and the packages from `requirements.txt`; run
+from source you need Python 3.13 and the packages from `requirements-build.txt`; run
 `.\build_windows.ps1`. The result appears in `dist/RFLP-Picker/`.
 
 The archive comes without a README: the instructions are in this file on GitHub.

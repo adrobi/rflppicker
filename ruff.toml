@@ -1,0 +1,8 @@
+# Errors only: undefined names, unused imports, likely bugs. Style is not checked.
+[lint]
+select = ["E9", "F", "B"]
+ignore = [
+    "B008",  # QModelIndex() as a default argument is the Qt convention
+    "B023",  # the closures of the analysis loop are called within the same iteration
+    "B905",  # zip() over sequences of equal length by construction
+]
