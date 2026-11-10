@@ -41,6 +41,8 @@ if (-not (Test-Path -LiteralPath $namesSource)) {
   throw "Required names directory is missing: $namesSource"
 }
 Copy-Item -LiteralPath $namesSource -Destination $namesTarget -Recurse -Force
+# The build contains PyQt6 and Primer3 (GPL): the license text goes with it.
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'LICENSE') -Destination $distDir -Force
 
 # The release archive keeps its instructions on GitHub. Remove documentation
 # files copied from third-party packages so zipping this folder stays clean.

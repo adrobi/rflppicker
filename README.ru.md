@@ -298,3 +298,10 @@ git worktree add ..\rflp-v1.1.0 42ad9e5
 python tools\regression.py --baseline ..\rflp-v1.1.0 --work ..\regression `
   --dataset sheep=genome.fa,variants.tsv --random 100 --jobs 8
 ```
+
+## Лицензия
+
+RFLP Picker распространяется на условиях GNU General Public License версии 3
+или более поздней: см. файл [LICENSE](LICENSE). Программа использует PyQt6
+(GPL v3) и Primer3 (GPL v2 или более поздней), поэтому сборка для Windows
+распространяется на тех же условиях; её исходный код — этот репозиторий.
