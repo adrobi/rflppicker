@@ -1,14 +1,30 @@
-# RFLP Picker 1.3
+# RFLP Picker 1.4
 
 English | [Русский](README.ru.md)
 
-![RFLP Picker 1.3 window: the SNP list, the chosen assay and the virtual gel](docs/img/dark_en.png)
+![RFLP Picker window: the SNP list, the chosen assay and the virtual gel](docs/img/dark_en.png)
 
 RFLP Picker is a desktop program for PCR-RFLP (CAPS) genotyping of SNPs. From a
 list of SNPs and a reference genome it designs Primer3 primer pairs, finds
 restriction enzymes that tell the three genotypes apart and shows the expected
 bands on a virtual gel. The program compares REF and ALT on the reference FASTA,
 reports fragment sizes and draws a map of the amplicon.
+
+## What's new in 1.4
+
+- dCAPS assays (a mismatch primer) have their own settings: Tm up to 70 °C,
+  product 120–300 bp, Δ threshold 20 bp — see [Parameters](#parameters).
+- Genomes whose contigs are named `chr1`, `chr2`, … work without a chromosome
+  name mapping file.
+- Primer design works on Linux and macOS with a decimal-comma system locale
+  (Russian, German, …).
+- Command line: a missing output folder is reported before the analysis; an
+  unreadable FASTA gives a message and exit code 1 instead of a traceback.
+- The `Rejected` sheet holds the input line number of every rejected variant.
+- The program is distributed under the [GPL v3 or later](#license).
+
+Assays with a natural site are the same as in 1.3. The list of changes is in the
+[CHANGELOG](CHANGELOG.md) (in Russian).
 
 ## What's new in 1.3
 
@@ -189,8 +205,7 @@ size and Tm range. When no pair is found, the line gets the status “no primers
 and gives no false enzyme candidates. With Primer3 off, the search runs over the
 whole window and is marked “window search”.
 
-*Coming in the next version (release 1.3.0 does not have these settings yet):*
-dCAPS assays (a mismatch primer that creates the enzyme site in one allele) are
+*Since version 1.4:* dCAPS assays (a mismatch primer that creates the enzyme site in one allele) are
 designed with their own settings — the “dCAPS” group of the “Advanced” dialog:
 Tm of both primers up to 70 °C, product 120–300 bp, Δ threshold 20 bp. A longer
 primer moves the cut away from the product end, and on a short product a ~20 bp
