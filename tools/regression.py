@@ -1,11 +1,11 @@
 """Check that two RFLP Picker source trees give identical analysis results.
 
-Typical use: compare the working copy with the v1.1.0 release before a change
+Typical use: compare the working copy with the previous release before a change
 that must not alter results (refactoring, speed-ups)::
 
-    git worktree add ../rflp-v1.1.0 42ad9e5   # release v1.1.0
-    python tools/regression.py --baseline ../rflp-v1.1.0 --work ../regression \
-        --dataset sheep=genome.fa,variants.tsv --random 100 --jobs 8
+    git worktree add ../rflp-prev v1.4.0   # the previous release
+    python tools/regression.py --baseline ../rflp-prev --work ../regression \
+        --dataset sheep=genome.fa,variants.tsv,names.txt --random 100 --jobs 8
 
 Every tree is imported in its own process.  For each dataset and parameter
 profile the canonical JSON of the header, rows and report (summary counters,
@@ -14,6 +14,9 @@ rejected variants, parameters) is compared: ``same`` means byte-identical,
 every baseline value is unchanged; anything else fails.  The log and progress
 calls are compared separately.  Inputs are copied into ``--work`` so that no
 index or result file is written next to the baseline tree.
+
+The profiles state every analysis parameter, so both trees run with the same
+settings whatever their own defaults are.
 """
 import argparse
 import hashlib
@@ -28,22 +31,30 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
+# The settings of the program window (rflp_core.DEFAULT_PARAMS of 1.5.0), with every assay reported.
+# joint_design is read by releases up to 1.4.0 only, where it chose the search that is now the only one.
 BASE_PARAMS = dict(names2_file='', flank=300, min_frag=80, max_frag=800, delta=25, max_cuts=3,
                    prod_min=250, prod_max=600, tm_min=58.0, tm_max=62.0,
                    gel_resolution_bp=10.0, gel_resolution_pct=3.0, gel_stress_factor=1.5,
                    gain_loss_only=False, suppliers=[], use_primer3=True, joint_design=True,
-                   top_results=0, primer_pairs=10, skip_norm=False, no_save_norm=True)
-# Parameter sets of the article validation plus the other search modes and filters.
+                   top_results=0, primer_pairs=10, skip_norm=False, no_save_norm=True,
+                   commercial_only=True, group_isoschizomers=True, snp_end_distance=100,
+                   exclude_primer_sites=True, mask_repeats=True, background_vcf='',
+                   exclude_background_sites=True, dcaps='fallback', dcaps_mismatches=1,
+                   dcaps_tm_max=70.0, dcaps_prod_min=120, dcaps_prod_max=300, dcaps_delta=20)
+CHECKS_OFF = dict(commercial_only=False, group_isoschizomers=False, snp_end_distance=0,
+                  exclude_primer_sites=False, mask_repeats=False, exclude_background_sites=False, dcaps='off')
 PROFILES = {
-    'joint': {},
-    'joint_wide': dict(prod_min=150, prod_max=1000),
-    'joint_top10': dict(top_results=10),
-    'single_pair': dict(joint_design=False),
+    'default': {},
+    'wide': dict(prod_min=150, prod_max=1000),
+    'top10': dict(top_results=10),
+    'dcaps_always': dict(dcaps='always'),
+    'checks_off': CHECKS_OFF,
     'window': dict(use_primer3=False),
-    'filters': dict(gain_loss_only=True, max_cuts=1, delta=40, flank=500, primer_pairs=5,
+    'filters': dict(CHECKS_OFF, gain_loss_only=True, max_cuts=1, delta=40, flank=500, primer_pairs=5,
                     min_frag=50, max_frag=1200, gel_resolution_bp=5.0, gel_resolution_pct=2.0,
                     gel_stress_factor=2.0, suppliers=['New england biolabs', 'Thermo fisher']),
-    'skip_norm_window': dict(skip_norm=True, use_primer3=False, flank=150),
+    'skip_norm_window': dict(CHECKS_OFF, skip_norm=True, use_primer3=False, flank=150),
 }
 
 
