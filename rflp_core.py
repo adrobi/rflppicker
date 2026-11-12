@@ -17,32 +17,28 @@ from assay_scoring import GelModel, MODEL_VERSION, score_genotypes, rank_key
 
 APP_VERSION = "1.4.0"
 
-# Analysis defaults of the GUI. Options added after v1.1.0 are off here, so a
-# parameter set written for v1.1.0 reproduces its results.
+# Analysis defaults of the window and the command line; the checks were chosen
+# from the validation on published assays.
 DEFAULT_PARAMS = dict(
     names2_file='', flank=300, min_frag=80, max_frag=800, delta=25, max_cuts=3,
     gain_loss_only=False, suppliers=[], use_primer3=True, prod_min=250, prod_max=600,
-    tm_min=58.0, tm_max=62.0, joint_design=True, primer_pairs=10, top_results=10,
+    tm_min=58.0, tm_max=62.0, primer_pairs=10, top_results=10,
     gel_resolution_bp=10.0, gel_resolution_pct=3.0, gel_stress_factor=1.5,
     skip_norm=False, no_save_norm=True,
-    commercial_only=False, group_isoschizomers=False, snp_end_distance=0,
-    exclude_primer_sites=False, mask_repeats=False,
-    background_vcf='', exclude_background_sites=False, dcaps='off', dcaps_mismatches=1,
+    commercial_only=True, group_isoschizomers=True, snp_end_distance=100,
+    exclude_primer_sites=True, mask_repeats=True,
+    background_vcf='', exclude_background_sites=True, dcaps='fallback', dcaps_mismatches=1,
     # dCAPS designs only: a longer mismatch primer moves the created cut away from the
     # product end, and a short product shows the ~20 bp difference on a gel.
     dcaps_tm_max=70.0, dcaps_prod_min=120, dcaps_prod_max=300, dcaps_delta=20,
 )
 # Parameters a caller may leave out: run_rflp_gui_mode() takes them from DEFAULT_PARAMS.
 OPTIONAL_PARAMS = (
-    'joint_design', 'primer_pairs', 'top_results', 'gel_resolution_bp', 'gel_resolution_pct',
+    'primer_pairs', 'top_results', 'gel_resolution_bp', 'gel_resolution_pct',
     'gel_stress_factor', 'commercial_only', 'group_isoschizomers', 'snp_end_distance',
     'exclude_primer_sites', 'mask_repeats', 'background_vcf', 'exclude_background_sites', 'dcaps',
     'dcaps_mismatches', 'dcaps_tm_max', 'dcaps_prod_min', 'dcaps_prod_max', 'dcaps_delta',
 )
-# Settings chosen from the validation on published assays (GUI and CLI default).
-RECOMMENDED_PARAMS = dict(DEFAULT_PARAMS, commercial_only=True, group_isoschizomers=True,
-                          snp_end_distance=100, exclude_primer_sites=True, mask_repeats=True,
-                          exclude_background_sites=True, dcaps='fallback')
 
 
 class AnalysisCancelled(Exception):
@@ -1072,6 +1068,8 @@ def _primer_candidates(pres, sequence, snp_off):
 
 def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, report=None):
     params = dict(params)
+    # Settings saved before 1.5.0 may carry the switch of the removed single-pair mode.
+    params.pop('joint_design', None)
     for key in OPTIONAL_PARAMS:
         params.setdefault(key, DEFAULT_PARAMS[key])
     errors = validate_params(params)
@@ -1109,8 +1107,8 @@ def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, 
         counters['rows'] = 0
         return header, out_rows
     use_primer3 = params.get('use_primer3', False)
-    joint = bool(params['joint_design'] and use_primer3)
-    mode = 'joint' if joint else 'single_pair' if use_primer3 else 'window'
+    # Primer pairs and the enzyme are chosen together; without Primer3 the whole window is the amplicon.
+    mode = 'joint' if use_primer3 else 'window'
     codes = parse_suppliers_arg(','.join(params.get('suppliers', [])))
     enzymes = sorted((e for e in AllEnzymes if not codes or enzyme_supplier_codes(e) & codes),
                      key=lambda e: e.__name__)
@@ -1212,7 +1210,7 @@ def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, 
                 check_cancel()
                 pres = primer3_pick(raw if mask else seq, off, params['prod_min'], params['prod_max'],
                                     params['tm_min'], params['tm_max'],
-                                    num_return=params['primer_pairs'] if joint else 1,
+                                    num_return=params['primer_pairs'],
                                     target_flank=max(0, end_distance - PRIMER_MIN_SIZE),
                                     lowercase_masking=mask, excluded_regions=excluded)
                 if not pres:
@@ -1277,7 +1275,6 @@ def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, 
                 reason = {
                     'robust': 'Три генотипа различимы во всём заданном диапазоне разрешения',
                     'nominal_only': 'Три генотипа различимы только при исходном разрешении',
-                    'ambiguous': 'Три генотипа неразличимы по присутствию полос',
                 }[scores['genotype_quality']]
                 if not use_primer3:
                     reason = 'Оценка окна без подобранных праймеров. ' + reason
@@ -1344,7 +1341,7 @@ def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, 
                     counters['dcaps_designs'] += 1
                     pres = primer3_pick(template, off, params['dcaps_prod_min'], params['dcaps_prod_max'],
                                         params['tm_min'], params['dcaps_tm_max'],
-                                        num_return=params['primer_pairs'] if joint else 1,
+                                        num_return=params['primer_pairs'],
                                         lowercase_masking=mask, excluded_regions=excluded,
                                         fixed_left=primer[1] if side == 'left' else None,
                                         fixed_right=primer[1] if side == 'right' else None)

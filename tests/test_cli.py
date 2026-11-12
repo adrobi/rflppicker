@@ -44,7 +44,7 @@ class CliTests(unittest.TestCase):
         code, log = self.run_cli('--out', str(out), '--rejected', str(rejected), '--no-primer3',
                                  '--flank', '150', '--min-frag', '20')
         self.assertEqual(code, 0, log)
-        params = dict(core.RECOMMENDED_PARAMS, fasta=str(self.fasta.resolve()),
+        params = dict(core.DEFAULT_PARAMS, fasta=str(self.fasta.resolve()),
                       input_file=str(self.variants.resolve()), use_primer3=False, flank=150, min_frag=20)
         header, rows = core.run_rflp_gui_mode(params)
         with out.open(encoding='utf-8-sig', newline='') as stream:

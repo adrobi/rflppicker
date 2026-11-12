@@ -13,7 +13,7 @@ import palette
 from app_settings import AppSettings
 from i18n import N_, core_text, t
 from rflp_core import (
-    RECOMMENDED_PARAMS, _PRIMER3_AVAILABLE, _SUPPLIER_CANON, get_base_dir, validate_params,
+    DEFAULT_PARAMS, _PRIMER3_AVAILABLE, _SUPPLIER_CANON, get_base_dir, validate_params,
 )
 
 KEY_PARAMS = ('prod_min', 'prod_max', 'tm_min', 'tm_max', 'commercial_only', 'suppliers', 'dcaps')
@@ -292,7 +292,7 @@ class LaunchPanel(QWidget):
         super().__init__(parent)
         self._settings = settings
         self._colors = palette.colors(False)
-        self._advanced = {k: RECOMMENDED_PARAMS[k] for k in ADVANCED_PARAMS}
+        self._advanced = {k: DEFAULT_PARAMS[k] for k in ADVANCED_PARAMS}
         self._advanced_errors: Dict[str, str] = {}
         self._running = False
         self._collapsed = False
@@ -600,10 +600,10 @@ class LaunchPanel(QWidget):
 
     def reset_to_defaults(self) -> None:
         """The recommended parameters; the chosen files stay."""
-        self.set_params({k: v for k, v in RECOMMENDED_PARAMS.items() if k in KEY_PARAMS + ADVANCED_PARAMS})
+        self.set_params({k: v for k, v in DEFAULT_PARAMS.items() if k in KEY_PARAMS + ADVANCED_PARAMS})
 
     def changed_count(self) -> int:
-        return sum(self._advanced[k] != RECOMMENDED_PARAMS[k] for k in ADVANCED_PARAMS)
+        return sum(self._advanced[k] != DEFAULT_PARAMS[k] for k in ADVANCED_PARAMS)
 
     def _update_badge(self):
         c = self._colors

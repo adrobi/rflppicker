@@ -10,7 +10,7 @@ from pathlib import Path
 from Bio.Restriction import AllEnzymes
 
 import rflp_core
-from tests.helpers import write_text
+from tests.helpers import CHECKS_OFF, write_text
 from rflp_core import (
     AnalysisCancelled,
     cut_positions,
@@ -90,10 +90,20 @@ class CoreTests(unittest.TestCase):
             given.update(fasta=fasta, input_file=variants, use_primer3=False, flank=5, min_frag=1)
             report = {}
             run_rflp_gui_mode(given, report=report)
-        self.assertEqual(len(rflp_core.OPTIONAL_PARAMS), 19)
+        self.assertEqual(len(rflp_core.OPTIONAL_PARAMS), 18)
+        self.assertNotIn('joint_design', report['parameters'])
         self.assertEqual(set(report['parameters']), set(given) | set(rflp_core.OPTIONAL_PARAMS))
         for key in rflp_core.OPTIONAL_PARAMS:
             self.assertEqual(report['parameters'][key], rflp_core.DEFAULT_PARAMS[key], key)
+
+    def test_there_is_one_parameter_set(self):
+        self.assertFalse(hasattr(rflp_core, 'RECOMMENDED_PARAMS'))
+        self.assertNotIn('joint_design', rflp_core.DEFAULT_PARAMS)
+        defaults = rflp_core.DEFAULT_PARAMS
+        self.assertEqual((defaults['commercial_only'], defaults['group_isoschizomers'], defaults['snp_end_distance'],
+                          defaults['exclude_primer_sites'], defaults['mask_repeats'],
+                          defaults['exclude_background_sites'], defaults['dcaps']),
+                         (True, True, 100, True, True, True, 'fallback'))
 
     def test_skip_norm_can_be_cancelled(self):
         with tempfile.TemporaryDirectory() as d:
@@ -206,7 +216,7 @@ class ContigNameTests(unittest.TestCase):
     def run_core(self, fasta_contig, input_chrom, report=None, **extra):
         fasta = write_text(self.temp.name, 'toy.fa', f'>{fasta_contig}\n{self.sequence}\n')
         variants = write_text(self.temp.name, 'variants.tsv', f'chrom\tpos\tref\talt\n{input_chrom}\t200\tA\tG\n')
-        params = dict(rflp_core.DEFAULT_PARAMS, fasta=fasta, input_file=variants, use_primer3=False,
+        params = dict(rflp_core.DEFAULT_PARAMS, **CHECKS_OFF, fasta=fasta, input_file=variants, use_primer3=False,
                       flank=150, min_frag=20, **extra)
         header, rows = run_rflp_gui_mode(params, report=report)
         return [dict(zip(header, row)) for row in rows]

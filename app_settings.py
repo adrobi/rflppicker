@@ -9,7 +9,7 @@ from typing import Any, List, Optional
 
 from PyQt6.QtCore import QSettings
 
-from rflp_core import RECOMMENDED_PARAMS
+from rflp_core import DEFAULT_PARAMS
 
 FILE_KEYS = ('names2_file', 'background_vcf')   # kept as files, not as parameters
 MAX_RECENT_GENOMES = 5
@@ -44,7 +44,7 @@ class AppSettings:
 
     def params(self) -> dict:
         """Recommended parameters overlaid with stored values of the right type."""
-        params = {k: v for k, v in RECOMMENDED_PARAMS.items() if k not in FILE_KEYS}
+        params = {k: v for k, v in DEFAULT_PARAMS.items() if k not in FILE_KEYS}
         stored = self.value('params', {})
         if not isinstance(stored, dict):
             return params
@@ -55,7 +55,7 @@ class AppSettings:
         return params
 
     def set_params(self, params: dict) -> None:
-        keys = [k for k in RECOMMENDED_PARAMS if k not in FILE_KEYS]
+        keys = [k for k in DEFAULT_PARAMS if k not in FILE_KEYS]
         self.set_value('params', {k: params[k] for k in keys if k in params})
 
     def recent_genomes(self) -> List[str]:

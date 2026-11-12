@@ -7,6 +7,7 @@ from unittest.mock import patch
 from Bio.Restriction import EcoRI, TaqI
 from Bio.Seq import Seq
 import rflp_core as core
+from tests.helpers import CHECKS_OFF
 from reporting import export_csv, export_excel
 
 
@@ -27,7 +28,7 @@ class JointDesignTests(unittest.TestCase):
                            flank=500, min_frag=80, max_frag=800, delta=25,
                            gain_loss_only=False, max_cuts=3, suppliers=[], use_primer3=True,
                            prod_min=200, prod_max=500, tm_min=50, tm_max=70,
-                           no_save_norm=True, joint_design=True, primer_pairs=2, top_results=0)
+                           no_save_norm=True, primer_pairs=2, top_results=0, **CHECKS_OFF)
 
     def primer_result(self, starts=(150, 0)):
         data = {'PRIMER_PAIR_NUM_RETURNED': len(starts)}
@@ -250,7 +251,8 @@ class DcapsTests(unittest.TestCase):
         self.seq = seq
         (self.root / 'toy.fa').write_text('>1\n' + seq + '\n')
         (self.root / 'v.tsv').write_text('chrom\tpos\tref\talt\n1\t301\tC\tT\n')
-        self.params = dict(core.DEFAULT_PARAMS, fasta=str(self.root / 'toy.fa'), input_file=str(self.root / 'v.tsv'),
+        self.params = dict(core.DEFAULT_PARAMS, **CHECKS_OFF, fasta=str(self.root / 'toy.fa'),
+                           input_file=str(self.root / 'v.tsv'),
                            flank=300, prod_min=120, prod_max=300, tm_min=55, tm_max=65, delta=10, top_results=0,
                            dcaps_tm_max=65, dcaps_delta=10)
 
@@ -357,7 +359,7 @@ class SiteGroupingTests(unittest.TestCase):
                 break
         (root / 'toy.fa').write_text('>1\n' + seq + '\n')
         (root / 'v.tsv').write_text('chrom\tpos\tref\talt\n1\t199\tC\tT\n')
-        self.params = dict(core.DEFAULT_PARAMS, fasta=str(root / 'toy.fa'), input_file=str(root / 'v.tsv'),
+        self.params = dict(core.DEFAULT_PARAMS, **CHECKS_OFF, fasta=str(root / 'toy.fa'), input_file=str(root / 'v.tsv'),
                            use_primer3=False, flank=500)
         self.enzymes = [e for e in core.AllEnzymes if e.site == 'CCGG']
 
@@ -396,7 +398,7 @@ class DcapsSettingsTests(unittest.TestCase):
         self.params = dict(fasta=str(root / 'toy.fa'), input_file=str(root / 'variants.tsv'), names2_file='',
                            flank=500, min_frag=80, max_frag=800, delta=25, gain_loss_only=False, max_cuts=3,
                            suppliers=[], use_primer3=True, prod_min=200, prod_max=500, tm_min=50, tm_max=70,
-                           no_save_norm=True, joint_design=True, primer_pairs=2, top_results=0)
+                           no_save_norm=True, primer_pairs=2, top_results=0, **CHECKS_OFF)
 
     def test_dcaps_settings_do_not_touch_natural_assays(self):
         def natural(**overrides):
@@ -408,13 +410,13 @@ class DcapsSettingsTests(unittest.TestCase):
         self.assertEqual(natural(), natural(dcaps_tm_max=80.0, dcaps_prod_min=50, dcaps_prod_max=2000,
                                             dcaps_delta=1))
 
-    def test_defaults_in_both_presets(self):
-        for preset in (core.RECOMMENDED_PARAMS, core.DEFAULT_PARAMS):
-            self.assertEqual((preset['dcaps_tm_max'], preset['dcaps_prod_min'], preset['dcaps_prod_max'],
-                              preset['dcaps_delta']), (70.0, 120, 300, 20))
+    def test_defaults(self):
+        defaults = core.DEFAULT_PARAMS
+        self.assertEqual((defaults['dcaps_tm_max'], defaults['dcaps_prod_min'], defaults['dcaps_prod_max'],
+                          defaults['dcaps_delta']), (70.0, 120, 300, 20))
 
     def test_validation_messages(self):
-        base = dict(core.RECOMMENDED_PARAMS, fasta=__file__, input_file=__file__)
+        base = dict(core.DEFAULT_PARAMS, fasta=__file__, input_file=__file__)
         self.assertEqual(core.validate_params(base), [])
         self.assertEqual(core.validate_params(dict(base, dcaps_prod_min=400)),
                          ['Минимальный размер продукта dCAPS больше максимального'])
@@ -427,10 +429,10 @@ class DcapsSettingsTests(unittest.TestCase):
         self.assertEqual(core.validate_params(dict(base, dcaps_tm_max='x')), ['Некорректный параметр: dcaps_tm_max'])
 
     def test_dcaps_settings_are_checked_only_when_dcaps_runs(self):    # review: 1.3.0 runs must not break
-        v11 = dict(core.DEFAULT_PARAMS, fasta=__file__, input_file=__file__)   # dCAPS off
-        self.assertEqual(core.validate_params(dict(v11, tm_min=71.0, tm_max=75.0)), [])
-        self.assertEqual(core.validate_params(dict(v11, dcaps_tm_max=50.0, dcaps_prod_min=400, dcaps_delta=0)), [])
-        on = dict(core.RECOMMENDED_PARAMS, fasta=__file__, input_file=__file__)   # fallback
+        off = dict(core.DEFAULT_PARAMS, dcaps='off', fasta=__file__, input_file=__file__)
+        self.assertEqual(core.validate_params(dict(off, tm_min=71.0, tm_max=75.0)), [])
+        self.assertEqual(core.validate_params(dict(off, dcaps_tm_max=50.0, dcaps_prod_min=400, dcaps_delta=0)), [])
+        on = dict(core.DEFAULT_PARAMS, fasta=__file__, input_file=__file__)   # fallback
         self.assertEqual(core.validate_params(dict(on, use_primer3=False, dcaps_tm_max=50.0, dcaps_delta=0)), [])
         self.assertEqual(core.validate_params(dict(on, tm_min=71.0, tm_max=75.0)),
                          ['Минимальный Tm праймеров dCAPS больше максимального'])
@@ -449,7 +451,8 @@ class WindowSearchRulesTests(unittest.TestCase):
         sequence = sequence[:197] + 'GAATTC' + sequence[203:]
         (root / 'toy.fa').write_text('>1\n' + sequence + '\n')
         (root / 'variants.tsv').write_text('chrom\tpos\tref\talt\n1\t200\tA\tG\n')
-        self.params = dict(core.DEFAULT_PARAMS, fasta=str(root / 'toy.fa'), input_file=str(root / 'variants.tsv'),
+        self.params = dict(core.DEFAULT_PARAMS, **CHECKS_OFF, fasta=str(root / 'toy.fa'),
+                           input_file=str(root / 'variants.tsv'),
                            use_primer3=False, flank=150, min_frag=20)
 
     def run_window(self, **overrides):
@@ -486,6 +489,31 @@ class WindowSearchRulesTests(unittest.TestCase):
         self.assertEqual({row['status'] for row in rows}, {'window_only'})
         self.assertEqual({row['search_mode'] for row in rows}, {'window'})
         self.assertTrue(all(row['reason'].startswith('Оценка окна без подобранных праймеров. ') for row in rows))
+
+
+class OneSearchTests(unittest.TestCase):
+    """The single-pair mode is gone: a joint_design key of older settings changes nothing."""
+
+    def test_joint_design_key_is_ignored(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        rng = random.Random(19)                       # the natural EcoRI scenario of JointDesignTests
+        sequence = ''.join(rng.choice('ACGT') for _ in range(400))
+        sequence = sequence[:197] + 'GAATTC' + sequence[203:]
+        (root / 'toy.fa').write_text('>1\n' + sequence + '\n')
+        (root / 'variants.tsv').write_text('chrom\tpos\tref\talt\n1\t200\tA\tG\n')
+        params = dict(core.DEFAULT_PARAMS, **CHECKS_OFF, fasta=str(root / 'toy.fa'),
+                      input_file=str(root / 'variants.tsv'), flank=500, prod_min=200, prod_max=500,
+                      tm_min=50, tm_max=70, primer_pairs=5, top_results=0)
+        params.pop('joint_design', None)
+        expected = core.run_rflp_gui_mode(params)
+        self.assertGreater(len({row[expected[0].index('primer_pair_index')] for row in expected[1]}), 1)
+        for value in (True, False):
+            with self.subTest(joint_design=value):
+                self.assertEqual(core.run_rflp_gui_mode(dict(params, joint_design=value)), expected)
+                self.assertEqual({row[expected[0].index('search_mode')] for row in expected[1]}, {'joint'})
+
 
 if __name__ == '__main__':
     unittest.main()

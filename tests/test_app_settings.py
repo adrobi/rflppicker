@@ -7,7 +7,7 @@ from PyQt6.QtCore import QSettings
 import rflp_core
 from app_settings import FILE_KEYS, AppSettings
 
-RECOMMENDED = {k: v for k, v in rflp_core.RECOMMENDED_PARAMS.items() if k not in FILE_KEYS}
+RECOMMENDED = {k: v for k, v in rflp_core.DEFAULT_PARAMS.items() if k not in FILE_KEYS}
 
 
 class AppSettingsTests(unittest.TestCase):
@@ -47,6 +47,12 @@ class AppSettingsTests(unittest.TestCase):
         self.settings.set_value('params', {'delta': 30})
         params = self.settings.params()
         self.assertEqual((params['delta'], params['dcaps_tm_max'], params['dcaps_delta']), (30, 70.0, 20))
+
+    def test_settings_of_1_4_0_with_the_joint_design_key(self):
+        self.settings.set_value('params', {'delta': 30, 'joint_design': False, 'primer_pairs': 7})
+        params = self.settings.params()
+        self.assertNotIn('joint_design', params)
+        self.assertEqual((params['delta'], params['primer_pairs']), (30, 7))
 
     def test_set_params_ignores_file_keys(self):
         self.settings.set_params(dict(RECOMMENDED, background_vcf='x.vcf', fasta='g.fa'))

@@ -6,7 +6,7 @@ import i18n
 import rflp_core
 import snp_summary
 from snp_summary import InputRecord, SnpSummary
-from tests.helpers import HEADER, core_row, write_text
+from tests.helpers import CHECKS_OFF, HEADER, core_row, write_text
 
 
 def rec(line, chrom, pos, ref, alt, snp_id=''):
@@ -101,7 +101,7 @@ class RealCoreJoinTests(unittest.TestCase):
             fasta = write_text(directory, 'toy.fa', '>1\n' + sequence + '\n')
             variants = write_text(directory, 'v.tsv', f'chrom\tpos\tref\talt\n1\t200\t{ref}\t{alt}\n'
                                                       f'1\t200\t{ref}\t{alt}\n1\t200\t{alt}\t{ref}\n')
-            params = dict(rflp_core.DEFAULT_PARAMS, fasta=fasta, input_file=variants, use_primer3=False,
+            params = dict(rflp_core.DEFAULT_PARAMS, **CHECKS_OFF, fasta=fasta, input_file=variants, use_primer3=False,
                           flank=150, min_frag=20)
             report = {}
             header, rows = rflp_core.run_rflp_gui_mode(params, report=report)

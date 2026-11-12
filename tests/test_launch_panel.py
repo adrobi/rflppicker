@@ -46,12 +46,12 @@ class LaunchPanelTests(unittest.TestCase):
     def test_parameter_groups_cover_the_core(self):
         files = {'input_file', 'fasta', 'names2_file', 'background_vcf'}
         self.assertEqual(set(KEY_PARAMS) | set(ADVANCED_PARAMS) | files,
-                         (set(rflp_core.RECOMMENDED_PARAMS) | {'input_file', 'fasta'}) - {'joint_design'})
+                         set(rflp_core.DEFAULT_PARAMS) | {'input_file', 'fasta'})
 
     def test_defaults_are_recommended(self):
         p = self.panel.collect_params()
-        for key, value in rflp_core.RECOMMENDED_PARAMS.items():
-            if key not in ('names2_file', 'background_vcf', 'joint_design'):
+        for key, value in rflp_core.DEFAULT_PARAMS.items():
+            if key not in ('names2_file', 'background_vcf'):
                 self.assertEqual(p[key], value, key)
         self.assertEqual(self.panel.changed_count(), 0)
         self.assertTrue(self.panel.findChild(QLabel, 'changed_badge').isHidden())
@@ -110,7 +110,7 @@ class LaunchPanelTests(unittest.TestCase):
         self.assertTrue(error.isHidden())
 
     def test_field_errors_mapping(self):
-        params = dict(rflp_core.RECOMMENDED_PARAMS, input_file='', fasta=r'C:\missing.fa', prod_min=700,
+        params = dict(rflp_core.DEFAULT_PARAMS, input_file='', fasta=r'C:\missing.fa', prod_min=700,
                       prod_max=600, tm_min=63.0, primer_pairs=0)
         errors = field_errors(params)
         self.assertEqual(errors['input_file'], 'Выберите файл SNP')
@@ -136,7 +136,7 @@ class LaunchPanelTests(unittest.TestCase):
         self.assertEqual(self.panel.collect_params()['dcaps_delta'], 20)
 
     def test_dcaps_errors_go_to_the_dcaps_fields(self):          # Review Focus 2
-        params = dict(rflp_core.RECOMMENDED_PARAMS, input_file=self.genome, fasta=self.genome,
+        params = dict(rflp_core.DEFAULT_PARAMS, input_file=self.genome, fasta=self.genome,
                       dcaps_prod_min=400, dcaps_tm_max=57.0, dcaps_delta=0)
         errors = field_errors(params)
         self.assertEqual(errors['dcaps_prod_min'], 'Минимальный размер продукта dCAPS больше максимального')
@@ -212,7 +212,7 @@ class LaunchPanelTests(unittest.TestCase):
         self.assertFalse(panel.validate())
         self.assertEqual(panel.findChild(QLabel, 'error_input_file').text(), 'Choose an SNP file')
         self.assertEqual(panel.findChild(QLabel, 'error_fasta').text(), 'Choose a genome')
-        self.assertEqual(field_errors(dict(rflp_core.RECOMMENDED_PARAMS, input_file=self.genome, fasta=self.genome,
+        self.assertEqual(field_errors(dict(rflp_core.DEFAULT_PARAMS, input_file=self.genome, fasta=self.genome,
                                            prod_min=900, prod_max=100))['prod_min'],
                          'Minimum product size is greater than maximum')
         dialog = AdvancedDialog(panel.collect_params(), panel)

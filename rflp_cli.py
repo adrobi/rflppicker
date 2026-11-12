@@ -118,7 +118,7 @@ def build_parser():
 
 
 def params_from_args(args):
-    params = dict(core.RECOMMENDED_PARAMS)
+    params = dict(core.DEFAULT_PARAMS)
     for key, value in vars(args).items():
         if key in params and value is not None:
             params[key] = value
