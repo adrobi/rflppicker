@@ -1262,10 +1262,8 @@ def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, 
                 fr, fal = frag_lengths(cr), frag_lengths(ca)
                 if params['gain_loss_only'] and len(cr) == len(ca):
                     return None
-                # Legacy baseline requires every fragment in range. Joint
-                # search treats the same range as a visibility window.
-                if not joint and any(x < params['min_frag'] or x > params['max_frag'] for x in fr + fal):
-                    return None
+                # min_frag..max_frag is the visibility window of the gel model:
+                # fragments outside it are hidden, the assay itself stays.
                 visible_r = [x for x in fr if model.min_visible <= x <= model.max_visible]
                 visible_a = [x for x in fal if model.min_visible <= x <= model.max_visible]
                 actual_delta = diagnostic_delta(visible_r, visible_a)
@@ -1273,7 +1271,7 @@ def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, 
                 if actual_delta < threshold:
                     return None
                 scores = score_genotypes(fr, fal, model)
-                if joint and scores['genotype_quality'] == 'ambiguous':
+                if scores['genotype_quality'] == 'ambiguous':
                     local['genotype_rejected'] += 1
                     return None
                 reason = {
@@ -1387,20 +1385,18 @@ def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, 
                 hits = group_by_site(hits)
             counters['variants_with_candidates'] += bool(hits)
             counters['variants_with_robust_candidates'] += any(h['genotype_quality'] == 'robust' for h in hits)
-            # Limit only joint search. The one-pair/window baselines retain all hits.
-            limit = params['top_results'] if joint else 0
+            limit = params['top_results']
             for rank, hit in enumerate(hits[:limit] if limit else hits, 1):
                 append_record(dict(hit, assay_rank=rank))
             if not hits and failure is not None:
                 append_record(failure)
             elif not hits:
-                reason = ('Не найдено сочетание для различения трёх генотипов' if joint
-                          else 'Подходящий фермент не найден')
+                reason = 'Не найдено сочетание для различения трёх генотипов'
                 if local['ambiguous']:
                     reason += f"; окон с неопределёнными основаниями: {local['ambiguous']}"
                 if local['errors']:
                     reason += f"; ошибок расчёта ферментов: {local['errors']}"
-                append_record(dict(base, status='no_discriminating_assay' if joint else 'no_enzyme_found', reason=reason))
+                append_record(dict(base, status='no_discriminating_assay', reason=reason))
             if status_cb:
                 status_cb(f'[INFO] {base["variant"]}: пар {base["pairs_evaluated"]}, '
                           f"кандидатов {len(hits)}, неразличимых {local['genotype_rejected']}")

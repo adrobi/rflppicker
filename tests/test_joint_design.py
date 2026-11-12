@@ -437,5 +437,55 @@ class DcapsSettingsTests(unittest.TestCase):
         self.assertEqual(core.validate_params(dict(on, tm_min=float('nan'))), ['Некорректный параметр: tm_min/tm_max'])
 
 
+class WindowSearchRulesTests(unittest.TestCase):
+    """Without Primer3 the whole window is scored by the same rules as a primer pair."""
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        rng = random.Random(3)                        # EcoRI cuts REF into 149 + 152 bp of the 301 bp window
+        sequence = ''.join(rng.choice('ACGT') for _ in range(400))
+        sequence = sequence[:197] + 'GAATTC' + sequence[203:]
+        (root / 'toy.fa').write_text('>1\n' + sequence + '\n')
+        (root / 'variants.tsv').write_text('chrom\tpos\tref\talt\n1\t200\tA\tG\n')
+        self.params = dict(core.DEFAULT_PARAMS, fasta=str(root / 'toy.fa'), input_file=str(root / 'variants.tsv'),
+                           use_primer3=False, flank=150, min_frag=20)
+
+    def run_window(self, **overrides):
+        report = {}
+        header, rows = core.run_rflp_gui_mode(dict(self.params, **overrides), report=report)
+        return [dict(zip(header, row)) for row in rows], report['summary']
+
+    def test_fragment_range_is_a_visibility_window(self):
+        rows, _ = self.run_window(min_frag=150)       # the 149 bp fragment is hidden, the assay stays
+        (ecori,) = [row for row in rows if row['enzyme'] == 'EcoRI']
+        self.assertEqual((ecori['frags_ref'], ecori['frags_alt']), ('149+152', '301'))
+        self.assertEqual((ecori['hidden_ref_count'], ecori['bands_ref_ref'], ecori['bands_alt_alt']), (1, '152', '301'))
+
+    def test_ambiguous_assays_are_excluded(self):
+        rows, summary = self.run_window(gel_resolution_bp=200.0)   # 152 and 301 bp are one band on such a gel
+        self.assertNotIn('EcoRI', [row['enzyme'] for row in rows])
+        self.assertNotIn('ambiguous', [row['genotype_quality'] for row in rows])
+        self.assertGreater(summary['genotype_rejected'], 0)
+
+    def test_top_results_limits_the_window_search(self):
+        all_rows, _ = self.run_window(top_results=0)
+        self.assertGreater(len(all_rows), 2)
+        rows, _ = self.run_window(top_results=2)
+        self.assertEqual([row['assay_rank'] for row in rows], [1, 2])
+        self.assertEqual([row['enzyme'] for row in rows], [row['enzyme'] for row in all_rows[:2]])
+
+    def test_snp_without_assay_gets_the_joint_status(self):
+        (row,), _ = self.run_window(gain_loss_only=True, max_cuts=0)
+        self.assertEqual(row['status'], 'no_discriminating_assay')
+        self.assertTrue(row['reason'].startswith('Не найдено сочетание для различения трёх генотипов'))
+
+    def test_found_assays_keep_the_window_status(self):
+        rows, _ = self.run_window()
+        self.assertEqual({row['status'] for row in rows}, {'window_only'})
+        self.assertEqual({row['search_mode'] for row in rows}, {'window'})
+        self.assertTrue(all(row['reason'].startswith('Оценка окна без подобранных праймеров. ') for row in rows))
+
 if __name__ == '__main__':
     unittest.main()
