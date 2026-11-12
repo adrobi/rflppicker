@@ -2,6 +2,7 @@
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 import openpyxl
@@ -45,6 +46,10 @@ class EnglishInterfaceTests(unittest.TestCase):
         self.tmp = self._dir.name
         self.qs = QSettings(os.path.join(self.tmp, 's.ini'), QSettings.Format.IniFormat)
         self.fasta = write_text(self.tmp, 'genome.fa', '>1\nACGT\n')
+        # Genomes found next to the program would put their paths (maybe Cyrillic) into the window.
+        patcher = patch('launch_panel.get_base_dir', return_value=self.tmp)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.window = qtprimer3_vis.RFLPPickerGUI(AppSettings(self.qs), ThemeController(self.app, 'light'))
         self.addCleanup(dispose, self.window)
         self.addCleanup(self.window.details.close_fasta)
