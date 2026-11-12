@@ -150,8 +150,10 @@ class CliTests(unittest.TestCase):
         with contextlib.redirect_stderr(stderr):
             rflp_cli.main(['--lang', 'en', '--fasta', str(self.fasta), '--variants', str(self.variants),
                            '--out', str(self.root / 'out.csv'), '-q'])
-            self.fasta.write_text('not a fasta\n')
-            code = rflp_cli.main(['--lang', 'en', '--fasta', str(self.fasta), '--variants', str(self.variants),
+            # A new file: rewriting the indexed FASTA within the same second keeps its old index.
+            broken = self.root / 'broken.fa'
+            broken.write_text('not a fasta\n')
+            code = rflp_cli.main(['--lang', 'en', '--fasta', str(broken), '--variants', str(self.variants),
                                   '--out', str(self.root / 'out.csv'), '-q'])
         self.assertEqual(code, 1)
         self.assertIn('No SNP was accepted', stderr.getvalue())
