@@ -479,6 +479,23 @@ class WindowSearchRulesTests(unittest.TestCase):
         self.assertEqual([row['assay_rank'] for row in rows], [1, 2])
         self.assertEqual([row['enzyme'] for row in rows], [row['enzyme'] for row in all_rows[:2]])
 
+    def test_limit_is_applied_after_grouping_by_site(self):
+        checks_on = dict(commercial_only=True, group_isoschizomers=True)
+        all_rows, _ = self.run_window(top_results=0, **checks_on)
+        sites = [row['site'] for row in all_rows]
+        self.assertEqual(len(sites), len(set(sites)))
+        self.assertGreater(len(all_rows), 1)
+        (first,), summary = self.run_window(top_results=1, **checks_on)
+        self.assertEqual((first['enzyme'], first['isoschizomers']), (all_rows[0]['enzyme'], all_rows[0]['isoschizomers']))
+        self.assertGreater(summary['candidates'], 1)             # counted before the limit
+
+    def test_an_allele_without_visible_bands_is_not_an_assay(self):
+        rows, _ = self.run_window(max_frag=200)                  # the uncut 301 bp allele is hidden
+        self.assertNotIn('EcoRI', [row['enzyme'] for row in rows])
+        for row in rows:
+            if row['enzyme']:
+                self.assertTrue(row['bands_ref_ref'] and row['bands_alt_alt'], row)
+
     def test_snp_without_assay_gets_the_joint_status(self):
         (row,), _ = self.run_window(gain_loss_only=True, max_cuts=0)
         self.assertEqual(row['status'], 'no_discriminating_assay')

@@ -31,8 +31,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
-# The settings of the program window (rflp_core.DEFAULT_PARAMS of 1.5.0), with every assay reported.
-# joint_design is read by releases up to 1.4.0 only, where it chose the search that is now the only one.
+# Parameters that only older releases read; they are left out of the compared report.
+# joint_design: up to 1.4.0 it chose the search that is now the only one.
+REMOVED_PARAMS = ('joint_design',)
+# The settings of the program window (rflp_core.DEFAULT_PARAMS), with every assay reported.
 BASE_PARAMS = dict(names2_file='', flank=300, min_frag=80, max_frag=800, delta=25, max_cuts=3,
                    prod_min=250, prod_max=600, tm_min=58.0, tm_max=62.0,
                    gel_resolution_bp=10.0, gel_resolution_pct=3.0, gel_stress_factor=1.5,
@@ -76,6 +78,14 @@ def _extends(base, cand):
     return _canon(base) == _canon(cand)
 
 
+def comparable_report(report):
+    """The report without the parameters a later release no longer has."""
+    if 'parameters' not in report:
+        return report
+    return dict(report, parameters={key: value for key, value in report['parameters'].items()
+                                    if key not in REMOVED_PARAMS})
+
+
 def compatible(base, cand):
     """Only appended columns and new report fields: every baseline value is unchanged."""
     n = len(base['header'])
@@ -106,7 +116,7 @@ def run_case(code_dir, case_file, out_file):
     except Exception as exc:  # the error itself is part of the compared result
         header, rows, error = [], [], f'{type(exc).__name__}: {exc}'
     elapsed = time.perf_counter() - started
-    result = json.dumps(dict(header=header, rows=rows, report=report, error=error),
+    result = json.dumps(dict(header=header, rows=rows, report=comparable_report(report), error=error),
                         ensure_ascii=False, sort_keys=True)
     trace = json.dumps(dict(log=log, progress=progress), ensure_ascii=False)
     out = Path(out_file)

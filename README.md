@@ -112,7 +112,7 @@ flowchart TD
     J --> M
     M --> N[Compare REF and ALT restriction sites]
     N --> O{Suitable enzyme?}
-    O -->|No| P[Status no_enzyme_found]
+    O -->|No| P[Status no_discriminating_assay]
     O -->|Yes| Q[Score the three genotypes and rank the candidates]
     L --> R[Table and report]
     P --> R

@@ -1030,7 +1030,7 @@ ASSAY_HEADER = [
     'worst_bands_ref_alt', 'worst_bands_alt_alt', 'visible_band_count',
     'hidden_ref_count', 'hidden_alt_count', 'search_mode', 'scoring_model',
 ]
-# Added after v1.1.0; appended so that the v1.1.0 columns keep their order.
+# Added in 1.2 at the end of the row.
 V12_HEADER = ['isoschizomers', 'primer_site', 'repeat_pct', 'background_variants',
               'background_site_variants', 'design', 'primer_mismatches']
 

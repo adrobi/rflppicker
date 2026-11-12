@@ -54,6 +54,15 @@ class AppSettingsTests(unittest.TestCase):
         self.assertNotIn('joint_design', params)
         self.assertEqual((params['delta'], params['primer_pairs']), (30, 7))
 
+    def test_full_settings_of_1_4_0_keep_every_other_value(self):
+        saved = dict(RECOMMENDED, joint_design=False, delta=30, primer_pairs=7, dcaps='always', tm_max=64.5,
+                     commercial_only=False, suppliers=['N'], snp_end_distance=0, mask_repeats=False)
+        self.settings.set_value('params', saved)
+        params = AppSettings(self.reopen()).params()
+        self.assertEqual(params, {key: value for key, value in saved.items() if key != 'joint_design'})
+        self.settings.set_params(dict(params, joint_design=True))     # the key is not written back
+        self.assertNotIn('joint_design', AppSettings(self.reopen()).value('params'))
+
     def test_set_params_ignores_file_keys(self):
         self.settings.set_params(dict(RECOMMENDED, background_vcf='x.vcf', fasta='g.fa'))
         self.assertEqual(self.settings.params(), RECOMMENDED)

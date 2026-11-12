@@ -236,7 +236,7 @@ ARS-UI_Ramb_v2.0) и GLR1/MseI (больше трёх разрезов в амп
 
 ```powershell
 python examples/generate_demo.py
-python rflp_cli.py --fasta examples/synthetic.fa --variants examples/synthetic.tsv --out results/demo.xlsx
+python rflp_cli.py --fasta examples/synthetic.fa --variants examples/synthetic.tsv --out demo.xlsx
 ```
 
 Эти данные пригодны для проверки работоспособности, не для выводов о
