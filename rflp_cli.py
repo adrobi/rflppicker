@@ -25,7 +25,10 @@ DESCRIPTION = N_('''RFLP Picker из командной строки: тот ж�
 
 Результат сохраняется в CSV или Excel (по расширению --out). В Excel, как и
 при экспорте из окна, добавляются листы Run (параметры, версии, сводка) и
-Rejected (отклонённые варианты). Журнал выводится в stderr.''')
+Rejected (отклонённые варианты). Журнал выводится в stderr.
+
+Скачать референсный геном с NCBI в папку genoms рядом с программой:
+    python rflp_cli.py --download-genome GCF_016772045.1''')
 
 
 def build_parser():
@@ -160,6 +163,41 @@ def translate_core_log() -> None:
         core.logger.addFilter(CoreLogTranslation())
 
 
+def download_command(argv) -> int:
+    """--download-genome ACCESSION: the genome and its chromosome names from NCBI; the path goes to stdout."""
+    import genome_download
+    parser = argparse.ArgumentParser(prog='rflp_cli', add_help=False)
+    parser.add_argument('--download-genome', required=True, metavar='ACCESSION')
+    parser.add_argument('--lang', choices=LANGS)
+    parser.add_argument('-q', '--quiet', action='store_true')
+    args = parser.parse_args(argv)
+    shown = [-1]
+
+    def progress(done, total):
+        tenth = 10 * done // total if total else 0
+        if not args.quiet and tenth != shown[0]:
+            shown[0] = tenth
+            print(t('Загрузка с NCBI: {done} из {total} МБ', done=round(done / 1e6), total=round(total / 1e6)),
+                  file=sys.stderr, flush=True)
+
+    def status(text):
+        if not args.quiet:
+            print(text, file=sys.stderr, flush=True)
+
+    try:
+        fasta, names = genome_download.download_genome(args.download_genome, core.get_base_dir(),
+                                                       progress_cb=progress, status_cb=status)
+    except KeyboardInterrupt:
+        print(t('Загрузка остановлена; при повторе она продолжится с этого места.'), file=sys.stderr)
+        return 130
+    except (genome_download.GenomeDownloadError, OSError) as exc:
+        print(t('Ошибка: {error}', error=str(exc) or type(exc).__name__), file=sys.stderr)
+        return 1
+    status(t('Геном: {fasta}\nХромосомы: {names}', fasta=fasta, names=names))
+    print(fasta)
+    return 0
+
+
 def main(argv=None):
     # A redirected Windows console uses a legacy code page without "×", "′" etc.
     for stream in (sys.stdout, sys.stderr):
@@ -167,6 +205,8 @@ def main(argv=None):
             stream.reconfigure(errors='replace')
     choose_language(argv)
     translate_core_log()
+    if any(str(arg).split('=')[0] == '--download-genome' for arg in (sys.argv[1:] if argv is None else argv)):
+        return download_command(argv)
     parser = build_parser()
     args = parser.parse_args(argv)
     out = Path(args.out)

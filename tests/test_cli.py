@@ -160,6 +160,35 @@ class CliTests(unittest.TestCase):
         self.assertIn('Error:', stderr.getvalue())
         self.assertIsNone(re.search('[А-Яа-яЁё]', stderr.getvalue()), stderr.getvalue())
 
+    def test_download_genome_command(self):
+        import genome_download
+        calls = []
+
+        def fake(accession, base_dir, progress_cb=None, status_cb=None, cancel_cb=None):
+            calls.append(accession)
+            status_cb('Загрузка с NCBI…')
+            progress_cb(50, 100)
+            return str(self.root / 'genoms' / 'Toy.fa'), str(self.root / 'names' / 'Toy.txt')
+
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with patch.object(genome_download, 'download_genome', fake), contextlib.redirect_stdout(stdout), \
+                contextlib.redirect_stderr(stderr):
+            code = rflp_cli.main(['--lang', 'ru', '--download-genome', 'GCF_016772045.1'])
+        self.assertEqual((code, calls), (0, ['GCF_016772045.1']))
+        self.assertEqual(stdout.getvalue().strip(), str(self.root / 'genoms' / 'Toy.fa'))   # for scripts
+        self.assertIn('Загрузка с NCBI…', stderr.getvalue())
+        self.assertIn('Toy.txt', stderr.getvalue())
+
+    def test_download_genome_error(self):
+        import genome_download
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            code = rflp_cli.main(['--lang', 'ru', '--download-genome', 'овца'])
+        self.assertEqual(code, 1)
+        self.assertIn('Ошибка: Номер сборки должен иметь вид GCF_016772045.1', stderr.getvalue())
+        self.assertNotIn('Traceback', stderr.getvalue())
+        self.assertTrue(issubclass(genome_download.GenomeDownloadError, Exception))
+
     def test_preset_and_joint_keys_are_gone(self):
         for keys in (['--preset', 'v1.1'], ['--preset', 'recommended'], ['--joint'], ['--no-joint']):
             with self.subTest(keys=keys):

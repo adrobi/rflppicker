@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (
 import icons
 import palette
 from app_settings import AppSettings
+from genome_dialog import GenomeDownloadDialog
 from i18n import N_, core_text, t
 from rflp_core import (
     DEFAULT_PARAMS, _PRIMER3_AVAILABLE, _SUPPLIER_CANON, get_base_dir, validate_params,
@@ -29,6 +30,8 @@ SUPPLIER_TITLES = {'A': 'Agilent', 'E': 'Thermo Fisher', 'F': 'Promega', 'H': 'M
                    'Z': 'SinaClon'}
 DCAPS_CHOICES = ((N_('Нет'), 'off'), (N_('Если нет надёжной схемы'), 'fallback'), (N_('Для каждого SNP'), 'always'))
 CHOOSE_FILE = N_('Выбрать файл…')
+DOWNLOAD_GENOME = N_('Скачать геном…')
+_DOWNLOAD_ITEM = '\0download'   # item data of «Скачать геном…»; «Выбрать файл…» has None
 COLLAPSED_WIDTH = 36
 _MISSING = {'input_file': N_('Выберите файл SNP'), 'fasta': N_('Выберите геном')}
 
@@ -483,14 +486,23 @@ class LaunchPanel(QWidget):
             seen.add(key)
             self.genome_combo.addItem(os.path.basename(path), path)
             self.genome_combo.setItemData(self.genome_combo.count() - 1, path, Qt.ItemDataRole.ToolTipRole)
+        genomes = self.genome_combo.count()
+        self.genome_combo.addItem(t(DOWNLOAD_GENOME), _DOWNLOAD_ITEM)
         self.genome_combo.addItem(t(CHOOSE_FILE), None)
-        index = self.genome_combo.findData(current) if current else (0 if self.genome_combo.count() > 1 else -1)
+        index = self.genome_combo.findData(current) if current else (0 if genomes else -1)
         self.genome_combo.setCurrentIndex(index if index >= 0 else -1)
         self.genome_combo.blockSignals(False)
         self._mark_missing(self.genome_combo)
         self.refresh_names()
 
     def _on_genome_activated(self, index: int):
+        if self.genome_combo.itemData(index) == _DOWNLOAD_ITEM:
+            dialog = GenomeDownloadDialog(get_base_dir(), self)
+            path = dialog.fasta_path if dialog.exec() else ''
+            if path:
+                self._settings.add_recent_genome(path)
+            self._fill_genomes(path or self._previous_genome)
+            return
         if self.genome_combo.itemData(index) is None:
             path, _ = QFileDialog.getOpenFileName(self, t('Геном FASTA'), '',
                                                   t('FASTA (*.fa *.fasta *.fna);;Все файлы (*)'))
@@ -503,7 +515,8 @@ class LaunchPanel(QWidget):
         self.refresh_names()
 
     def genome_path(self) -> str:
-        return self.genome_combo.currentData() or ''
+        path = self.genome_combo.currentData()
+        return '' if path in (None, _DOWNLOAD_ITEM) else path
 
     def refresh_names(self) -> None:
         genome = self.genome_path()

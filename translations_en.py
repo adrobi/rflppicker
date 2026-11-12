@@ -122,7 +122,10 @@ EN = {
 
 Результат сохраняется в CSV или Excel (по расширению --out). В Excel, как и
 при экспорте из окна, добавляются листы Run (параметры, версии, сводка) и
-Rejected (отклонённые варианты). Журнал выводится в stderr.''':
+Rejected (отклонённые варианты). Журнал выводится в stderr.
+
+Скачать референсный геном с NCBI в папку genoms рядом с программой:
+    python rflp_cli.py --download-genome GCF_016772045.1''':
     '''RFLP Picker from the command line: the same analysis as in the program window.
 
 Example:
@@ -130,7 +133,10 @@ Example:
 
 The result is saved as CSV or Excel (by the extension of --out). Like the
 export from the window, Excel gets the Run sheet (parameters, versions, totals)
-and the Rejected sheet (rejected variants). The log goes to stderr.''',
+and the Rejected sheet (rejected variants). The log goes to stderr.
+
+Download a reference genome from NCBI into the genoms folder next to the program:
+    python rflp_cli.py --download-genome GCF_016772045.1''',
     'Язык справки, сообщений и листов Сводка/Праймеры (по умолчанию — язык системы)':
         'Language of the help, the messages and the Summary/Primers sheets (default: the system language)',
     'данные': 'data',
@@ -197,6 +203,43 @@ and the Rejected sheet (rejected variants). The log goes to stderr.''',
     'Анализ прерван.': 'Analysis interrupted.',
     '{key}: папка не существует: {folder}': '{key}: the folder does not exist: {folder}',
     'Ошибка: {error}': 'Error: {error}',
+    # genome download
+    'Овца': 'Sheep', 'Корова': 'Cattle', 'Коза': 'Goat', 'Свинья': 'Pig', 'Курица': 'Chicken', 'Рис': 'Rice',
+    'Пшеница': 'Wheat', 'Ячмень': 'Barley', 'Сорго': 'Sorghum',
+    'Скачать геном…': 'Download a genome…',
+    'Скачать геном': 'Download a genome',
+    'Сборка генома на NCBI': 'Genome assembly at NCBI',
+    '{species} — {name} ({accession}, {size} ГБ)': '{species} — {name} ({accession}, {size} GB)',
+    'Другая сборка…': 'Another assembly…',
+    'Номер сборки, например GCF_016772045.1': 'Assembly accession, for example GCF_016772045.1',
+    'Координаты в файле SNP должны относиться к той же сборке. Геном сохраняется в папку '
+    'genoms рядом с программой; файл соответствий названий хромосом создаётся автоматически.':
+        'The coordinates of the SNP file must belong to the same assembly. The genome is saved to the '
+        'genoms folder next to the program; the chromosome name mapping file is made automatically.',
+    'Отмена': 'Cancel',
+    'Скачать': 'Download',
+    'Останавливаю загрузку…': 'Stopping the download…',
+    'Загрузка с NCBI: {done} из {total} МБ': 'Downloading from NCBI: {done} of {total} MB',
+    'Загрузка остановлена; при повторе она продолжится с этого места.':
+        'The download was stopped; a repeat continues from this point.',
+    'Загрузка с NCBI…': 'Downloading from NCBI…',
+    'Проверка контрольной суммы…': 'Checking the checksum…',
+    'Распаковка…': 'Unpacking…',
+    'Индексация…': 'Indexing…',
+    'NCBI ответил ошибкой {code} ({url})': 'NCBI answered with error {code} ({url})',
+    'Нет связи с NCBI: {error}': 'No connection to NCBI: {error}',
+    'NCBI не поддержал докачку; удалите незавершённый файл и повторите':
+        'NCBI did not continue the download; delete the unfinished file and repeat',
+    'Соединение с NCBI прервано: {error}': 'The connection to NCBI was lost: {error}',
+    'Номер сборки должен иметь вид GCF_016772045.1, а не «{value}»':
+        'The assembly accession must look like GCF_016772045.1, not “{value}”',
+    'Сборка {accession} не найдена на NCBI': 'The assembly {accession} was not found at NCBI',
+    'На NCBI нет контрольной суммы файла {name}': 'NCBI has no checksum of the file {name}',
+    'Недостаточно места на диске: нужно около {size} ГБ в папке {folder}':
+        'Not enough disk space: about {size} GB are needed in the folder {folder}',
+    'Контрольная сумма не совпала с NCBI: загрузка повреждена, повторите её':
+        'The checksum differs from NCBI: the download is damaged, repeat it',
+    'Геном: {fasta}\nХромосомы: {names}': 'Genome: {fasta}\nChromosomes: {names}',
     '{key}: это папка, а не файл: {path}': '{key}: this is a folder, not a file: {path}',
     '{key}: нет права записи в папку: {folder}': '{key}: no permission to write to the folder: {folder}',
     '[WARN] В файле нет SNP.': '[WARN] The file has no SNPs.',
