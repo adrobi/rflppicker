@@ -17,7 +17,6 @@ from i18n import LANGS, N_, core_text, locale_language, set_language, t
 from reporting import export_csv, export_excel
 from snp_summary import build_summaries, excel_sheets, read_input_records, results_table
 
-PRESETS = {'recommended': core.RECOMMENDED_PARAMS, 'v1.1': core.DEFAULT_PARAMS}
 DESCRIPTION = N_('''RFLP Picker из командной строки: тот же анализ, что в окне программы.
 
 Пример:
@@ -42,12 +41,8 @@ def build_parser():
                       help=t('Файл соответствий названий хромосом'))
     data.add_argument('--out', required=True, help=t('Файл результата: .csv или .xlsx'))
     data.add_argument('--rejected', help=t('CSV с отклонёнными вариантами (в .xlsx они всегда на листе Rejected)'))
-    data.add_argument('--preset', choices=list(PRESETS), default='recommended',
-                      help=t('Исходный набор параметров: recommended — настройки по итогам '
-                             'проверки (как в окне программы), v1.1 — воспроизведение v1.1.0 '
-                             '(по умолчанию: %(default)s)'))
 
-    search = parser.add_argument_group(t('поиск (по умолчанию — значения пресета)'))
+    search = parser.add_argument_group(t('поиск (по умолчанию — как в окне программы)'))
     search.add_argument('--flank', type=int, help=t('Фланг вокруг SNP, п.н.'))
     search.add_argument('--min-frag', dest='min_frag', type=int, metavar='BP',
                         help=t('Мин. видимый фрагмент, п.н.'))
@@ -93,11 +88,9 @@ def build_parser():
     choice.add_argument('--dcaps-delta', dest='dcaps_delta', type=int, metavar='BP',
                         help=t('dCAPS: порог Δ, п.н. (вместо --delta для схем dCAPS)'))
 
-    primers = parser.add_argument_group(t('праймеры и совместный подбор'))
+    primers = parser.add_argument_group(t('праймеры'))
     primers.add_argument('--primer3', dest='use_primer3', action=argparse.BooleanOptionalAction,
                          help=t('Подбирать праймеры Primer3 (--no-primer3 — поиск по окну)'))
-    primers.add_argument('--joint', dest='joint_design', action=argparse.BooleanOptionalAction,
-                         help=t('Совместный подбор праймеров и фермента'))
     primers.add_argument('--pairs', dest='primer_pairs', type=int, metavar='K', help=t('Пар Primer3 на SNP'))
     primers.add_argument('--top', dest='top_results', type=int, metavar='N', help=t('Результатов на SNP (0 — все)'))
     primers.add_argument('--prod-min', dest='prod_min', type=int, metavar='BP',
@@ -125,7 +118,7 @@ def build_parser():
 
 
 def params_from_args(args):
-    params = dict(PRESETS[args.preset])
+    params = dict(core.RECOMMENDED_PARAMS)
     for key, value in vars(args).items():
         if key in params and value is not None:
             params[key] = value

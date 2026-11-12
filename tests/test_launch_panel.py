@@ -46,12 +46,12 @@ class LaunchPanelTests(unittest.TestCase):
     def test_parameter_groups_cover_the_core(self):
         files = {'input_file', 'fasta', 'names2_file', 'background_vcf'}
         self.assertEqual(set(KEY_PARAMS) | set(ADVANCED_PARAMS) | files,
-                         set(rflp_core.RECOMMENDED_PARAMS) | {'input_file', 'fasta'})
+                         (set(rflp_core.RECOMMENDED_PARAMS) | {'input_file', 'fasta'}) - {'joint_design'})
 
     def test_defaults_are_recommended(self):
         p = self.panel.collect_params()
         for key, value in rflp_core.RECOMMENDED_PARAMS.items():
-            if key not in ('names2_file', 'background_vcf'):
+            if key not in ('names2_file', 'background_vcf', 'joint_design'):
                 self.assertEqual(p[key], value, key)
         self.assertEqual(self.panel.changed_count(), 0)
         self.assertTrue(self.panel.findChild(QLabel, 'changed_badge').isHidden())
@@ -68,20 +68,31 @@ class LaunchPanelTests(unittest.TestCase):
         self.assertEqual(picker.text(), 'Все, включая непродаваемые')
         self.assertEqual(self.panel.collect_params()['commercial_only'], False)
 
-    def test_changed_badge_and_presets(self):
+    def test_changed_badge_and_reset(self):
         self.panel.set_params(dict(self.panel.collect_params(), delta=15, snp_end_distance=0))
         self.assertEqual(self.panel.changed_count(), 2)
         badge = self.panel.findChild(QLabel, 'changed_badge')
         self.assertEqual((badge.text(), badge.isHidden()), ('изменено 2', False))
-        self.panel.apply_preset('v1.1')
-        self.assertEqual(self.panel.collect_params()['dcaps'], 'off')
-        self.panel.apply_preset('recommended')
+        self.panel.reset_to_defaults()
         self.assertEqual(self.panel.changed_count(), 0)
         self.assertTrue(badge.isHidden())
 
-    def test_presets_keep_the_files(self):
+    def test_single_search_without_the_1_1_0_preset(self):
+        from PyQt6.QtWidgets import QPushButton
+        dialog = AdvancedDialog(self.panel.collect_params(), self.panel)
+        self.addCleanup(dispose, dialog)
+        self.assertNotIn('joint_design', self.panel.collect_params())
+        self.assertNotIn('joint_design', dialog.params())
+        self.assertEqual([button.text() for button in dialog.findChildren(QPushButton)],
+                         ['Сбросить к рекомендуемым', 'Готово'])
+        for key in ('min_frag', 'max_frag'):
+            self.assertNotIn('одной пар', dialog._widgets[key].toolTip())
+
+    def test_reset_keeps_the_files(self):
         self.panel.set_files(self.genome, self.genome, self.genome)
-        self.panel.apply_preset('v1.1')
+        self.panel.set_params(dict(self.panel.collect_params(), delta=15))
+        self.panel.reset_to_defaults()
+        self.assertEqual(self.panel.collect_params()['delta'], 25)
         p = self.panel.collect_params()
         self.assertEqual((p['input_file'], p['fasta'], p['background_vcf']), (self.genome,) * 3)
 
@@ -115,13 +126,13 @@ class LaunchPanelTests(unittest.TestCase):
         self.assertEqual((values['dcaps_tm_max'], values['dcaps_prod_min'], values['dcaps_prod_max'],
                           values['dcaps_delta']), (70.0, 120, 300, 20))
         captions = [label.text() for label in dialog.findChildren(QLabel) if label.property('role') == 'caption']
-        self.assertEqual(captions, ['Гель', 'Поиск', 'Для сравнения и отладки', 'Проверки',
+        self.assertEqual(captions, ['Гель', 'Поиск', 'Особые случаи', 'Проверки',
                                     'dCAPS (праймер с несовпадением)'])
         self.assertTrue(dialog.findChild(QWidget, 'adv_dcaps_tm_max').toolTip().startswith('Только для схем dCAPS'))
         self.assertLessEqual(dialog.sizeHint().height(), 1000)   # fits a 1920×1080 screen
         self.panel.set_params(dict(self.panel.collect_params(), dcaps_delta=15))
         self.assertEqual(self.panel.changed_count(), 1)
-        self.panel.apply_preset('recommended')
+        self.panel.reset_to_defaults()
         self.assertEqual(self.panel.collect_params()['dcaps_delta'], 20)
 
     def test_dcaps_errors_go_to_the_dcaps_fields(self):          # Review Focus 2

@@ -13,7 +13,7 @@ import palette
 from app_settings import AppSettings
 from i18n import N_, core_text, t
 from rflp_core import (
-    DEFAULT_PARAMS, RECOMMENDED_PARAMS, _PRIMER3_AVAILABLE, _SUPPLIER_CANON, get_base_dir, validate_params,
+    RECOMMENDED_PARAMS, _PRIMER3_AVAILABLE, _SUPPLIER_CANON, get_base_dir, validate_params,
 )
 
 KEY_PARAMS = ('prod_min', 'prod_max', 'tm_min', 'tm_max', 'commercial_only', 'suppliers', 'dcaps')
@@ -21,7 +21,7 @@ ADVANCED_PARAMS = ('min_frag', 'max_frag', 'delta', 'gel_resolution_bp', 'gel_re
                    'flank', 'primer_pairs', 'top_results', 'max_cuts', 'group_isoschizomers', 'snp_end_distance',
                    'exclude_primer_sites', 'mask_repeats', 'exclude_background_sites', 'dcaps_mismatches',
                    'dcaps_tm_max', 'dcaps_prod_min', 'dcaps_prod_max', 'dcaps_delta',
-                   'joint_design', 'use_primer3', 'gain_loss_only', 'skip_norm', 'no_save_norm')
+                   'use_primer3', 'gain_loss_only', 'skip_norm', 'no_save_norm')
 PANEL_ERROR_KEYS = ('input_file', 'fasta', 'background_vcf', 'prod_min', 'tm_min')
 SUPPLIER_TITLES = {'A': 'Agilent', 'E': 'Thermo Fisher', 'F': 'Promega', 'H': 'Minotech', 'I': 'SibEnzyme',
                    'J': 'Nippon Gene', 'K': 'Takara', 'M': 'Roche', 'N': 'NEB',
@@ -149,11 +149,9 @@ class SupplierPicker(QToolButton):
 # key -> (label, kind, minimum, maximum, step/decimals, tooltip)
 _ADVANCED_FIELDS = {
     'min_frag': (N_('Видимые фрагменты от, п.н.'), 'int', 10, 5000, 1,
-                 N_('В совместном поиске — нижняя граница видимых полос. В поиске по одной паре/окну — '
-                    'ограничение на каждый фрагмент.')),
+                 N_('Нижняя граница видимых полос: более короткие фрагменты на геле не видны и в модели скрыты.')),
     'max_frag': (N_('до, п.н.'), 'int', 10, 5000, 1,
-                 N_('В совместном поиске — верхняя граница видимых полос. В поиске по одной паре/окну — '
-                    'ограничение на каждый фрагмент.')),
+                 N_('Верхняя граница видимых полос: более длинные фрагменты в модели скрыты.')),
     'delta': (N_('Порог Δ, п.н.'), 'int', 1, 1000, 1, N_('Наименьшее различие видимых полос REF и ALT.')),
     'gel_resolution_bp': (N_('Разрешение, п.н.'), 'float', 0.1, 1000, 2, ''),
     'gel_resolution_pct': (N_('Разрешение, %'), 'float', 0, 100, 2, ''),
@@ -190,8 +188,6 @@ _ADVANCED_FIELDS = {
                        N_('Только для схем dCAPS: наибольший размер продукта.')),
     'dcaps_delta': (N_('Порог Δ, п.н.'), 'int', 1, 1000, 1,
                     N_('Только для схем dCAPS: наименьшее различие видимых полос REF и ALT; заменяет общий порог Δ.')),
-    'joint_design': (N_('Совместный подбор праймеров и фермента'), 'bool', 0, 0, 0,
-                     N_('Отключите для сравнения с поиском по первой паре Primer3.')),
     'use_primer3': ('Primer3', 'bool', 0, 0, 0, N_('Без Primer3 анализируется окно вокруг SNP.')),
     'gain_loss_only': (N_('Только gain/loss'), 'bool', 0, 0, 0, ''),
     'skip_norm': (N_('Пропускать нормализацию'), 'bool', 0, 0, 0, N_('Отключает только перестановку REF/ALT.')),
@@ -201,7 +197,7 @@ _ADVANCED_FIELDS = {
 _ADVANCED_COLUMNS = (
     ((N_('Гель'), ('min_frag', 'max_frag', 'delta', 'gel_resolution_bp', 'gel_resolution_pct', 'gel_stress_factor')),
      (N_('Поиск'), ('flank', 'primer_pairs', 'top_results', 'max_cuts')),
-     (N_('Для сравнения и отладки'), ('joint_design', 'use_primer3', 'gain_loss_only', 'skip_norm', 'no_save_norm'))),
+     (N_('Особые случаи'), ('use_primer3', 'gain_loss_only', 'skip_norm', 'no_save_norm'))),
     ((N_('Проверки'), ('group_isoschizomers', 'snp_end_distance', 'exclude_primer_sites', 'mask_repeats',
                        'exclude_background_sites')),
      (N_('dCAPS (праймер с несовпадением)'), ('dcaps_mismatches', 'dcaps_tm_max', 'dcaps_prod_min',
@@ -211,7 +207,7 @@ _ADVANCED_COLUMNS = (
 
 class AdvancedDialog(QDialog):
     """Rarely changed parameters, grouped (spec §5.2)."""
-    preset_requested = pyqtSignal(str)
+    reset_requested = pyqtSignal()
 
     def __init__(self, params: dict, parent=None):
         super().__init__(parent)
@@ -230,10 +226,9 @@ class AdvancedDialog(QDialog):
         self._widgets['top_results'].setSpecialValueText(t('Все'))
         self._widgets['snp_end_distance'].setSpecialValueText(t('Не ограничивать'))
         buttons = QHBoxLayout()
-        for text, preset in ((t('Сбросить к рекомендуемым'), 'recommended'), (t('Как в v1.1.0'), 'v1.1')):
-            button = QPushButton(text)
-            button.clicked.connect(lambda _=False, p=preset: self.preset_requested.emit(p))
-            buttons.addWidget(button)
+        reset = QPushButton(t('Сбросить к рекомендуемым'))
+        reset.clicked.connect(lambda _=False: self.reset_requested.emit())
+        buttons.addWidget(reset)
         buttons.addStretch()
         done = QPushButton(t('Готово'))
         done.setProperty('role', 'primary')
@@ -603,9 +598,9 @@ class LaunchPanel(QWidget):
         self._advanced_errors = {}
         self._update_badge()
 
-    def apply_preset(self, name: str) -> None:
-        preset = {'recommended': RECOMMENDED_PARAMS, 'v1.1': DEFAULT_PARAMS}[name]
-        self.set_params({k: v for k, v in preset.items() if k in KEY_PARAMS + ADVANCED_PARAMS})
+    def reset_to_defaults(self) -> None:
+        """The recommended parameters; the chosen files stay."""
+        self.set_params({k: v for k, v in RECOMMENDED_PARAMS.items() if k in KEY_PARAMS + ADVANCED_PARAMS})
 
     def changed_count(self) -> int:
         return sum(self._advanced[k] != RECOMMENDED_PARAMS[k] for k in ADVANCED_PARAMS)
@@ -636,12 +631,12 @@ class LaunchPanel(QWidget):
         dialog = AdvancedDialog(self._advanced, self)
         dialog.show_errors(self._advanced_errors)
 
-        def preset(name):
-            self.apply_preset(name)
+        def reset():
+            self.reset_to_defaults()
             dialog.set_params(self._advanced)
             dialog.show_errors({})
 
-        dialog.preset_requested.connect(preset)
+        dialog.reset_requested.connect(reset)
         if dialog.exec():
             self.set_params(dialog.params())
 

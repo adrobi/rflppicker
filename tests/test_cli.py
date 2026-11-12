@@ -42,9 +42,9 @@ class CliTests(unittest.TestCase):
         out = self.root / 'out.csv'
         rejected = self.root / 'rejected.csv'
         code, log = self.run_cli('--out', str(out), '--rejected', str(rejected), '--no-primer3',
-                                 '--flank', '150', '--min-frag', '20', '--preset', 'v1.1')
+                                 '--flank', '150', '--min-frag', '20')
         self.assertEqual(code, 0, log)
-        params = dict(core.DEFAULT_PARAMS, fasta=str(self.fasta.resolve()),
+        params = dict(core.RECOMMENDED_PARAMS, fasta=str(self.fasta.resolve()),
                       input_file=str(self.variants.resolve()), use_primer3=False, flank=150, min_frag=20)
         header, rows = core.run_rflp_gui_mode(params)
         with out.open(encoding='utf-8-sig', newline='') as stream:
@@ -131,6 +131,20 @@ class CliTests(unittest.TestCase):
         self.assertIn('Error:', stderr.getvalue())
         self.assertIsNone(re.search('[А-Яа-яЁё]', stderr.getvalue()), stderr.getvalue())
 
+    def test_preset_and_joint_keys_are_gone(self):
+        for keys in (['--preset', 'v1.1'], ['--preset', 'recommended'], ['--joint'], ['--no-joint']):
+            with self.subTest(keys=keys):
+                stderr = io.StringIO()
+                with contextlib.redirect_stderr(stderr), self.assertRaises(SystemExit) as raised:
+                    rflp_cli.main(['--lang', 'ru', '--fasta', str(self.fasta), '--variants', str(self.variants),
+                                   '--out', str(self.root / 'x.csv'), *keys])
+                self.assertEqual(raised.exception.code, 2)
+        i18n.set_language('ru')
+        help_text = rflp_cli.build_parser().format_help()
+        self.assertNotIn('preset', help_text)
+        self.assertNotIn('joint', help_text)
+        self.assertNotIn('пресет', help_text)
+
     def test_english_help_has_no_cyrillic(self):
         out = io.StringIO()
         with contextlib.redirect_stdout(out), self.assertRaises(SystemExit):
@@ -166,7 +180,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual((defaults['dcaps_tm_max'], defaults['dcaps_delta']), (70.0, 20))
 
     def test_high_tm_runs_without_dcaps_as_in_1_3_0(self):
-        code, log = self.run_cli('--out', str(self.root / 'x.csv'), '--preset', 'v1.1', '--no-primer3',
+        code, log = self.run_cli('--out', str(self.root / 'x.csv'), '--dcaps', 'off', '--no-primer3',
                                  '--tm-min', '71', '--tm-max', '75')
         self.assertEqual(code, 0, log)
 

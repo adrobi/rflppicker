@@ -140,12 +140,7 @@ and the Rejected sheet (rejected variants). The log goes to stderr.''',
     'Файл результата: .csv или .xlsx': 'Result file: .csv or .xlsx',
     'CSV с отклонёнными вариантами (в .xlsx они всегда на листе Rejected)':
         'CSV of rejected variants (in .xlsx they are always on the Rejected sheet)',
-    'Исходный набор параметров: recommended — настройки по итогам '
-    'проверки (как в окне программы), v1.1 — воспроизведение v1.1.0 '
-    '(по умолчанию: %(default)s)':
-        'Starting parameter set: recommended — the validated settings (as in the program window), '
-        'v1.1 — reproduces v1.1.0 (default: %(default)s)',
-    'поиск (по умолчанию — значения пресета)': 'search (default: the preset values)',
+    'поиск (по умолчанию — как в окне программы)': 'search (default: as in the program window)',
     'Фланг вокруг SNP, п.н.': 'Flank around the SNP, bp',
     'Мин. видимый фрагмент, п.н.': 'Min. visible fragment, bp',
     'Макс. видимый фрагмент, п.н.': 'Max. visible fragment, bp',
@@ -179,10 +174,9 @@ and the Rejected sheet (rejected variants). The log goes to stderr.''',
     'dCAPS: макс. размер продукта, п.н.': 'dCAPS: max. product size, bp',
     'dCAPS: порог Δ, п.н. (вместо --delta для схем dCAPS)':
         'dCAPS: Δ threshold, bp (instead of --delta for dCAPS assays)',
-    'праймеры и совместный подбор': 'primers and joint design',
+    'праймеры': 'primers',
     'Подбирать праймеры Primer3 (--no-primer3 — поиск по окну)':
         'Design primers with Primer3 (--no-primer3: window search)',
-    'Совместный подбор праймеров и фермента': 'Choose primers and enzyme together',
     'Пар Primer3 на SNP': 'Primer3 pairs per SNP',
     'Результатов на SNP (0 — все)': 'Results per SNP (0: all)',
     'Мин. размер продукта, п.н.': 'Min. product size, bp',
@@ -260,15 +254,11 @@ and the Rejected sheet (rejected variants). The log goes to stderr.''',
     'Все продаваемые': 'All commercial',
     '{names} и ещё {count}': '{names} and {count} more',
     'Видимые фрагменты от, п.н.': 'Visible fragments from, bp',
-    'В совместном поиске — нижняя граница видимых полос. В поиске по одной паре/окну — '
-    'ограничение на каждый фрагмент.':
-        'In the joint search, the lower limit of visible bands. In the single pair or window search, '
-        'a limit on every fragment.',
+    'Нижняя граница видимых полос: более короткие фрагменты на геле не видны и в модели скрыты.':
+        'The lower limit of visible bands: shorter fragments are not seen on the gel and are hidden in the model.',
     'до, п.н.': 'to, bp',
-    'В совместном поиске — верхняя граница видимых полос. В поиске по одной паре/окну — '
-    'ограничение на каждый фрагмент.':
-        'In the joint search, the upper limit of visible bands. In the single pair or window search, '
-        'a limit on every fragment.',
+    'Верхняя граница видимых полос: более длинные фрагменты в модели скрыты.':
+        'The upper limit of visible bands: longer fragments are hidden in the model.',
     'Наименьшее различие видимых полос REF и ALT.': 'The smallest difference between visible REF and ALT bands.',
     'Разрешение, %': 'Resolution, %',
     'Модель полос без учёта яркости. Различие должно превышать максимум из порога в п.н. '
@@ -321,8 +311,6 @@ and the Rejected sheet (rejected variants). The log goes to stderr.''',
     'Только для схем dCAPS: наименьшее различие видимых полос REF и ALT; заменяет общий порог Δ.':
         'dCAPS assays only: the smallest difference between visible REF and ALT bands; '
         'replaces the general Δ threshold.',
-    'Отключите для сравнения с поиском по первой паре Primer3.':
-        'Turn off to compare with the search on the first Primer3 pair.',
     'Без Primer3 анализируется окно вокруг SNP.': 'Without Primer3 the window around the SNP is analysed.',
     'Только gain/loss': 'Gain/loss only',
     'Пропускать нормализацию': 'Skip normalization',
@@ -331,12 +319,11 @@ and the Rejected sheet (rejected variants). The log goes to stderr.''',
     'Гель': 'Gel',
     'Поиск': 'Search',
     'Проверки': 'Checks',
-    'Для сравнения и отладки': 'For comparison and debugging',
+    'Особые случаи': 'Special cases',
     'Дополнительные параметры': 'Advanced parameters',
     'Все': 'All',
     'Не ограничивать': 'No limit',
     'Сбросить к рекомендуемым': 'Reset to recommended',
-    'Как в v1.1.0': 'As in v1.1.0',
     'Готово': 'Done',
     'Запуск': 'Run',
     'Свернуть панель': 'Collapse the panel',
