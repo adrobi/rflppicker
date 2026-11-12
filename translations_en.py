@@ -203,6 +203,20 @@ Download a reference genome from NCBI into the genoms folder next to the program
     'Анализ прерван.': 'Analysis interrupted.',
     '{key}: папка не существует: {folder}': '{key}: the folder does not exist: {folder}',
     'Ошибка: {error}': 'Error: {error}',
+    # laboratory sheet
+    'Лист PDF': 'PDF sheet',
+    'Лабораторный лист выбранной схемы для печати: праймеры, фермент, полосы, гель и карта':
+        'A laboratory sheet of the chosen assay for printing: primers, enzyme, bands, gel and map',
+    'Листы PDF: все SNP': 'PDF sheets: all SNPs',
+    'Листы PDF: только показанные': 'PDF sheets: shown only',
+    'Нет SNP со схемой: листы не созданы.': 'No SNP has an assay: no sheets were made.',
+    'Дата': 'Date', 'Оператор': 'Operator', '№ геля': 'Gel no.',
+    'RFLP Picker · лабораторный лист': 'RFLP Picker · laboratory sheet',
+    'Фото геля': 'Gel photo',
+    'RFLP Picker {version} · геном {genome} · продукт {prod_min}–{prod_max} п.н., Tm {tm_min}–{tm_max} °C · '
+    'лист создан {date}':
+        'RFLP Picker {version} · genome {genome} · product {prod_min}–{prod_max} bp, Tm {tm_min}–{tm_max} °C · '
+        'sheet made on {date}',
     # genome download
     'Овца': 'Sheep', 'Корова': 'Cattle', 'Коза': 'Goat', 'Свинья': 'Pig', 'Курица': 'Chicken', 'Рис': 'Rice',
     'Пшеница': 'Wheat', 'Ячмень': 'Barley', 'Сорго': 'Sorghum',
@@ -411,9 +425,9 @@ Download a reference genome from NCBI into the genoms folder next to the program
     'Продукт': 'Product',
     'Схем': 'Assays',
     'Все {count}': 'All {count}',
-    'Выгрузить в Excel': 'Export to Excel',
-    'Все SNP': 'All SNPs',
-    'Только показанные ({count})': 'Shown only ({count})',
+    'Выгрузить': 'Export',
+    'Excel: все SNP': 'Excel: all SNPs',
+    'Excel: только показанные ({count})': 'Excel: shown only ({count})',
     'CSV: все схемы': 'CSV: all assays',
     'Поиск по ID, координате или ферменту': 'Search by ID, position or enzyme',
     'Сбросить фильтр': 'Reset filter',

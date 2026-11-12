@@ -194,7 +194,8 @@ In the window, choose:
 
 - a variants file (CSV, TSV or TXT) with the columns `chrom`, `pos`, `ref`, `alt`;
 - a reference genome FASTA: the “Genome” list holds recent genomes and FASTA files
-  from the `genoms/` folder next to the program, “Choose a file…” opens any other;
+  from the `genoms/` folder next to the program, “Choose a file…” opens any other
+  and “Download a genome…” fetches one from NCBI (see [Downloading a genome](#downloading-a-genome));
 - if needed, a chromosome name mapping file: the program takes
   `names/<genome name>.txt` by itself, another file is chosen with the “change” link.
 
@@ -203,6 +204,19 @@ Single-base SNPs are supported: one character in `REF` and one in `ALT`, only
 BOM are supported. Invalid lines are saved to `results/normalize/*.rejected.tsv`
 with the original line number and the reason when saving of normalization is on;
 in any case the reasons are shown in the log and in the SNP list.
+
+## Downloading a genome
+
+“Download a genome…” in the “Genome” list fetches a reference assembly from the
+NCBI FTP site: choose one of the listed assemblies (sheep, cattle, goat, pig,
+chicken, rice, wheat, barley, sorghum) or type any accession such as
+`GCF_016772045.1`. The coordinates of the SNP file must belong to the same
+assembly; for sheep both ARS-UI_Ramb_v3.0 and v2.0 are listed. The download can
+be stopped and continues from the same point when repeated; it is checked
+against the NCBI checksum, unpacked into `genoms/` and indexed. The chromosome
+name mapping file `names/<assembly>.txt` is made from the NCBI assembly report
+(an existing file is kept). A genome takes 0.4–15 GB on disk. On the command
+line: `python rflp_cli.py --download-genome GCF_016772045.1`.
 
 ## Parameters
 
@@ -270,8 +284,8 @@ original text of the analysis in Russian.
 
 ## Results and export
 
-The “Export to Excel ▾” button saves all SNPs or only the shown ones (after the
-filter and the search) to the `results/` folder. Excel sheets:
+The “Export ▾” button saves all SNPs or only the shown ones (after the filter
+and the search) to the `results/` folder. Excel sheets:
 
 - “Summary” — one row per SNP for the chosen assay: status, enzyme, primers, Tm,
   product, bands of the three genotypes, score, note;
@@ -282,6 +296,13 @@ filter and the search) to the `results/` folder. Excel sheets:
 
 “CSV: all assays” saves the contents of the `Results` sheet as UTF-8 with BOM.
 
+“PDF sheets” makes laboratory sheets for printing, one A4 page per SNP that has
+an assay: the enzyme, the primers, the expected bands, the virtual gel, the
+amplicon map and fields to fill in by hand (date, operator, gel number, a frame
+for the gel photo). The “PDF sheet” button of the primer card makes the sheet of
+the assay on screen. Reaction conditions are not printed: the program does not
+know them.
+
 ## Project structure
 
 `qtprimer3_vis.py` — the main window; `launch_panel.py`, `snp_list.py`,
@@ -290,7 +311,8 @@ for the window, Excel and the command line (no Qt); `palette.py`, `theme.py`,
 `icons.py` — colors, theme and icons; `app_settings.py` — remembered settings;
 `i18n.py` and `translations_en.py` — the interface language and the English
 texts; `rflp_cli.py` — the command line; `rflp_core.py` — reading,
-normalization and the analysis; `reporting.py` — safe CSV/XLSX export;
+normalization and the analysis; `reporting.py` — safe CSV/XLSX export; `lab_sheet.py` — laboratory sheets as PDF;
+`genome_download.py`, `genome_dialog.py` — downloading a genome from NCBI;
 `result_model.py` — titles of the core columns; `resources_rc.py` — Qt
 resources; `genoms/` and `names/` — input data.
 `assay_scoring.py` — the band model and maximin ranking;

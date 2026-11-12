@@ -36,6 +36,7 @@ def _score(value) -> str:
 
 class DetailsPanel(QWidget):
     choice_changed = pyqtSignal(object)
+    sheet_requested = pyqtSignal(object)   # the viewed SNP: its laboratory sheet as PDF
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -148,6 +149,12 @@ class DetailsPanel(QWidget):
         self.copy_all_button.clicked.connect(self._copy_all)
         buttons.addWidget(self.copy_order_button)
         buttons.addWidget(self.copy_all_button)
+        self.sheet_button = QPushButton(t('Лист PDF'))
+        self.sheet_button.setObjectName('sheet_button')
+        self.sheet_button.setToolTip(t('Лабораторный лист выбранной схемы для печати: праймеры, фермент, полосы, '
+                                       'гель и карта'))
+        self.sheet_button.clicked.connect(lambda: self.sheet_requested.emit(self._viewed_summary()))
+        buttons.addWidget(self.sheet_button)
         buttons.addStretch()
         layout.addLayout(buttons)
         layout.addStretch()
@@ -186,6 +193,7 @@ class DetailsPanel(QWidget):
         for widget in (self.schemes_caption, self.schemes_list, self.tabs):
             widget.setVisible(has_schemes)
         self._filler.setVisible(not has_schemes)
+        self.sheet_button.setEnabled(has_schemes)   # the sheet of the viewed assay, starred or not
         self.raw_label.hide()
         if summary is None:
             self.title_label.setText('')

@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
 )
 
 import i18n
+import lab_sheet
 import resources_rc  # noqa: F401  (window icon)
 import reporting
 import rflp_core as core
@@ -166,6 +167,7 @@ class RFLPPickerGUI(QMainWindow):
         self.launch.collapse_toggled.connect(self._on_collapse_toggled)
         self.list.selection_changed.connect(self._on_selection)
         self.list.export_requested.connect(self.export)
+        self.details.sheet_requested.connect(lambda summary: self.export('pdf_one', summary=summary))
         self.details.choice_changed.connect(lambda _summary: self.list.refresh_current())
         self.theme.changed.connect(self._apply_colors)
         self._apply_colors(self.theme.colors)
@@ -340,16 +342,29 @@ class RFLPPickerGUI(QMainWindow):
         os.makedirs(folder, exist_ok=True)
         return os.path.join(folder, f"rflp_candidates_{datetime.now().strftime('%Y%m%d%H%M%S')}.{extension}")
 
-    def export(self, kind: str, path: Optional[str] = None) -> Optional[str]:
-        """Write 'all' or 'shown' SNPs to Excel, or 'csv' (all schemes). Return the path, or None."""
+    def export(self, kind: str, path: Optional[str] = None, summary=None) -> Optional[str]:
+        """Write 'all' or 'shown' SNPs to Excel, 'csv' (all schemes), or laboratory sheets as PDF:
+        'pdf', 'pdf_shown' or 'pdf_one' (the given summary). Return the path, or None."""
         if not self.summaries:
             QMessageBox.information(self, t('Выгрузка'), t('Сначала выполните расчёт.'))
             return None
         interactive = path is None
         folder = os.path.dirname(path) if path else os.path.join(core.get_base_dir(), 'results')
         try:
-            path = path or self._default_path('csv' if kind == 'csv' else 'xlsx')
-            summaries = self.list.shown_summaries() if kind == 'shown' else self.list.model.summaries()
+            pdf = kind.startswith('pdf')
+            path = path or self._default_path('pdf' if pdf else 'csv' if kind == 'csv' else 'xlsx')
+            summaries = ([summary] if kind == 'pdf_one' else self.list.shown_summaries()
+                         if kind in ('shown', 'pdf_shown') else self.list.model.summaries())
+            if pdf:
+                # One page per SNP with an assay; the chosen assay of each.
+                if not lab_sheet.export_lab_sheets(path, summaries, self.params.get('fasta', ''), self.params,
+                                                   self.params.get('dcaps', 'off')):
+                    QMessageBox.information(self, t('Выгрузка'), t('Нет SNP со схемой: листы не созданы.'))
+                    return None
+                self.status_message.setText(t('Сохранено: {path}', path=path))
+                if interactive:
+                    QMessageBox.information(self, t('Выгрузка'), t('Результаты сохранены:\n{path}', path=path))
+                return path
             table_header, table_rows = results_table(summaries, self.header, self.rows)
             if kind == 'csv':
                 reporting.export_csv(path, table_header, table_rows)

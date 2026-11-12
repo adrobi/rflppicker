@@ -120,6 +120,44 @@ class MainWindowTests(unittest.TestCase):
         book.close()
         self.assertIn('Сохранено', self.window.status_message.text())
 
+    def pdf_pages(self, path):
+        import re
+        with open(path, 'rb') as handle:
+            return len(re.findall(rb'/Type\s*/Page\b(?!s)', handle.read()))
+
+    def test_lab_sheets_for_all_and_for_shown_snps(self):
+        self.run_with(FIXED_OUTPUT)                          # two of the four SNPs have an assay
+        path = self.window.export('pdf', os.path.join(self.tmp, 'all.pdf'))
+        self.assertEqual(self.pdf_pages(path), 2)
+        self.window.list.chips.toggled.emit({'robust'})
+        path = self.window.export('pdf_shown', os.path.join(self.tmp, 'shown.pdf'))
+        self.assertEqual(self.pdf_pages(path), 1)
+        self.assertIn('Сохранено', self.window.status_message.text())
+
+    def test_lab_sheet_of_the_viewed_snp(self):
+        self.run_with(FIXED_OUTPUT)
+        self.window.list.table.selectRow(1)
+        target = os.path.join(self.tmp, 'one.pdf')
+        with patch.object(self.window, '_default_path', return_value=target), \
+                patch.object(QMessageBox, 'information'):
+            self.window.details.sheet_button.click()
+        self.assertEqual(self.pdf_pages(target), 1)
+
+    def test_lab_sheets_without_any_assay_say_so(self):
+        self.run_with(FIXED_OUTPUT)
+        self.window.list.chips.toggled.emit({'none'})
+        with patch.object(QMessageBox, 'information') as info:
+            self.assertIsNone(self.window.export('pdf_shown', os.path.join(self.tmp, 'none.pdf')))
+        self.assertIn('Нет SNP со схемой', info.call_args[0][2])
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, 'none.pdf')))
+
+    def test_sheet_button_follows_the_assay(self):
+        self.run_with(FIXED_OUTPUT)
+        self.window.list.table.selectRow(0)
+        self.assertTrue(self.window.details.sheet_button.isEnabled())
+        self.window.list.table.selectRow(2)                  # no assay
+        self.assertFalse(self.window.details.sheet_button.isEnabled())
+
     def test_export_csv(self):
         self.run_with(FIXED_OUTPUT)
         path = self.window.export('csv', os.path.join(self.tmp, 'x.csv'))

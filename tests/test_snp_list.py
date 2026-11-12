@@ -76,7 +76,7 @@ class SnpListTests(unittest.TestCase):
         self.assertEqual(self.view.model.counts(), {'robust': 1, 'nominal': 1, 'none': 1, 'error': 1})
         self.view.chips.toggled.emit({'robust', 'nominal'})
         self.assertEqual([s.record.snp_id for s in self.view.shown_summaries()], ['HOXB13', 'LEPR'])
-        self.assertIn('Только показанные (2)', [a.text() for a in self.view.export_menu.actions()])
+        self.assertIn('Excel: только показанные (2)', [a.text() for a in self.view.export_menu.actions()])
         self.assertEqual(self.view.footer.text(), 'Показано 2 из 4 · порядок: как в файле')
 
     def test_chip_buttons_toggle_groups(self):
@@ -151,7 +151,7 @@ class SnpListTests(unittest.TestCase):
         self.view.export_requested.connect(seen.append)
         for action in self.view.export_menu.actions():
             action.trigger()
-        self.assertEqual(seen, ['all', 'shown', 'csv'])
+        self.assertEqual(seen, ['all', 'shown', 'csv', 'pdf', 'pdf_shown'])
 
     def test_placeholder(self):
         self.view.set_placeholder('Идёт расчёт… 3 из 10 SNP')
@@ -174,8 +174,9 @@ class SnpListTests(unittest.TestCase):
         self.assertEqual(view.chips.chip('robust').text(), 'Robust 1')
         self.assertEqual(view.footer.text(), 'Shown 4 of 4 · order: as in file')
         self.assertEqual([a.text() for a in view.export_menu.actions()],
-                         ['All SNPs', 'Shown only (4)', 'CSV: all assays'])
-        self.assertEqual(view.export_button.text(), 'Export to Excel')
+                         ['Excel: all SNPs', 'Excel: shown only (4)', 'CSV: all assays', '', 'PDF sheets: all SNPs',
+                          'PDF sheets: shown only'])
+        self.assertEqual(view.export_button.text(), 'Export')
         view.search.setText('no such snp')
         self.assertEqual(view.placeholder.text(), 'No SNPs match these conditions')
         self.assertEqual(view.reset_filter_button.text(), 'Reset filter')

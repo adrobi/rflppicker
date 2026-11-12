@@ -268,14 +268,17 @@ class SnpListView(QWidget):
         self.chips = StatusChips()
         top.addWidget(self.chips, 1)
         self.export_button = QToolButton()
-        self.export_button.setText(t('Выгрузить в Excel'))
+        self.export_button.setText(t('Выгрузить'))
         self.export_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.export_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.export_menu = QMenu(self.export_button)
-        self._export_all = self.export_menu.addAction(t('Все SNP'), lambda: self.export_requested.emit('all'))
-        self._export_shown = self.export_menu.addAction(t('Только показанные ({count})', count=0),
+        self._export_all = self.export_menu.addAction(t('Excel: все SNP'), lambda: self.export_requested.emit('all'))
+        self._export_shown = self.export_menu.addAction(t('Excel: только показанные ({count})', count=0),
                                                         lambda: self.export_requested.emit('shown'))
         self.export_menu.addAction(t('CSV: все схемы'), lambda: self.export_requested.emit('csv'))
+        self.export_menu.addSeparator()
+        self.export_menu.addAction(t('Листы PDF: все SNP'), lambda: self.export_requested.emit('pdf'))
+        self.export_menu.addAction(t('Листы PDF: только показанные'), lambda: self.export_requested.emit('pdf_shown'))
         self.export_button.setMenu(self.export_menu)
         top.addWidget(self.export_button)
         layout.addLayout(top)
@@ -444,7 +447,7 @@ class SnpListView(QWidget):
 
     def _update_view(self):
         total, shown = self.model.rowCount(), self.proxy.rowCount()
-        self._export_shown.setText(t('Только показанные ({count})', count=shown))
+        self._export_shown.setText(t('Excel: только показанные ({count})', count=shown))
         order = (t('как в файле') if self._sort_column is None
                  else t('по столбцу «{column}»', column=t(COLUMNS[self._sort_column][1])))
         self.footer.setText(t('Показано {shown} из {total} · порядок: {order}', shown=shown, total=total, order=order)
