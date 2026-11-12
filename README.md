@@ -57,8 +57,11 @@ Details are in the [algorithm description](docs/assay_design.md#отбор-и-п
 - A “Virtual gel” tab in the visualization window.
 
 The 1.2 settings are in the “Advanced” dialog of the “Run” panel (the “Checks”
-group). The parameters of version 1.1.0 are restored with the “As in v1.1.0”
-button there, or with `--preset v1.1` on the command line.
+group).
+
+The article describes version 1.1.0. To reproduce its results, use the
+[1.1.0 release](https://github.com/adrobi/rflppicker/releases/tag/v1.1.0) itself: later versions no longer have a mode that
+repeats it.
 
 ## Joint design of primers and enzyme
 
@@ -77,10 +80,9 @@ probability of successful genotyping.
 
 The chosen row shows the expected bands of the three genotypes and an
 explanation. All scores, parameters and the pair number are written to the
-export. To compare with the older approach, turn off the joint design of primers
-and enzyme.
+export.
 
-Formulas, ranking rules, limitations and a reproducible comparison of the modes:
+Formulas, ranking rules and limitations:
 [algorithm description](docs/assay_design.md) (in Russian).
 
 ## How it works
@@ -152,9 +154,8 @@ python rflp_cli.py --fasta genome.fa --variants snps.tsv --names names.txt --out
 python rflp_cli.py --help
 ```
 
-By default the settings are the same as in the program window
-(`--preset recommended`). `--preset v1.1` reproduces the parameters and results
-of version 1.1.0. Any parameter can be overridden, for example
+By default the settings are the same as in the program window. Any parameter
+can be overridden, for example
 `--pairs 20 --top 0 --prod-min 150 --prod-max 1000`. Exit codes: 0 — success,
 1 — the analysis or saving failed, 2 — parameter error, 130 — interrupted (Ctrl+C).
 
@@ -193,19 +194,19 @@ in any case the reasons are shown in the log and in the SNP list.
 
 ## Parameters
 
-The flank is the number of bases on each side of the SNP. In the joint mode the
-fragment range sets the limits of band visibility: fragments outside the range
-are hidden in the model but kept in the full fragment lists. In the single pair
-or window mode every fragment must fall into the range.
+The flank is the number of bases on each side of the SNP. The fragment range
+sets the limits of band visibility: fragments outside the range are hidden in
+the model but kept in the full fragment lists.
 The Δ threshold applies to the symmetric Hausdorff distance between the visible
 REF and ALT sizes: the largest distance to the nearest size of the other allele.
-It applies to both gain/loss and shift. The joint search also requires all
-three genotypes to differ in the presence of bands.
+It applies to both gain/loss and shift. All three genotypes must also differ
+in the presence of bands.
 
 With Primer3 on, the program searches for primer pairs within the given product
 size and Tm range. When no pair is found, the line gets the status “no primers”
 and gives no false enzyme candidates. With Primer3 off, the search runs over the
-whole window and is marked “window search”.
+whole window and is marked “window search”: it shows which enzymes tell the
+alleles apart and is scored by the same rules, but it is not a ready PCR assay.
 
 *Since version 1.4:* dCAPS assays (a mismatch primer that creates the enzyme site in one allele) are
 designed with their own settings — the “dCAPS” group of the “Advanced” dialog:
@@ -281,7 +282,6 @@ normalization and the analysis; `reporting.py` — safe CSV/XLSX export;
 `result_model.py` — titles of the core columns; `resources_rc.py` — Qt
 resources; `genoms/` and `names/` — input data.
 `assay_scoring.py` — the band model and maximin ranking;
-`benchmark_design.py` — comparison of the modes with data checksums;
 `visualization.py` — the amplicon map and the virtual gel with export;
 `tools/regression.py` — comparison of the results of two program versions;
 `tools/gui_screenshots.py` — window screenshots in a chosen language, both
@@ -304,15 +304,15 @@ python tools\gui_screenshots.py --lang en --fasta genome.fa --variants variants.
 ```
 
 Changes that must not alter the results (refactoring, speed-ups) are compared
-with the v1.1.0 release: each version runs in its own process, and the header,
+with the previous release: each version runs in its own process, and the header,
 the rows and the report are compared. `same` — byte-identical, `extended` — only
-new columns and report fields were added and every v1.1.0 value is unchanged;
+new columns and report fields were added and every earlier value is unchanged;
 any other difference is an error.
 
 ```powershell
-git worktree add ..\rflp-v1.1.0 42ad9e5
-python tools\regression.py --baseline ..\rflp-v1.1.0 --work ..\regression `
-  --dataset sheep=genome.fa,variants.tsv --random 100 --jobs 8
+git worktree add ..\rflp-prev v1.4.0
+python tools\regression.py --baseline ..\rflp-prev --work ..\regression `
+  --dataset sheep=genome.fa,variants.tsv,names.txt --random 100 --jobs 8
 ```
 
 ## License
