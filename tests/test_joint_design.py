@@ -496,6 +496,14 @@ class WindowSearchRulesTests(unittest.TestCase):
             if row['enzyme']:
                 self.assertTrue(row['bands_ref_ref'] and row['bands_alt_alt'], row)
 
+    def test_log_lists_only_the_checks_that_act_without_primers(self):
+        log = []
+        core.run_rflp_gui_mode(dict(self.params, commercial_only=True, group_isoschizomers=True,
+                                    exclude_primer_sites=True, mask_repeats=True, snp_end_distance=100,
+                                    dcaps='fallback'), status_cb=log.append)
+        (line,) = [text for text in log if text.startswith('[INFO] Отбор:')]
+        self.assertEqual(line, '[INFO] Отбор: только продаваемые ферменты; изошизомеры объединены (одна строка на сайт)')
+
     def test_snp_without_assay_gets_the_joint_status(self):
         (row,), _ = self.run_window(gain_loss_only=True, max_cuts=0)
         self.assertEqual(row['status'], 'no_discriminating_assay')

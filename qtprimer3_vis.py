@@ -235,8 +235,9 @@ class RFLPPickerGUI(QMainWindow):
         self.settings.set_value('geometry', bytes(self.saveGeometry().toBase64()).decode())
         if self.worker is not None:
             self.worker.requestInterruption()
-            if not self.worker.wait(5000):
+            if not self.worker.wait(200):
                 # Destroying a running thread aborts the program: close when it has ended.
+                # The wait is short, so the window does not freeze meanwhile.
                 self._close_when_finished = True
                 self.status_message.setText(t('Останавливаю расчёт…'))
                 event.ignore()

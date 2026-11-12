@@ -76,13 +76,15 @@ class MainWindowTests(unittest.TestCase):
             def requestInterruption(self):
                 self.interrupted = True
 
-            def wait(self, _milliseconds):
+            def wait(self, milliseconds):
+                self.waited = milliseconds
                 return False   # still running after the timeout
 
         worker = SlowWorker()
         self.window.worker = worker
         self.window.show()
         self.assertFalse(self.window.close())
+        self.assertLessEqual(worker.waited, 300)        # the window must not freeze while the thread stops
         self.assertTrue(worker.interrupted)
         self.assertTrue(self.window.isVisible())
         self.assertEqual(self.window.status_message.text(), 'Останавливаю расчёт…')

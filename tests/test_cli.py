@@ -1,6 +1,7 @@
 import contextlib
 import csv
 import io
+import os
 import logging
 import random
 import re
@@ -90,6 +91,32 @@ class CliTests(unittest.TestCase):
                 self.assertEqual(raised.exception.code, 2)
                 self.assertIn(f'{key}: папка не существует', stderr.getvalue())
                 run.assert_not_called()
+
+    def test_unusable_output_targets_are_reported_before_the_run(self):
+        folder = self.root / 'd.csv'
+        folder.mkdir()
+        read_only = self.root / 'locked'
+        read_only.mkdir()
+        read_only.chmod(0o500)
+        self.addCleanup(read_only.chmod, 0o700)
+        cases = [(str(folder), '--out: это папка, а не файл')]
+        if not os.access(read_only, os.W_OK):           # root and Windows ignore the mode
+            cases.append((str(read_only / 'out.csv'), '--out: нет права записи в папку'))
+        for target, message in cases:
+            with self.subTest(target=target), patch.object(core, 'run_rflp_gui_mode') as run:
+                stderr = io.StringIO()
+                with contextlib.redirect_stderr(stderr), self.assertRaises(SystemExit) as raised:
+                    rflp_cli.main(['--lang', 'ru', '--fasta', str(self.fasta), '--variants', str(self.variants),
+                                   '--out', target])
+                self.assertEqual(raised.exception.code, 2)
+                self.assertIn(message, stderr.getvalue())
+                run.assert_not_called()
+
+    def test_warns_when_the_file_has_no_snps(self):
+        self.variants.write_text('chrom\tpos\tref\talt\n')
+        code, log = self.run_cli('--out', str(self.root / 'out.csv'), '-q')
+        self.assertEqual(code, 0)
+        self.assertIn('В файле нет SNP', log)
 
     def test_broken_fasta_gives_a_message_not_a_traceback(self):
         self.fasta.write_text('not a fasta\n')

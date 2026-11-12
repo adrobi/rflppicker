@@ -184,6 +184,9 @@ class NoteTests(unittest.TestCase):
         self.assertEqual(s.status, snp_summary.NONE)
         self.assertEqual(s.note('fallback'), f'{reason}. Попробуйте dCAPS «Для каждого SNP»')
         self.assertEqual(s.note('always'), f'{reason}. Попробуйте другой диапазон продукта')
+        # dCAPS and the product range do not act without Primer3: no such hint for the window search.
+        window = summary(failure=dict(status='no_discriminating_assay', reason=reason, search_mode='window'))
+        self.assertEqual((window.note('fallback'), window.note('always')), (reason, reason))
         self.assertEqual(summary(failure=dict(status='no_enzyme_found', reason='Подходящий фермент не найден'))
                          .note('off'), 'Подходящий фермент не найден. Попробуйте dCAPS «Для каждого SNP»')
         self.assertEqual(summary(failure=dict(status='no_primers', reason='Primer3 не вернул подходящих пар'))

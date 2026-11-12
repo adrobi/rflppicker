@@ -168,7 +168,9 @@ class SnpSummary:
         if status == 'analysis_error':
             return reason
         hint = t(_FAILURE_HINTS[status]) if status in _FAILURE_HINTS else ''
-        if status in ('no_discriminating_assay', 'no_enzyme_found'):
+        if self.failure.get('search_mode') == 'window':
+            hint = ''   # dCAPS and the product range do not act without Primer3
+        elif status in ('no_discriminating_assay', 'no_enzyme_found'):
             hint = (t('Попробуйте другой диапазон продукта') if dcaps_mode == 'always'
                     else t('Попробуйте dCAPS «Для каждого SNP»'))
         return '. '.join(text for text in (reason, hint) if text)

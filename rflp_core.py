@@ -1126,7 +1126,8 @@ def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, 
             ('exclude_primer_sites', 'без сайта фермента в праймерах'),
             ('mask_repeats', 'повторы (строчные буквы FASTA) не на 3′-концах праймеров'),
             ('exclude_background_sites', 'без фоновых вариантов, меняющих разрезы'),
-        ) if params[key] and (key != 'exclude_background_sites' or params['background_vcf'])]
+        ) if params[key] and (key != 'exclude_background_sites' or params['background_vcf'])
+            and (use_primer3 or key not in ('exclude_primer_sites', 'mask_repeats'))]   # these two need primers
         if use_primer3 and params['snp_end_distance']:
             options.append(f"SNP не ближе {params['snp_end_distance']} п.н. к концам ампликона")
         if use_primer3 and params['dcaps'] != 'off':

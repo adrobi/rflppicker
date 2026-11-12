@@ -197,6 +197,9 @@ and the Rejected sheet (rejected variants). The log goes to stderr.''',
     'Анализ прерван.': 'Analysis interrupted.',
     '{key}: папка не существует: {folder}': '{key}: the folder does not exist: {folder}',
     'Ошибка: {error}': 'Error: {error}',
+    '{key}: это папка, а не файл: {path}': '{key}: this is a folder, not a file: {path}',
+    '{key}: нет права записи в папку: {folder}': '{key}: no permission to write to the folder: {folder}',
+    '[WARN] В файле нет SNP.': '[WARN] The file has no SNPs.',
     '[WARN] Ни один SNP не принят: проверьте геном и файл соответствий названий хромосом.':
         '[WARN] No SNP was accepted: check the genome and the chromosome name mapping file.',
     '[INFO] Сохранено: {out} · строк {rows} · SNP принято {accepted}, с кандидатами {candidates}, '

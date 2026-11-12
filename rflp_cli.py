@@ -6,6 +6,7 @@ it, the language of the system (i18n spec §3.2, §4.4).
 import argparse
 import locale
 import logging
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -173,9 +174,15 @@ def main(argv=None):
         parser.error(t('--out: требуется расширение .csv или .xlsx'))
     # Before the analysis: a mistyped folder must not cost a finished run.
     for key, target in (('--out', args.out), ('--rejected', args.rejected)):
-        if target and not Path(target).expanduser().absolute().parent.is_dir():
-            parser.error(t('{key}: папка не существует: {folder}', key=key,
-                           folder=Path(target).expanduser().absolute().parent))
+        if not target:
+            continue
+        target = Path(target).expanduser().absolute()
+        if not target.parent.is_dir():
+            parser.error(t('{key}: папка не существует: {folder}', key=key, folder=target.parent))
+        if target.is_dir():
+            parser.error(t('{key}: это папка, а не файл: {path}', key=key, path=target))
+        if not os.access(target.parent, os.W_OK):
+            parser.error(t('{key}: нет права записи в папку: {folder}', key=key, folder=target.parent))
     params = params_from_args(args)
     errors = core.validate_params(params)
     if errors:
@@ -203,7 +210,9 @@ def main(argv=None):
         print(t('Ошибка: {error}', error=str(exc) or type(exc).__name__), file=sys.stderr)
         return 1
     summary = report.get('summary', {})
-    if not summary.get('accepted') and report.get('rejected'):
+    if not summary.get('accepted') and not report.get('rejected'):
+        print(t('[WARN] В файле нет SNP.'), file=sys.stderr)
+    elif not summary.get('accepted'):
         # Shown even with --quiet: the files are written, but they hold no assay.
         print(t('[WARN] Ни один SNP не принят: проверьте геном и файл соответствий названий хромосом.'),
               file=sys.stderr)
