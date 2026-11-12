@@ -176,6 +176,18 @@ from source you need Python 3.13 and the packages from `requirements-build.txt`;
 The archive comes without a README: the instructions are in this file on GitHub.
 The `_internal` and `names` folders must stay next to the EXE.
 
+## Linux release
+
+Download `RFLP-Picker-…-linux-x86_64.tar.gz` from the Releases section, unpack
+it and run `RFLP-Picker/RFLP-Picker`. Python is not needed. The archive is built
+on Ubuntu 22.04 and needs a 64-bit system of that age or newer (glibc 2.35). If
+the window does not open, install the Qt library `libxcb-cursor0`
+(`sudo apt install libxcb-cursor0`). To rebuild it, run `./build_linux.sh` with
+Python 3.13 and the packages from `requirements-build.txt`.
+
+Both archives are built by GitHub Actions from the version tag
+(`.github/workflows/release.yml`).
+
 ## Data
 
 In the window, choose:
@@ -284,6 +296,7 @@ resources; `genoms/` and `names/` — input data.
 `assay_scoring.py` — the band model and maximin ranking;
 `visualization.py` — the amplicon map and the virtual gel with export;
 `tools/regression.py` — comparison of the results of two program versions;
+`tools/release_notes.py` — the description of a release from the CHANGELOG;
 `tools/gui_screenshots.py` — window screenshots in a chosen language, both
 themes and three sizes; `examples/` — a clearly synthetic example for a quick check.
 

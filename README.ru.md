@@ -173,6 +173,18 @@ python rflp_cli.py --help
 Архив распространяется без README: инструкция находится в этом файле на
 GitHub, а рядом с EXE должны находиться папка `_internal` и каталог `names`.
 
+## Запуск готовой версии Linux
+
+Скачайте `RFLP-Picker-…-linux-x86_64.tar.gz` из раздела Releases, распакуйте и
+запустите `RFLP-Picker/RFLP-Picker`. Python не требуется. Архив собирается в
+Ubuntu 22.04 и рассчитан на 64-битную систему того же возраста или новее
+(glibc 2.35). Если окно не открывается, установите библиотеку Qt
+`libxcb-cursor0` (`sudo apt install libxcb-cursor0`). Для пересборки выполните
+`./build_linux.sh` с Python 3.13 и зависимостями из `requirements-build.txt`.
+
+Оба архива собираются в GitHub Actions по тегу версии
+(`.github/workflows/release.yml`).
+
 ## Данные
 
 В окне выберите:
@@ -286,6 +298,7 @@ dCAPS ранжируются вместе с обычными. В командн
 `assay_scoring.py` — модель полос и максиминное ранжирование;
 `visualization.py` — окно схемы ампликона с экспортом;
 `tools/regression.py` — сравнение результатов двух версий программы;
+`tools/release_notes.py` — описание выпуска из CHANGELOG;
 `tools/gui_screenshots.py` — снимки окна на выбранном языке в обеих темах и трёх размерах;
 `examples/` — явно синтетический пример для проверки работоспособности.
 

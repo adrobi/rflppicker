@@ -1,17 +1,30 @@
 name: release
 
-# A pushed tag v1.2.3 builds the Windows archive and attaches it to a draft
-# release; the draft is checked and published by hand.
+# A pushed tag v1.2.3 builds the Windows and Linux archives from pinned
+# versions and publishes the release with the CHANGELOG section of the version.
+# Started by hand, it only builds: the archives are kept as run artifacts.
 on:
   push:
     tags: ['v*']
-  workflow_dispatch:   # a trial build of a branch: the archive is kept as a run artifact
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: The tag must equal the program version and have a CHANGELOG section
+        if: github.ref_type == 'tag'
+        run: python tools/release_notes.py "${{ github.ref_name }}" > /dev/null
+
   windows:
+    needs: check
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -34,19 +47,68 @@ jobs:
         run: .\build_windows.ps1
       - name: Pack
         shell: pwsh
-        run: Compress-Archive -Path dist\RFLP-Picker -DestinationPath "RFLP-Picker-${{ github.ref_name }}-windows.zip"
-      - name: Keep the archive of a trial build
-        if: github.ref_type != 'tag'
-        uses: actions/upload-artifact@v4
+        run: Compress-Archive -Path dist\RFLP-Picker -DestinationPath "RFLP-Picker-${{ github.ref_name }}-windows-x64.zip"
+      - uses: actions/upload-artifact@v4
         with:
-          name: RFLP-Picker-windows
-          path: RFLP-Picker-*-windows.zip
-      - name: Create the draft release
-        if: github.ref_type == 'tag'
-        shell: pwsh
+          name: windows
+          path: RFLP-Picker-*-windows-x64.zip
+
+  linux:
+    needs: check
+    # An older system: the build then runs on newer ones too.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: requirements-build.txt
+      - name: Install Qt runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1 libxkbcommon-x11-0 libxcb-cursor0
+      # build_linux.sh prefers the project environment .venv.
+      - name: Install the pinned build dependencies
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install -r requirements-build.txt
+      - name: Run tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: .venv/bin/python -X faulthandler -m unittest discover
+      - name: Build
+        run: ./build_linux.sh
+      - name: The built program starts
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          code=0; timeout 10 dist/RFLP-Picker/RFLP-Picker || code=$?
+          test "$code" -eq 124    # still running when stopped
+      - name: Pack
+        run: tar -C dist -czf "RFLP-Picker-${{ github.ref_name }}-linux-x86_64.tar.gz" RFLP-Picker
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: RFLP-Picker-*-linux-x86_64.tar.gz
+
+  publish:
+    if: github.ref_type == 'tag'
+    needs: [windows, linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >
-          gh release create "${{ github.ref_name }}" "RFLP-Picker-${{ github.ref_name }}-windows.zip"
-          --draft --verify-tag --title "RFLP Picker $("${{ github.ref_name }}".TrimStart('v'))"
-          --notes "See CHANGELOG.md."
+          TAG: ${{ github.ref_name }}
+        run: |
+          python tools/release_notes.py "$TAG" RFLP-Picker-*-windows-x64.zip RFLP-Picker-*-linux-x86_64.tar.gz > notes.md
+          gh release create "$TAG" RFLP-Picker-*-windows-x64.zip RFLP-Picker-*-linux-x86_64.tar.gz \
+            --verify-tag --title "RFLP Picker ${TAG#v}" --notes-file notes.md

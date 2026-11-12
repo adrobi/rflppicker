@@ -1,10 +1,19 @@
-# Exact versions of the Windows release build (build_windows.ps1, Python 3.13).
+# Exact versions of the release builds (build_windows.ps1, build_linux.sh; Python 3.13),
+# including the packages they bring along.
 # The Biopython version fixes the REBASE enzyme list, so it decides the results.
 PyQt6==6.8.1
 PyQt6-Qt6==6.8.2
 PyQt6_sip==13.11.0
 pyfaidx==0.9.2.2
 biopython==1.88
+numpy==2.5.4
 openpyxl==3.1.5
+et_xmlfile==2.0.0
 primer3-py==2.4.0
+packaging==26.3
+setuptools==84.2.1
 pyinstaller==6.22.3
+pyinstaller-hooks-contrib==2026.10
+altgraph==0.17.5
+pefile==2024.8.26; sys_platform == "win32"
+pywin32-ctypes==0.2.3; sys_platform == "win32"
