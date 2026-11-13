@@ -5,3 +5,5 @@ pyfaidx>=0.8
 biopython>=1.83
 openpyxl>=3.1
 primer3-py>=2.0
+# The certificates for the genome download: a packed program may not find those of the system.
+certifi>=2024.2.2

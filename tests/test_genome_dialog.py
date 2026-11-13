@@ -1,5 +1,6 @@
 import os
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -69,6 +70,11 @@ class GenomeDownloadDialogTests(unittest.TestCase):
         finish(dialog)
         self.assertEqual(self.calls[0][0], 'gcf_000003195.3')
 
+    def test_enter_starts_the_download(self):
+        dialog = self.dialog(self.ok)
+        self.assertTrue(dialog.download_button.isDefault())
+        self.assertFalse(dialog.cancel_button.autoDefault())
+
     def test_error_is_shown_and_the_dialog_stays(self):
         def fail(*_args, **_kwargs):
             raise genome_download.GenomeDownloadError('Сборка GCF_1 не найдена на NCBI')
@@ -86,12 +92,15 @@ class GenomeDownloadDialogTests(unittest.TestCase):
         seen = []
 
         def slow(accession, base_dir, progress_cb=None, status_cb=None, cancel_cb=None):
-            dialog.cancel()
-            seen.append(cancel_cb())
+            while not cancel_cb():                 # until the dialog asks to stop
+                time.sleep(0.01)
+            seen.append(True)
             raise genome_download.DownloadCancelled()
 
         dialog = self.dialog(slow)
         dialog.start()
+        dialog.reject()                            # «Отмена», Esc or the window cross during a download
+        self.assertNotEqual(dialog.result(), dialog.DialogCode.Accepted)
         finish(dialog)
         self.assertEqual(seen, [True])
         self.assertEqual(dialog.fasta_path, '')
@@ -133,6 +142,9 @@ class LaunchPanelDownloadTests(unittest.TestCase):
             def exec(self):
                 return True
 
+            def deleteLater(self):
+                pass
+
         with patch.object(launch_panel, 'GenomeDownloadDialog', Downloaded):
             self.panel._on_genome_activated(self.combo.findText('Скачать геном…'))
         self.assertEqual(self.panel.genome_path(), fasta)
@@ -147,6 +159,9 @@ class LaunchPanelDownloadTests(unittest.TestCase):
 
             def exec(self):
                 return False
+
+            def deleteLater(self):
+                pass
 
         with patch.object(launch_panel, 'GenomeDownloadDialog', Closed):
             self.panel._on_genome_activated(self.combo.findText('Скачать геном…'))

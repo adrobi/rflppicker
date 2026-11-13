@@ -9,7 +9,11 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+
+env:
+  # The version tag in the archive names; "trial" for a build started by hand.
+  BUILD_NAME: ${{ github.event_name == 'push' && github.ref_name || 'trial' }}
 
 jobs:
   check:
@@ -20,8 +24,8 @@ jobs:
         with:
           python-version: '3.13'
       - name: The tag must equal the program version and have a CHANGELOG section
-        if: github.ref_type == 'tag'
-        run: python tools/release_notes.py "${{ github.ref_name }}" > /dev/null
+        if: github.event_name == 'push'
+        run: python tools/release_notes.py "$BUILD_NAME" > /dev/null
 
   windows:
     needs: check
@@ -45,9 +49,19 @@ jobs:
       - name: Build
         shell: pwsh
         run: .\build_windows.ps1
+      - name: The built program starts and reaches NCBI
+        shell: pwsh
+        run: |
+          $exe = 'dist\RFLP-Picker\RFLP-Picker.exe'
+          $window = Start-Process $exe -PassThru
+          Start-Sleep -Seconds 10
+          if ($window.HasExited) { throw "The program exited with code $($window.ExitCode)" }
+          Stop-Process -Id $window.Id
+          $check = Start-Process $exe -ArgumentList '--check-ncbi' -Wait -PassThru
+          if ($check.ExitCode -ne 0) { throw "--check-ncbi failed with code $($check.ExitCode)" }
       - name: Pack
         shell: pwsh
-        run: Compress-Archive -Path dist\RFLP-Picker -DestinationPath "RFLP-Picker-${{ github.ref_name }}-windows-x64.zip"
+        run: Compress-Archive -Path dist\RFLP-Picker -DestinationPath "RFLP-Picker-$env:BUILD_NAME-windows-x64.zip"
       - uses: actions/upload-artifact@v4
         with:
           name: windows
@@ -79,23 +93,27 @@ jobs:
         run: .venv/bin/python -X faulthandler -m unittest discover
       - name: Build
         run: ./build_linux.sh
-      - name: The built program starts
+      - name: The built program starts and reaches NCBI
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
           code=0; timeout 10 dist/RFLP-Picker/RFLP-Picker || code=$?
           test "$code" -eq 124    # still running when stopped
+          dist/RFLP-Picker/RFLP-Picker --check-ncbi
       - name: Pack
-        run: tar -C dist -czf "RFLP-Picker-${{ github.ref_name }}-linux-x86_64.tar.gz" RFLP-Picker
+        run: tar -C dist -czf "RFLP-Picker-$BUILD_NAME-linux-x86_64.tar.gz" RFLP-Picker
       - uses: actions/upload-artifact@v4
         with:
           name: linux
           path: RFLP-Picker-*-linux-x86_64.tar.gz
 
   publish:
-    if: github.ref_type == 'tag'
+    # Only a pushed tag publishes; a run started by hand never does, whatever ref it was given.
+    if: github.event_name == 'push' && github.ref_type == 'tag'
     needs: [windows, linux]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -107,7 +125,7 @@ jobs:
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ github.ref_name }}   # a tag name; passed through the environment, not into the script
         run: |
           python tools/release_notes.py "$TAG" RFLP-Picker-*-windows-x64.zip RFLP-Picker-*-linux-x86_64.tar.gz > notes.md
           gh release create "$TAG" RFLP-Picker-*-windows-x64.zip RFLP-Picker-*-linux-x86_64.tar.gz \

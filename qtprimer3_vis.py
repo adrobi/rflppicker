@@ -412,7 +412,22 @@ def install_exception_hook(window: RFLPPickerGUI) -> None:
     sys.excepthook = hook
 
 
+def check_ncbi() -> int:
+    """--check-ncbi: can this program, as installed or packed, reach NCBI over HTTPS? 0 if it can."""
+    import genome_download
+    try:
+        accession = genome_download.PRESETS[0][2]
+        assembly = genome_download.find_assembly(accession, genome_download.HttpTransport())
+    except Exception as error:
+        print(f'NCBI: {error}', file=sys.stderr)
+        return 1
+    print(f'NCBI: {assembly.accession} {assembly.name}')
+    return 0
+
+
 def main() -> None:
+    if '--check-ncbi' in sys.argv[1:]:
+        sys.exit(check_ncbi())
     if not core._PRIMER3_AVAILABLE:
         core.logger.warning(f'primer3 недоступен, ошибка импорта: {core._PRIMER3_IMPORT_ERROR}')
     app = QApplication(sys.argv)

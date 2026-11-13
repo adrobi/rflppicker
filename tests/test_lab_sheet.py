@@ -70,6 +70,29 @@ class LabSheetTests(unittest.TestCase):
         self.assertEqual(rows[0][1:3], (scheme['primers_left'], str(len(scheme['primers_left']))))
         self.assertRegex(rows[1][3], r'^\d\d,\d$')            # Tm with the decimal comma of the language
 
+    def test_very_long_values_are_shortened(self):
+        long = dict(self.summaries[0].scheme, suppliers=', '.join(f'Supplier {i}' for i in range(60)),
+                    isoschizomers='; '.join(f'Enz{i}I' for i in range(80)))
+        summary = snp_summary.SnpSummary(record=self.summaries[0].record, schemes=[long], primer_base='DGAT1')
+        fields = dict(lab_sheet.sheet_fields(summary, 'off'))
+        for title in ('Поставщики', 'Изошизомеры'):
+            self.assertLessEqual(len(fields[title]), lab_sheet.MAX_VALUE)
+            self.assertTrue(fields[title].endswith('…'))
+        self.assertEqual(fields['Фермент'], long['enzyme'])
+
+    def test_sheet_of_a_window_search_assay_has_no_primer_part(self):
+        window = dict(self.summaries[0].scheme, primers_left=None, primers_right=None, status='window_only')
+        summary = snp_summary.SnpSummary(record=self.summaries[0].record, schemes=[window], primer_base='DGAT1')
+        self.assertEqual(lab_sheet.primer_rows(summary), [])
+        self.assertNotIn('Tm', lab_sheet.footer_text(self.fasta, dict(self.params, use_primer3=False)))
+        self.assertIn('Tm', lab_sheet.footer_text(self.fasta, self.params))
+        self.assertEqual(lab_sheet.export_lab_sheets(self.out, [summary], self.fasta, self.params, 'off'), 1)
+
+    def test_unwritable_destination_is_an_error(self):
+        with self.assertRaises(OSError):
+            lab_sheet.export_lab_sheets(os.path.join(self._dir.name, 'no_such_folder', 'x.pdf'), self.summaries,
+                                        self.fasta, self.params, 'off')
+
     def test_english_fields(self):
         i18n.set_language('en')
         fields = dict(lab_sheet.sheet_fields(self.summaries[0], 'off'))

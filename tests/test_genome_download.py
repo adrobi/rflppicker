@@ -174,5 +174,138 @@ class DownloadTests(unittest.TestCase):
         self.assertEqual(transport.starts, [])
 
 
+class ReviewFixTests(unittest.TestCase):
+    def setUp(self):
+        self._dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._dir.cleanup)
+        self.base = self._dir.name
+        self.fasta = os.path.join(self.base, 'genoms', 'Toy_asm_v1.0.fa')
+        self.names = os.path.join(self.base, 'names', 'Toy_asm_v1.0.txt')
+        self.part = self.fasta + '.gz.part'
+
+    def test_connection_closed_early_keeps_the_part(self):
+        class Truncating(FakeTransport):
+            def stream(self, url, start):          # the server closes the connection without an error
+                self.starts.append(start)
+                yield self.archive[start:start + 2500]
+
+        with self.assertRaises(gd.GenomeDownloadError) as raised:
+            gd.download_genome('GCF_000000123.4', self.base, transport=Truncating())
+        self.assertIn('прервано', str(raised.exception))
+        self.assertEqual(os.path.getsize(self.part), 2500)
+        transport = FakeTransport()
+        gd.download_genome('GCF_000000123.4', self.base, transport=transport)
+        self.assertEqual(transport.starts, [2500])
+
+    def test_genbank_assembly_has_its_own_files(self):
+        class GenBank(FakeTransport):
+            def text(self, url):
+                return super().text(url.replace('GCA', 'GCF')).replace('GCF', 'GCA') if 'GCA' in url else super().text(url)
+
+            def size(self, url):
+                return len(self.archive)
+
+        refseq = gd.download_genome('GCF_000000123.4', self.base, transport=FakeTransport())
+        genbank = gd.download_genome('GCA_000000123.4', self.base, transport=GenBank())
+        self.assertEqual(refseq, (self.fasta, self.names))
+        self.assertEqual([os.path.basename(path) for path in genbank], ['Toy_asm_v1.0_GCA.fa', 'Toy_asm_v1.0_GCA.txt'])
+        with open(genbank[1], encoding='utf-8') as stream:
+            self.assertTrue(stream.read().startswith('1\tCM000001.1\n'))
+
+    def test_existing_genome_gets_its_missing_names_and_index(self):
+        os.makedirs(os.path.dirname(self.fasta))
+        with open(self.fasta, 'wb') as stream:        # an earlier run stopped right after unpacking
+            stream.write(FASTA)
+        with open(self.part, 'wb') as stream:
+            stream.write(b'left over')
+        transport = FakeTransport()
+        self.assertEqual(gd.download_genome('GCF_000000123.4', self.base, transport=transport),
+                         (self.fasta, self.names))
+        self.assertEqual(transport.starts, [])                         # nothing is downloaded again
+        self.assertTrue(os.path.isfile(self.names))
+        self.assertTrue(os.path.isfile(self.fasta + '.fai'))
+        self.assertFalse(os.path.exists(self.part))
+
+    def test_unknown_size_is_downloaded_without_the_space_check(self):
+        class NoLength(FakeTransport):
+            def size(self, url):
+                return 0
+
+        gd.download_genome('GCF_000000123.4', self.base, transport=NoLength(), free_space=lambda _path: 10)
+        with open(self.fasta, 'rb') as stream:
+            self.assertEqual(stream.read(), FASTA)
+
+    def test_assembly_name_must_be_a_plain_file_name(self):
+        class Hostile(FakeTransport):
+            def text(self, url):
+                return '<a href="GCF_000000123.4_..\\evil:name/">x</a>' if url == FOLDER else super().text(url)
+
+        with self.assertRaises(gd.GenomeDownloadError):
+            gd.find_assembly('GCF_000000123.4', Hostile())
+
+    def test_missing_assembly_folder_is_not_found(self):
+        class Missing(FakeTransport):
+            def text(self, url):
+                raise gd.GenomeDownloadError('NCBI ответил ошибкой 404', code=404)
+
+        with self.assertRaises(gd.GenomeDownloadError) as raised:
+            gd.find_assembly('GCF_000000999.1', Missing())
+        self.assertEqual(str(raised.exception), 'Сборка GCF_000000999.1 не найдена на NCBI')
+
+
+class HttpTransportTests(unittest.TestCase):
+    """The real transport against a local server."""
+
+    @classmethod
+    def setUpClass(cls):
+        import http.server
+        import threading
+        data = bytes(range(256)) * 40
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *_args):
+                pass
+
+            def do_HEAD(self):
+                self.send_response(200)
+                self.send_header('Content-Length', str(len(data)))
+                self.end_headers()
+
+            def do_GET(self):
+                if self.path == '/missing':
+                    self.send_error(404)
+                    return
+                start = int(self.headers['Range'].split('=')[1].rstrip('-')) if self.headers.get('Range') else 0
+                ignore = self.path == '/norange'
+                self.send_response(206 if start and not ignore else 200)
+                self.send_header('Content-Length', str(len(data) - (0 if ignore else start)))
+                self.end_headers()
+                self.wfile.write(data if ignore else data[start:])
+
+        cls.data = data
+        cls.server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        cls.url = f'http://127.0.0.1:{cls.server.server_address[1]}'
+        threading.Thread(target=cls.server.serve_forever, daemon=True).start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.shutdown()
+        cls.server.server_close()
+
+    def test_size_and_ranges(self):
+        transport = gd.HttpTransport()
+        self.assertEqual(transport.size(self.url + '/file'), len(self.data))
+        self.assertEqual(b''.join(transport.stream(self.url + '/file', 0)), self.data)
+        self.assertEqual(b''.join(transport.stream(self.url + '/file', 1000)), self.data[1000:])
+
+    def test_server_ignoring_the_range_is_an_error(self):
+        with self.assertRaises(gd.GenomeDownloadError):
+            b''.join(gd.HttpTransport().stream(self.url + '/norange', 1000))
+
+    def test_http_error_carries_its_code(self):
+        with self.assertRaises(gd.GenomeDownloadError) as raised:
+            gd.HttpTransport().text(self.url + '/missing')
+        self.assertEqual(raised.exception.code, 404)
+
 if __name__ == '__main__':
     unittest.main()

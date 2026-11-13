@@ -82,6 +82,8 @@ class GenomeDownloadDialog(QDialog):
         self.download_button = QPushButton(t('Скачать'))
         self.download_button.setProperty('role', 'primary')
         self.download_button.clicked.connect(self.start)
+        self.download_button.setDefault(True)        # Enter in the accession field starts the download
+        self.cancel_button.setAutoDefault(False)
         buttons.addWidget(self.download_button)
         layout.addLayout(buttons)
 

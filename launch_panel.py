@@ -499,6 +499,7 @@ class LaunchPanel(QWidget):
         if self.genome_combo.itemData(index) == _DOWNLOAD_ITEM:
             dialog = GenomeDownloadDialog(get_base_dir(), self)
             path = dialog.fasta_path if dialog.exec() else ''
+            dialog.deleteLater()
             if path:
                 self._settings.add_recent_genome(path)
             self._fill_genomes(path or self._previous_genome)

@@ -213,10 +213,10 @@ Download a reference genome from NCBI into the genoms folder next to the program
     'Дата': 'Date', 'Оператор': 'Operator', '№ геля': 'Gel no.',
     'RFLP Picker · лабораторный лист': 'RFLP Picker · laboratory sheet',
     'Фото геля': 'Gel photo',
-    'RFLP Picker {version} · геном {genome} · продукт {prod_min}–{prod_max} п.н., Tm {tm_min}–{tm_max} °C · '
-    'лист создан {date}':
-        'RFLP Picker {version} · genome {genome} · product {prod_min}–{prod_max} bp, Tm {tm_min}–{tm_max} °C · '
-        'sheet made on {date}',
+    'геном {genome}': 'genome {genome}',
+    'продукт {prod_min}–{prod_max} п.н., Tm {tm_min}–{tm_max} °C': 'product {prod_min}–{prod_max} bp, Tm {tm_min}–{tm_max} °C',
+    'лист создан {date}': 'sheet made on {date}',
+    'Не удалось создать PDF: {path}': 'The PDF could not be made: {path}',
     # genome download
     'Овца': 'Sheep', 'Корова': 'Cattle', 'Коза': 'Goat', 'Свинья': 'Pig', 'Курица': 'Chicken', 'Рис': 'Rice',
     'Пшеница': 'Wheat', 'Ячмень': 'Barley', 'Сорго': 'Sorghum',
@@ -248,6 +248,11 @@ Download a reference genome from NCBI into the genoms folder next to the program
     'Номер сборки должен иметь вид GCF_016772045.1, а не «{value}»':
         'The assembly accession must look like GCF_016772045.1, not “{value}”',
     'Сборка {accession} не найдена на NCBI': 'The assembly {accession} was not found at NCBI',
+    'Неожиданное имя сборки на NCBI: {name}': 'An unexpected assembly name at NCBI: {name}',
+    'Соединение с NCBI прервано: получено {done} из {total} МБ. '
+    'Повторите загрузку — она продолжится с этого места.':
+        'The connection to NCBI was lost: {done} of {total} MB received. '
+        'Repeat the download: it continues from this point.',
     'На NCBI нет контрольной суммы файла {name}': 'NCBI has no checksum of the file {name}',
     'Недостаточно места на диске: нужно около {size} ГБ в папке {folder}':
         'Not enough disk space: about {size} GB are needed in the folder {folder}',

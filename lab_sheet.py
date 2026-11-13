@@ -21,6 +21,7 @@ from visualization import GelPanel, PrimerGraphicPanel, payload_for_scheme, rend
 DPI = 150
 MARGIN_MM = 14
 INK, MUTED, LINE = '#1F1F1F', '#616161', '#B0B0B0'
+MAX_VALUE = 220   # characters of one value: a longer list would push the primers and the map off the page
 
 
 def sheet_fields(summary: SnpSummary, dcaps_mode: str) -> List[Tuple[str, str]]:
@@ -42,7 +43,9 @@ def sheet_fields(summary: SnpSummary, dcaps_mode: str) -> List[Tuple[str, str]]:
         (t('Полосы ALT/ALT'), scheme.get('bands_alt_alt')),
         (t('Примечание'), summary.note(dcaps_mode)),
     ]
-    return [(title, str(value)) for title, value in rows if value not in (None, '')]
+    texts = [(title, str(value)) for title, value in rows if value not in (None, '')]
+    return [(title, value if len(value) <= MAX_VALUE else value[:MAX_VALUE - 1].rstrip() + '…')
+            for title, value in texts]
 
 
 def primer_rows(summary: SnpSummary) -> List[Tuple[str, str, str, str]]:
@@ -150,20 +153,22 @@ def draw_sheet(page: _Page, summary: SnpSummary, payload, message: str, dcaps_mo
     page.y = max(left_bottom, top + gel_height) + 8
     page.rule()
 
-    page.text(t('Праймеры'), 10, bold=True)
-    page.gap(3)
-    columns = (0, 34 * mm, page.width - 36 * mm, page.width - 18 * mm)
-    for index, title in enumerate((t('Имя'), t('Последовательность 5′→3′'), t('Длина'), 'Tm, °C')):
-        page.text(title, 8, color=MUTED, x=columns[index], advance=False)
-    page.gap(19)
-    for name, sequence, length, tm in primer_rows(summary):
-        page.text(name, 9.5, x=columns[0], width=columns[1] - 4, advance=False)
-        page.text(length, 9.5, x=columns[2], advance=False)
-        page.text(tm, 9.5, x=columns[3], advance=False)
-        page.gap(page.text(sequence, 9.5, mono=True, x=columns[1], width=columns[2] - columns[1] - 6,
-                           advance=False) + 4)
-    page.gap(4)
-    page.rule()
+    primers = primer_rows(summary)
+    if primers:                                   # a window-search assay has none
+        page.text(t('Праймеры'), 10, bold=True)
+        page.gap(3)
+        columns = (0, 34 * mm, page.width - 36 * mm, page.width - 18 * mm)
+        for index, title in enumerate((t('Имя'), t('Последовательность 5′→3′'), t('Длина'), 'Tm, °C')):
+            page.text(title, 8, color=MUTED, x=columns[index], advance=False)
+        page.gap(19)
+        for name, sequence, length, tm in primers:
+            page.text(name, 9.5, x=columns[0], width=columns[1] - 4, advance=False)
+            page.text(length, 9.5, x=columns[2], advance=False)
+            page.text(tm, 9.5, x=columns[3], advance=False)
+            page.gap(page.text(sequence, 9.5, mono=True, x=columns[1], width=columns[2] - columns[1] - 6,
+                               advance=False) + 4)
+        page.gap(4)
+        page.rule()
 
     page.text(t('Карта ампликона'), 10, bold=True)
     page.gap(3)
@@ -186,6 +191,17 @@ def draw_sheet(page: _Page, summary: SnpSummary, payload, message: str, dcaps_mo
     page.text(footer, 7.5, color=MUTED)
 
 
+def footer_text(fasta_path: str, params: dict) -> str:
+    """The program version, the genome and the search settings that applied."""
+    parts = [f'RFLP Picker {core.APP_VERSION}', t('геном {genome}', genome=os.path.basename(fasta_path or '—'))]
+    if params.get('use_primer3', True):           # the window search has no product and no Tm
+        parts.append(t('продукт {prod_min}–{prod_max} п.н., Tm {tm_min}–{tm_max} °C',
+                       prod_min=params.get('prod_min'), prod_max=params.get('prod_max'),
+                       tm_min=fmt(params.get('tm_min')), tm_max=fmt(params.get('tm_max'))))
+    parts.append(t('лист создан {date}', date=datetime.now().strftime('%Y-%m-%d')))
+    return ' · '.join(parts)
+
+
 def export_lab_sheets(path: str, summaries: List[SnpSummary], fasta_path: str, params: dict, dcaps_mode: str) -> int:
     """Write one page per SNP that has an assay; return the number of pages.
 
@@ -199,10 +215,7 @@ def export_lab_sheets(path: str, summaries: List[SnpSummary], fasta_path: str, p
     if fasta_path and os.path.isfile(fasta_path):
         from pyfaidx import Fasta
         fasta = Fasta(fasta_path, as_raw=True, sequence_always_upper=True)
-    footer = t('RFLP Picker {version} · геном {genome} · продукт {prod_min}–{prod_max} п.н., Tm {tm_min}–{tm_max} °C · '
-               'лист создан {date}', version=core.APP_VERSION, genome=os.path.basename(fasta_path or '—'),
-               prod_min=params.get('prod_min'), prod_max=params.get('prod_max'), tm_min=fmt(params.get('tm_min')),
-               tm_max=fmt(params.get('tm_max')), date=datetime.now().strftime('%Y-%m-%d'))
+    footer = footer_text(fasta_path, params)
     # Drawn on paper: the light palette whatever the theme of the window.
     panels = PrimerGraphicPanel(compact=True), GelPanel(compact=True)
     panels[0].apply_colors(palette.colors(False))
@@ -216,6 +229,8 @@ def export_lab_sheets(path: str, summaries: List[SnpSummary], fasta_path: str, p
                                              QMarginsF(MARGIN_MM, MARGIN_MM, MARGIN_MM, MARGIN_MM),
                                              QPageLayout.Unit.Millimeter))
             painter = QPainter(writer)
+            if not painter.isActive():
+                raise OSError(t('Не удалось создать PDF: {path}', path=path))
             try:
                 painter.setRenderHints(QPainter.RenderHint.Antialiasing | QPainter.RenderHint.TextAntialiasing)
                 area = writer.pageLayout().paintRectPixels(DPI)
