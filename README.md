@@ -1,4 +1,4 @@
-# RFLP Picker 1.4
+# RFLP Picker 1.5
 
 English | [Русский](README.ru.md)
 
@@ -9,6 +9,21 @@ list of SNPs and a reference genome it designs Primer3 primer pairs, finds
 restriction enzymes that tell the three genotypes apart and shows the expected
 bands on a virtual gel. The program compares REF and ALT on the reference FASTA,
 reports fragment sizes and draws a map of the amplicon.
+
+## What's new in 1.5
+
+- Reference genomes are downloaded from NCBI by the program: “Download a genome…”
+  in the “Genome” list — see [Downloading a genome](#downloading-a-genome).
+- Laboratory sheets as PDF, one A4 page per SNP: enzyme, primers, bands, gel, map
+  and fields to fill in by hand — see [Results and export](#results-and-export).
+- A ready build for Linux next to the Windows one — see [Linux release](#linux-release).
+- The single-pair mode, the “As in v1.1.0” button and `--preset` are removed; the
+  article is reproduced by the 1.1.0 release itself.
+- The window search (without Primer3) is scored by the same rules as the search
+  with primers, so its results differ from 1.4.
+
+The search with Primer3 gives the same assays as 1.4. The list of changes is in
+the [CHANGELOG](CHANGELOG.md) (in Russian).
 
 ## What's new in 1.4
 

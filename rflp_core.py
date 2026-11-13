@@ -15,7 +15,7 @@ from Bio.Seq import Seq
 from Bio.Restriction import AllEnzymes
 from assay_scoring import GelModel, MODEL_VERSION, score_genotypes, rank_key
 
-APP_VERSION = "1.4.0"
+APP_VERSION = "1.5.0"
 
 # Analysis defaults of the window and the command line; the checks were chosen
 # from the validation on published assays.
