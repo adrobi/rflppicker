@@ -137,6 +137,27 @@ class FindSitesTests(unittest.TestCase):
         self.assertTrue(found.saturated)
         self.assertEqual(len(found.sites), 10)
 
+    def test_a_long_low_complexity_run_is_cut_short(self):
+        genome = 'A' * 300_000
+        codes = specificity._codes(genome)
+        primer = 'A' * 20
+        table, patterns, _longest = specificity._seed_table([primer])
+        found = specificity._scan_block(codes, 0, len(codes), table, patterns, 3, limit=50, full=set())
+        self.assertGreater(len(found), 50)                    # enough to know that the primer is a repeat
+        self.assertLess(len(found), 2 * specificity.VERIFY)   # and not one entry per base of the run
+        result = specificity.find_sites(self.fasta({'c': genome}), [primer], max_sites=50)[primer]
+        self.assertTrue(result.saturated)
+        self.assertEqual(len(result.sites), 50)
+
+    def test_other_bytes_in_the_fasta_are_mismatches(self):
+        rng = random.Random(6)
+        genome = ''.join(rng.choice('ACGT') for _ in range(400))
+        primer = genome[100:122]
+        path = os.path.join(self._dir.name, 'odd.fa')
+        with open(path, 'w', encoding='utf-8') as stream:
+            stream.write('>c\n' + genome[:101] + 'é' + genome[102:] + '\n')
+        self.assertEqual(specificity.find_sites(path, [primer])[primer].sites, [Site('c', 100, '+', 1)])
+
     def test_progress_and_cancel(self):
         rng = random.Random(9)
         genome = ''.join(rng.choice('ACGT') for _ in range(4000))

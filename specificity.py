@@ -12,6 +12,7 @@ index is kept and no other program is needed. The model is deliberately simple:
 
 It does not judge how well a mismatched primer really anneals.
 """
+import os
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -23,6 +24,7 @@ from pyfaidx import Fasta
 SEED = 12                 # bases of the 3' end that must match exactly
 BLOCK = 1 << 23           # genome bases read at once
 MAX_SITES = 1000          # a primer with more sites is a repeat: its products are not counted
+VERIFY = 20_000           # seed hits compared with the primers at once: bounds the memory of a long repeat
 _COMPLEMENT = str.maketrans('ACGT', 'TGCA')
 _CODE = np.full(256, 255, dtype=np.uint8)          # A, C, G, T -> 0..3 in either case; anything else 255
 for _value, _base in enumerate('ACGT'):
@@ -58,7 +60,8 @@ class Product(NamedTuple):
 
 
 def _codes(text: str) -> np.ndarray:
-    return _CODE[np.frombuffer(text.encode('ascii'), dtype=np.uint8)]
+    # A letter outside ASCII becomes '?': an unknown base, like any other letter that is not A, C, G or T.
+    return _CODE[np.frombuffer(text.encode('ascii', errors='replace'), dtype=np.uint8)]
 
 
 def _seed_value(codes: np.ndarray) -> int:
@@ -76,9 +79,28 @@ def _seed_values(codes: np.ndarray) -> np.ndarray:
     return ((four[:count] << 16) | (four[4:count + 4] << 8) | four[8:count + 8]) & 0xFFFFFF
 
 
-def _scan_block(codes: np.ndarray, first: int, last: int, table: np.ndarray, patterns: dict, max_mismatches: int):
-    """Sites whose seed starts in codes[first:last]: (primer index, footprint start in codes, strand, mismatches)."""
+def _seed_table(names: List[str]):
+    """Which seed values to look for, and the primers behind each value: (table, patterns, longest primer)."""
+    table = np.zeros(4 ** SEED, dtype=bool)
+    patterns: Dict[int, list] = {}
+    for index, primer in enumerate(names):
+        forward = _codes(primer)
+        reverse = _codes(primer.translate(_COMPLEMENT)[::-1])
+        for strand, pattern, seed in (('+', forward, forward[-SEED:]), ('-', reverse, reverse[:SEED])):
+            value = _seed_value(seed)
+            table[value] = True
+            patterns.setdefault(value, []).append((index, strand, pattern))
+    return table, patterns, max(map(len, names))
+
+
+def _scan_block(codes: np.ndarray, first: int, last: int, table: np.ndarray, patterns: dict, max_mismatches: int,
+                limit: int = MAX_SITES, full=frozenset()):
+    """Sites whose seed starts in codes[first:last]: (primer index, footprint start in codes, strand, mismatches).
+
+    A primer listed in ``full`` already has more than ``limit`` sites and is skipped;
+    one that passes the limit inside this block is not followed further either."""
     found = []
+    counts: Dict[int, int] = {}
     if len(codes) < SEED:
         return found
     values = _seed_values(codes)
@@ -90,21 +112,30 @@ def _scan_block(codes: np.ndarray, first: int, last: int, table: np.ndarray, pat
     positions, hit_values = positions[order], hit_values[order]
     borders = np.flatnonzero(np.diff(hit_values)) + 1
     span = np.arange(SEED)
-    for group in np.split(np.arange(len(positions)), borders):
-        seeds = positions[group]
-        # A seed over an N has a meaningless value: the seed itself must be real bases.
-        seeds = seeds[(codes[seeds[:, None] + span] != 255).all(axis=1)]
-        if not len(seeds):
-            continue
-        for index, strand, pattern in patterns[int(hit_values[group[0]])]:
-            # '+': the seed is the end of the footprint; '-': the reverse complement starts with it.
-            starts = seeds - (len(pattern) - SEED) if strand == '+' else seeds
-            starts = starts[(starts >= 0) & (starts + len(pattern) <= len(codes))]
-            if not len(starts):
+    edges = [0, *borders.tolist(), len(positions)]
+    for begin, end in zip(edges, edges[1:]):
+        owners = patterns[int(hit_values[begin])]
+        # In portions: a seed inside a long repeat has millions of hits in one block.
+        for portion in range(begin, end, VERIFY):
+            owners = [owner for owner in owners if owner[0] not in full and counts.get(owner[0], 0) <= limit]
+            if not owners:
+                break
+            seeds = positions[portion:min(end, portion + VERIFY)]
+            # A seed over an N has a meaningless value: the seed itself must be real bases.
+            seeds = seeds[(codes[seeds[:, None] + span] != 255).all(axis=1)]
+            if not len(seeds):
                 continue
-            mismatches = (codes[starts[:, None] + np.arange(len(pattern))] != pattern).sum(axis=1)
-            keep = mismatches <= max_mismatches
-            found.extend((index, int(start), strand, int(count)) for start, count in zip(starts[keep], mismatches[keep]))
+            for index, strand, pattern in owners:
+                # '+': the seed is the end of the footprint; '-': the reverse complement starts with it.
+                starts = seeds - (len(pattern) - SEED) if strand == '+' else seeds
+                starts = starts[(starts >= 0) & (starts + len(pattern) <= len(codes))]
+                if not len(starts):
+                    continue
+                mismatches = (codes[starts[:, None] + np.arange(len(pattern))] != pattern).sum(axis=1)
+                keep = mismatches <= max_mismatches
+                counts[index] = counts.get(index, 0) + int(keep.sum())
+                found.extend((index, int(start), strand, int(count))
+                             for start, count in zip(starts[keep], mismatches[keep]))
     return found
 
 
@@ -124,16 +155,8 @@ def find_sites(fasta_path: str, primers: Iterable[str], max_mismatches: int = 3,
     if not names:
         return result
 
-    table = np.zeros(4 ** SEED, dtype=bool)
-    patterns: Dict[int, list] = {}
-    longest = max(map(len, names))
-    for index, primer in enumerate(names):
-        forward = _codes(primer)
-        reverse = _codes(primer.translate(_COMPLEMENT)[::-1])
-        for strand, pattern, seed in (('+', forward, forward[-SEED:]), ('-', reverse, reverse[:SEED])):
-            value = _seed_value(seed)
-            table[value] = True
-            patterns.setdefault(value, []).append((index, strand, pattern))
+    table, patterns, longest = _seed_table(names)
+    full = set()             # primers known to be repeats: later blocks do not follow them
 
     with Fasta(fasta_path, as_raw=True) as index_only:
         lengths = [(name, len(index_only[name])) for name in index_only.keys()]
@@ -152,9 +175,10 @@ def find_sites(fasta_path: str, primers: Iterable[str], max_mismatches: int = 3,
         # The footprint of a site may reach beyond the block by the primer length.
         left, right = max(0, start - longest), min(length, end + longest)
         codes = _codes(str(local.fasta[name][left:right]))
-        return name, left, _scan_block(codes, start - left, end - left, table, patterns, max_mismatches)
+        return name, left, _scan_block(codes, start - left, end - left, table, patterns, max_mismatches,
+                                       max_sites, full)
 
-    workers = max(1, min(threads or 4, len(jobs)))
+    workers = max(1, min(threads or min(4, os.cpu_count() or 1), len(jobs)))
     try:
         with ThreadPoolExecutor(workers) as pool:
             for done, found in enumerate(pool.map(work, jobs), 1):
@@ -165,6 +189,7 @@ def find_sites(fasta_path: str, primers: Iterable[str], max_mismatches: int = 3,
                     entry = result[names[index]]
                     if len(entry.sites) >= max_sites:
                         entry.saturated = True
+                        full.add(index)
                     else:
                         entry.sites.append(Site(name, left + start, strand, mismatches))
                 if progress_cb:

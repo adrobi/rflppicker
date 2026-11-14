@@ -74,6 +74,9 @@ _FAILURE_HINTS = {
 }
 
 
+REPEAT_SITES = 1000   # specificity.MAX_SITES: a primer with more annealing sites lies in a repeat
+
+
 def status_title(status: str) -> str:
     return t(STATUS_TITLES[status])
 
@@ -157,6 +160,8 @@ class SnpSummary:
             parts.append(t('Известных вариантов в ампликоне: {count}', count=scheme['background_variants']))
         if (scheme.get('offtarget_products') or 0) > 0:
             parts.append(t('Посторонние продукты ПЦР: {sizes} п.н.', sizes=scheme.get('offtarget_sizes')))
+        if max(scheme.get('primer_sites_left') or 0, scheme.get('primer_sites_right') or 0) > REPEAT_SITES:
+            parts.append(t('Праймер лежит в повторе генома (более {count} мест отжига)', count=REPEAT_SITES))
         if (scheme.get('repeat_pct') or 0) >= 50:
             parts.append(t('Повторы {percent}% ампликона', percent=scheme['repeat_pct']))
         if scheme.get('status') == 'window_only':

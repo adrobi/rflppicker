@@ -200,6 +200,9 @@ class NoteTests(unittest.TestCase):
         self.assertEqual(summary(schemes=[dict(robust, offtarget_products=2, offtarget_sizes='512; 1340')]).note('off'),
                          'Посторонние продукты ПЦР: 512; 1340 п.н.')
         self.assertEqual(summary(schemes=[dict(robust, offtarget_products=0, offtarget_sizes='')]).note('off'), '')
+        self.assertEqual(summary(schemes=[dict(robust, primer_sites_left=3, primer_sites_right=1001,
+                                               offtarget_products=None, offtarget_sizes='')]).note('off'),
+                         'Праймер лежит в повторе генома (более 1000 мест отжига)')
         reason = 'Все пары праймеров дают посторонние продукты ПЦР или лежат в повторах генома'
         failed = summary(failure=dict(status='no_specific_primers', reason=reason))
         self.assertEqual(failed.status, snp_summary.NONE)

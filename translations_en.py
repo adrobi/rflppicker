@@ -230,6 +230,8 @@ Download a reference genome from NCBI into the genoms folder next to the program
         'Specificity: mismatches outside the 12 bases of the 3′ end, at most',
     'Специфичность: наибольший посторонний продукт, п.н.': 'Specificity: the largest other product, bp',
     'Посторонние продукты ПЦР: {sizes} п.н.': 'Other PCR products: {sizes} bp',
+    'Праймер лежит в повторе генома (более {count} мест отжига)':
+        'A primer lies in a genome repeat (more than {count} annealing sites)',
     'Мест отжига левого праймера': 'Annealing sites of the left primer',
     'Мест отжига правого праймера': 'Annealing sites of the right primer',
     'Посторонних продуктов ПЦР': 'Other PCR products',
@@ -675,6 +677,9 @@ CORE = [
      r'(up to \1 mismatches outside the 3′ end, product up to \2 bp)'),
     (r'Специфичность: проход по геному для (\d+) праймеров', r'Specificity: a pass over the genome for \1 primers'),
     (r'Специфичность: просмотрено (\d+)% генома', r'Specificity: \1% of the genome scanned'),
+    (r'Специфичность: dCAPS для (\d+) SNP без специфичной надёжной схемы',
+     r'Specificity: dCAPS for \1 SNPs without a specific robust assay'),
+    (r'Специфичность: исключено схем (\d+)', r'Specificity: \1 assays excluded'),
     (r'Все пары праймеров дают посторонние продукты ПЦР или лежат в повторах генома',
      'All primer pairs give other PCR products or lie in genome repeats'),
     (r'\[INFO\] Отбор: ', '[INFO] Filters: '),

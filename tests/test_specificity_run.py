@@ -75,6 +75,62 @@ class SpecificityRunTests(unittest.TestCase):
         self.assertGreater(report['summary']['excluded_offtarget'], 0)
         self.assertEqual([r['assay_rank'] for r in kept], list(range(1, len(kept) + 1)))
 
+    def test_flagged_pairs_rank_after_clean_ones(self):
+        every = self.pairs(self.run_core({'1': self.sequence}, specificity='off'))
+        first = self.run_core({'1': self.sequence}, specificity='off')[0]
+        best = (first['primers_left'], first['primers_right'])        # the pair of the rank-1 assay
+        genome = {'1': self.sequence, '2': self.planted(*best)}
+        warned = self.run_core(genome, specificity='warn')
+        flags = [r['offtarget_products'] > 0 for r in warned]
+        self.assertIn(True, flags)
+        self.assertEqual(flags, sorted(flags))                         # every clean assay before a flagged one
+        self.assertEqual([r['assay_rank'] for r in warned], list(range(1, len(warned) + 1)))
+        grouped = self.run_core(genome, specificity='warn', group_isoschizomers=True)
+        self.assertGreater(len(every), 1)
+        (ecori,) = [r for r in grouped if r['enzyme'] == 'EcoRI']
+        self.assertEqual(ecori['offtarget_products'], 0)               # the site is shown with a clean pair
+        self.assertNotEqual((ecori['primers_left'], ecori['primers_right']), best)
+
+    def test_primer_inside_a_repeat(self):
+        def repeat(_fasta, primers, **_options):
+            return {primer: specificity.PrimerSites([specificity.Site('1', 5, '+', 0)] * specificity.MAX_SITES, True)
+                    for primer in primers}
+
+        with patch.object(specificity, 'find_sites', repeat):
+            warned = self.run_core({'1': self.sequence}, specificity='warn')
+            (excluded,) = self.run_core({'1': self.sequence}, specificity='exclude')
+        self.assertTrue(warned)
+        for record in warned:                                          # "more than the limit", products not counted
+            self.assertEqual((record['primer_sites_left'], record['primer_sites_right'], record['offtarget_products'],
+                              record['offtarget_sizes']), (specificity.MAX_SITES + 1,) * 2 + (None, ''))
+        self.assertEqual(excluded['status'], 'no_specific_primers')
+
+    def test_primer_the_scan_cannot_look_up_is_left_unchecked(self):
+        with patch.object(specificity, 'find_sites', lambda *_args, **_options: {}):
+            records = self.run_core({'1': self.sequence}, specificity='exclude')
+        self.assertTrue(self.pairs(records))
+        self.assertEqual({(r['primer_sites_left'], r['offtarget_products']) for r in records}, {(None, None)})
+
+    def test_large_snp_lists_are_checked_in_batches(self):
+        (self.root / 'variants.tsv').write_text('chrom\tpos\tref\talt\n1\t200\tA\tG\n1\t200\tA\tG\n1\t200\tA\tG\n')
+        whole, batched = {}, {}
+        expected = self.run_core({'1': self.sequence}, report=whole, specificity='exclude')
+        with patch.object(core, 'SPECIFICITY_BATCH', 2):
+            records = self.run_core({'1': self.sequence}, report=batched, specificity='exclude')
+        self.assertEqual(records, expected)
+        self.assertEqual((whole['summary']['specificity_scans'], batched['summary']['specificity_scans']), (1, 2))
+
+    def test_removed_assays_are_named_in_the_log(self):
+        every = self.pairs(self.run_core({'1': self.sequence}, specificity='off'))
+        fasta = self.root / 'log.fa'
+        fasta.write_text(f">1\n{self.sequence}\n>2\n{self.planted(*every[0])}\n")
+        params = dict(core.DEFAULT_PARAMS, **CHECKS_OFF, fasta=str(fasta), input_file=str(self.root / 'variants.tsv'),
+                      flank=500, prod_min=200, prod_max=500, tm_min=50, tm_max=70, primer_pairs=3, top_results=0)
+        params['specificity'] = 'exclude'
+        log, report = [], {}
+        core.run_analysis(params, status_cb=log.append, report=report)
+        self.assertIn(f"[INFO] Специфичность: исключено схем {report['summary']['excluded_offtarget']}", log)
+
     def test_product_longer_than_the_limit_does_not_count(self):
         every = self.pairs(self.run_core({'1': self.sequence}, specificity='off'))
         genome = {'1': self.sequence, '2': self.planted(*every[0], size=700)}

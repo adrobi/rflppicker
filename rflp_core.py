@@ -928,11 +928,21 @@ def group_by_site(hits: list) -> list:
         groups.setdefault((hit.get('design'), site_key(hit['_enz'])), []).append(hit)
     grouped = []
     for members in groups.values():
-        keep = min(members, key=lambda h: (not h['_enz'].suppl, rank_key(h)[:4],
+        keep = min(members, key=lambda h: (_flagged(h), not h['_enz'].suppl, rank_key(h)[:4],
                                            -len(h['_enz'].suppl), rank_key(h)[4:]))
         others = sorted({h['enzyme'] for h in members} - {keep['enzyme']})
         grouped.append(dict(keep, isoschizomers='; '.join(others)))
-    return sorted(grouped, key=rank_key)
+    return sorted(grouped, key=_order)
+
+
+def _flagged(hit: dict) -> bool:
+    """The specificity check has marked the primer pair of the assay (it stays only with specificity=warn)."""
+    return bool(hit.get('_unspecific'))
+
+
+def _order(hit: dict) -> tuple:
+    """Assays of one SNP in the order of the output: a flagged pair after every clean one."""
+    return (_flagged(hit), *rank_key(hit))
 
 
 def enzyme_suppliers_human(enzyme) -> str:
@@ -1045,6 +1055,8 @@ V12_HEADER = ['isoschizomers', 'primer_site', 'repeat_pct', 'background_variants
 # Added in 1.6: where else the primers anneal and what the pair amplifies there.
 V16_HEADER = ['primer_sites_left', 'primer_sites_right', 'offtarget_products', 'offtarget_sizes']
 RESULT_HEADER = BASE_HEADER + ASSAY_HEADER + V12_HEADER + V16_HEADER
+# SNPs whose assays are held in memory for one pass over the genome (about 0.25 MB each).
+SPECIFICITY_BATCH = 2000
 
 
 def _primer_candidates(pres, sequence, snp_off):
@@ -1392,7 +1404,7 @@ def _snp_records(run: _Run, window: _Window, hits: list, failure: Optional[dict]
     counters['enzyme_errors'] += window.errors
     counters['ambiguous_templates'] += window.ambiguous
     counters['genotype_rejected'] += window.genotype_rejected
-    hits.sort(key=rank_key)
+    hits.sort(key=_order)
     counters['candidates'] += len(hits)
     counters['candidate_sites'] += len({site_key(h['_enz']) for h in hits})
     if params['group_isoschizomers']:
@@ -1401,11 +1413,11 @@ def _snp_records(run: _Run, window: _Window, hits: list, failure: Optional[dict]
     counters['variants_with_robust_candidates'] += any(h['genotype_quality'] == 'robust' for h in hits)
     limit = params['top_results']
     records = [dict(hit, assay_rank=rank) for rank, hit in enumerate(hits[:limit] if limit else hits, 1)]
-    if not hits and failure is not None:
-        records.append(failure)
-    elif not hits and unspecific:
+    if not hits and unspecific:      # also when the natural design failed and only dCAPS assays were removed
         records.append(dict(window.base, status='no_specific_primers',
                             reason='Все пары праймеров дают посторонние продукты ПЦР или лежат в повторах генома'))
+    elif not hits and failure is not None:
+        records.append(failure)
     elif not hits:
         reason = 'Не найдено сочетание для различения трёх генотипов'
         if window.ambiguous:
@@ -1479,16 +1491,33 @@ def _scan_genome(run: _Run, hits: list) -> None:
     except specificity.ScanCancelled:
         run.report['cancelled'] = True
         raise AnalysisCancelled() from None
+    def count(entry):
+        # "More than the limit" for a primer inside a repeat: its list of sites is cut.
+        return specificity.MAX_SITES + 1 if entry.saturated else len(entry.sites)
+
+    checked = {}        # the assays of one primer pair share the answer
     for hit in hits:
-        left, right = hit['primers_left'].upper(), hit['primers_right'].upper()
+        left, right = ((hit.get(key) or '').upper() for key in ('primers_left', 'primers_right'))
         intended = (hit['mapped_id'], hit['amplicon_start'] - 1, hit['amplicon_end'])
-        products = specificity.pair_products(sites, left, right, params['specificity_max_product'], intended)
-        repeat = sites[left].saturated or sites[right].saturated
-        sizes = sorted(product.size for product in products)
-        hit.update(primer_sites_left=len(sites[left].sites), primer_sites_right=len(sites[right].sites),
-                   offtarget_products=len(products),
-                   offtarget_sizes='; '.join(map(str, sizes[:5])) + ('; …' if len(sizes) > 5 else ''),
-                   _unspecific=bool(products) or repeat)
+        answer = checked.get((left, right, intended))
+        if answer is None:
+            if left not in sites or right not in sites:
+                # A primer the scan cannot look up (letters other than A, C, G, T): left unchecked.
+                answer = dict(primer_sites_left=None, primer_sites_right=None, offtarget_products=None,
+                              offtarget_sizes='', _unspecific=False)
+            elif sites[left].saturated or sites[right].saturated:
+                # A repeat: not specific, and the products of a cut list would be an arbitrary number.
+                answer = dict(primer_sites_left=count(sites[left]), primer_sites_right=count(sites[right]),
+                              offtarget_products=None, offtarget_sizes='', _unspecific=True)
+            else:
+                products = specificity.pair_products(sites, left, right, params['specificity_max_product'], intended)
+                sizes = sorted(product.size for product in products)
+                answer = dict(primer_sites_left=count(sites[left]), primer_sites_right=count(sites[right]),
+                              offtarget_products=len(products),
+                              offtarget_sizes='; '.join(map(str, sizes[:5])) + ('; …' if len(sizes) > 5 else ''),
+                              _unspecific=bool(products))
+            checked[left, right, intended] = answer
+        hit.update(answer)
 
 
 def _drop_unspecific(run: _Run, search: _Search) -> None:
@@ -1511,6 +1540,8 @@ def _check_specificity(run: _Run, searches: list) -> None:
     retry = [search for search in pending if run.dcaps == 'fallback' and not search.dcaps_tried
              and not any(hit['genotype_quality'] == 'robust' for hit in search.hits)]
     added = []
+    if retry:
+        run.log(f'[INFO] Специфичность: dCAPS для {len(retry)} SNP без специфичной надёжной схемы')
     for search in retry:
         run.check_cancel()
         extra = _dcaps_hits(run, search.window)
@@ -1521,6 +1552,8 @@ def _check_specificity(run: _Run, searches: list) -> None:
         _scan_genome(run, added)
         for search in retry:
             _drop_unspecific(run, search)
+    if run.specificity == 'exclude':
+        run.log(f"[INFO] Специфичность: исключено схем {sum(search.unspecific for search in pending)}")
 
 
 def run_analysis(params, status_cb=None, progress_cb=None, cancel_cb=None, report=None):
@@ -1618,11 +1651,12 @@ def run_analysis(params, status_cb=None, progress_cb=None, cancel_cb=None, repor
                 searches.append(search)
             if progress_cb:
                 progress_cb(vi, len(cleaned))
-        if searches:
-            # The primers of all SNPs are looked up in one pass over the genome.
-            _check_specificity(run, searches)
-            for search in searches:
-                emit(search)
+            if len(searches) >= SPECIFICITY_BATCH or (searches and vi == len(cleaned)):
+                # The primers of these SNPs are looked up in one pass over the genome.
+                _check_specificity(run, searches)
+                for search in searches:
+                    emit(search)
+                searches = []
     finally:
         fa.close()
     if params['mask_repeats'] and use_primer3 and not masked_windows:

@@ -269,7 +269,7 @@ most 3 mismatches, on either strand. A pair has *another PCR product* where two
 such sites face each other within 2000 bp — the two primers in any combination.
 The “Specificity” choice of the “Run” panel sets what happens to such pairs:
 they are excluded (the default), only flagged in the “Note” column, or the check
-is off. A primer with 1000 sites or more lies in a repeat and counts as not
+is off. A primer with more than 1000 sites lies in a repeat and counts as not
 specific. An SNP whose pairs all fail gets the status “no specific primers”.
 The two numbers are in the “Advanced” dialog; on the command line:
 `--specificity off|warn|exclude`, `--specificity-mismatches`,
@@ -281,7 +281,10 @@ products are what matters.
 The check is a simple sequence model, not a thermodynamic one: it does not judge
 how well a mismatched primer anneals, and it does not see sites with a mismatch
 in the 3′ end. For a dCAPS primer it looks for sites that match the primer as
-synthesized. It does not act in the window search.
+synthesized, so the mismatch primer itself often shows 0 sites: its own target
+has the mismatch inside the 3′ end. With “flag only” the flagged pairs come after
+the clean ones. Large SNP lists are checked 2000 SNPs at a time, one pass over
+the genome for each part. It does not act in the window search.
 
 Checking the coordinates and that `REF` matches the FASTA is always on. The
 option to skip normalization turns off only the automatic REF/ALT swap.

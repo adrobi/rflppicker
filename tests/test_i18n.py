@@ -73,6 +73,9 @@ CORE_SAMPLES = [
     ('[INFO] Специфичность: проход по геному для 214 праймеров',
      '[INFO] Specificity: a pass over the genome for 214 primers'),
     ('[INFO] Специфичность: просмотрено 40% генома', '[INFO] Specificity: 40% of the genome scanned'),
+    ('[INFO] Специфичность: dCAPS для 7 SNP без специфичной надёжной схемы',
+     '[INFO] Specificity: dCAPS for 7 SNPs without a specific robust assay'),
+    ('[INFO] Специфичность: исключено схем 22', '[INFO] Specificity: 22 assays excluded'),
     ('Все пары праймеров дают посторонние продукты ПЦР или лежат в повторах генома',
      'All primer pairs give other PCR products or lie in genome repeats'),
     ('[INFO] Оценка полос: модель присутствия, полная рестрикция; '
