@@ -1393,25 +1393,24 @@ def _snp_records(run: _Run, window: _Window, hits: list, failure: Optional[dict]
     return records
 
 
-def _analyse_snp(run: _Run, fa, chrom: str, mapped_id: str, pos: int, ref: str, alt: str) -> Tuple[list, bool, bool]:
-    """The result rows of one SNP, whether its window has soft-masked bases, and whether
-    the enzymes were tried (an SNP that fails before that does not report progress)."""
+def _analyse_snp(run: _Run, fa, chrom: str, mapped_id: str, pos: int, ref: str, alt: str) -> Tuple[list, bool]:
+    """The result rows of one SNP and whether its window has soft-masked bases."""
     window = _snp_window(run, fa, chrom, mapped_id, pos, ref, alt)
     masked = window.raw != window.seq
     if not 0 <= window.off < len(window.seq) or window.seq[window.off] != ref:
-        return [dict(window.base, status='analysis_error', reason='REF не совпадает с FASTA')], masked, False
+        return [dict(window.base, status='analysis_error', reason='REF не совпадает с FASTA')], masked
     window.altseq = window.seq[:window.off] + alt + window.seq[window.off + 1:]
     window.known = _known_variants(run, window, mapped_id)
     failure, pairs = _natural_pairs(run, window)
     if failure is not None and run.dcaps == 'off':
-        return [failure], masked, False
+        return [failure], masked
     window.base['pairs_evaluated'] = len(pairs) if run.use_primer3 else 0
     run.counters['pairs_evaluated'] += window.base['pairs_evaluated']
     hits = _natural_hits(run, window, pairs)
     if run.dcaps == 'always' or (run.dcaps == 'fallback'
                                  and not any(h['genotype_quality'] == 'robust' for h in hits)):
         hits += _dcaps_hits(run, window)
-    return _snp_records(run, window, hits, failure), masked, True
+    return _snp_records(run, window, hits, failure), masked
 
 
 def run_analysis(params, status_cb=None, progress_cb=None, cancel_cb=None, report=None):
@@ -1492,10 +1491,10 @@ def run_analysis(params, status_cb=None, progress_cb=None, cancel_cb=None, repor
 
         for vi, (chrom, pos, ref, alt) in enumerate(cleaned, 1):
             run.check_cancel()
-            records, masked, tried = _analyse_snp(run, fa, chrom, contig_of(chrom), pos, ref, alt)
+            records, masked = _analyse_snp(run, fa, chrom, contig_of(chrom), pos, ref, alt)
             masked_windows += masked
             out_rows.extend([record.get(key) for key in header] for record in records)
-            if progress_cb and tried:
+            if progress_cb:
                 progress_cb(vi, len(cleaned))
     finally:
         fa.close()

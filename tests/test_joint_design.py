@@ -516,6 +516,30 @@ class WindowSearchRulesTests(unittest.TestCase):
         self.assertTrue(all(row['reason'].startswith('Оценка окна без подобранных праймеров. ') for row in rows))
 
 
+class ProgressTests(unittest.TestCase):
+    def test_progress_reaches_the_end_when_snps_have_no_primers(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        rng = random.Random(19)
+        sequence = ''.join(rng.choice('ACGT') for _ in range(400))
+        (root / 'toy.fa').write_text('>1\n' + sequence + '\n')
+        (root / 'variants.tsv').write_text('chrom\tpos\tref\talt\n' + ''.join(
+            f'1\t{pos}\t{sequence[pos - 1]}\t{"A" if sequence[pos - 1] != "A" else "C"}\n' for pos in (150, 200, 250)))
+        params = dict(core.DEFAULT_PARAMS, **CHECKS_OFF, fasta=str(root / 'toy.fa'),
+                      input_file=str(root / 'variants.tsv'), flank=100)
+        progress = []
+        def no_pairs(*_args, **_kwargs):
+            return None
+
+        no_pairs.last_error = ''
+        with patch.object(core, 'primer3_pick', no_pairs):               # no SNP gets primers
+            header, rows = core.run_analysis(params, progress_cb=lambda done, total: progress.append((done, total)))
+        self.assertEqual({row[header.index('status')] for row in rows}, {'no_primers'})
+        # Three calls while the file is read, then one for every SNP of the search.
+        self.assertEqual(progress, [(1, 3), (2, 3), (3, 3)] * 2)
+
+
 class OneSearchTests(unittest.TestCase):
     """The single-pair mode is gone: a joint_design key of older settings changes nothing."""
 
