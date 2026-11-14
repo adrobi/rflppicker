@@ -189,6 +189,19 @@ class CliTests(unittest.TestCase):
         self.assertNotIn('Traceback', stderr.getvalue())
         self.assertTrue(issubclass(genome_download.GenomeDownloadError, Exception))
 
+    def test_specificity_settings_from_the_command_line(self):
+        base = ['--fasta', str(self.fasta), '--variants', str(self.variants), '--out', str(self.root / 'x.csv')]
+        defaults = rflp_cli.params_from_args(rflp_cli.build_parser().parse_args(base))
+        self.assertEqual((defaults['specificity'], defaults['specificity_mismatches'],
+                          defaults['specificity_max_product']), ('exclude', 3, 2000))
+        params = rflp_cli.params_from_args(rflp_cli.build_parser().parse_args(
+            base + ['--specificity', 'warn', '--specificity-mismatches', '2', '--specificity-max-product', '1500']))
+        self.assertEqual((params['specificity'], params['specificity_mismatches'],
+                          params['specificity_max_product']), ('warn', 2, 1500))
+        code, log = self.run_cli('--out', str(self.root / 'x.csv'), '--specificity-max-product', '5')
+        self.assertEqual(code, 2)
+        self.assertIn('specificity_max_product: требуется целое число от 100 до 20000', log)
+
     def test_preset_and_joint_keys_are_gone(self):
         for keys in (['--preset', 'v1.1'], ['--preset', 'recommended'], ['--joint'], ['--no-joint']):
             with self.subTest(keys=keys):

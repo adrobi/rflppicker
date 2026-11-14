@@ -32,6 +32,8 @@ LABELS = {
     'background_variants': N_('Известных вариантов в ампликоне'),
     'background_site_variants': N_('Варианты, меняющие разрезы/полосы'),
     'design': N_('Тип схемы'), 'primer_mismatches': N_('Несовпадения в праймере'),
+    'primer_sites_left': N_('Мест отжига левого праймера'), 'primer_sites_right': N_('Мест отжига правого праймера'),
+    'offtarget_products': N_('Посторонних продуктов ПЦР'), 'offtarget_sizes': N_('Длины посторонних продуктов, п.н.'),
     'line': N_('Строка'), 'chrom': N_('Хромосома'), 'pos': N_('Позиция'), 'ref': 'REF',
     'alt': 'ALT', 'details': N_('Подробности'), 'raw': N_('Исходная строка'),
 }
@@ -41,5 +43,6 @@ STATUS_LABELS = {
     'no_discriminating_assay': 'Схема для трёх генотипов не найдена',
     'ok': 'Праймеры подобраны', 'window_only': 'Поиск по окну',
     'no_primers': 'Праймеры не найдены', 'primer3_error': 'Ошибка Primer3',
+    'no_specific_primers': 'Нет специфичных праймеров',
     'no_enzyme_found': 'Фермент не найден', 'analysis_error': 'Ошибка анализа',
 }

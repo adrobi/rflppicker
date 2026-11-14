@@ -60,6 +60,21 @@ CORE_SAMPLES = [
      'The resolution stress factor must be between 1 and 5'),
     ('Длины фрагментов должны быть положительными', 'Fragment lengths must be positive'),
     ('[INFO] Поиск: joint; SNP: 6; ферментов: 623', '[INFO] Search: joint; SNPs: 6; enzymes: 623'),
+    ('[INFO] Оценка полос: модель присутствия, полная рестрикция; яркость не оценивается.',
+     '[INFO] Band model: presence of bands, complete digestion; band brightness is not assessed.'),
+    ('[INFO] Отбор: только продаваемые ферменты; пары праймеров с посторонним продуктом ПЦР исключаются '
+     '(до 3 несовпадений вне 3′-конца, продукт до 2000 п.н.)',
+     '[INFO] Filters: commercial enzymes only; primer pairs with another PCR product are excluded '
+     '(up to 3 mismatches outside the 3′ end, product up to 2000 bp)'),
+    ('[INFO] Отбор: пары праймеров с посторонним продуктом ПЦР отмечаются '
+     '(до 2 несовпадений вне 3′-конца, продукт до 1500 п.н.)',
+     '[INFO] Filters: primer pairs with another PCR product are flagged '
+     '(up to 2 mismatches outside the 3′ end, product up to 1500 bp)'),
+    ('[INFO] Специфичность: проход по геному для 214 праймеров',
+     '[INFO] Specificity: a pass over the genome for 214 primers'),
+    ('[INFO] Специфичность: просмотрено 40% генома', '[INFO] Specificity: 40% of the genome scanned'),
+    ('Все пары праймеров дают посторонние продукты ПЦР или лежат в повторах генома',
+     'All primer pairs give other PCR products or lie in genome repeats'),
     ('[INFO] Оценка полос: модель присутствия, полная рестрикция; '
      'яркость и специфичность ПЦР по всему геному не оцениваются.',
      '[INFO] Band model: presence of bands, complete digestion; '

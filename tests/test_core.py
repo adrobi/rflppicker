@@ -90,7 +90,7 @@ class CoreTests(unittest.TestCase):
             given.update(fasta=fasta, input_file=variants, use_primer3=False, flank=5, min_frag=1)
             report = {}
             run_rflp_gui_mode(given, report=report)
-        self.assertEqual(len(rflp_core.OPTIONAL_PARAMS), 18)
+        self.assertEqual(len(rflp_core.OPTIONAL_PARAMS), 21)
         self.assertNotIn('joint_design', report['parameters'])
         self.assertEqual(set(report['parameters']), set(given) | set(rflp_core.OPTIONAL_PARAMS))
         for key in rflp_core.OPTIONAL_PARAMS:

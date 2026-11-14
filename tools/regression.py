@@ -43,14 +43,18 @@ BASE_PARAMS = dict(names2_file='', flank=300, min_frag=80, max_frag=800, delta=2
                    commercial_only=True, group_isoschizomers=True, snp_end_distance=100,
                    exclude_primer_sites=True, mask_repeats=True, background_vcf='',
                    exclude_background_sites=True, dcaps='fallback', dcaps_mismatches=1,
-                   dcaps_tm_max=70.0, dcaps_prod_min=120, dcaps_prod_max=300, dcaps_delta=20)
+                   dcaps_tm_max=70.0, dcaps_prod_min=120, dcaps_prod_max=300, dcaps_delta=20,
+                   specificity='exclude', specificity_mismatches=3, specificity_max_product=2000)
 CHECKS_OFF = dict(commercial_only=False, group_isoschizomers=False, snp_end_distance=0,
-                  exclude_primer_sites=False, mask_repeats=False, exclude_background_sites=False, dcaps='off')
+                  exclude_primer_sites=False, mask_repeats=False, exclude_background_sites=False, dcaps='off',
+                  specificity='off')
 PROFILES = {
     'default': {},
     'wide': dict(prod_min=150, prod_max=1000),
     'top10': dict(top_results=10),
     'dcaps_always': dict(dcaps='always'),
+    # As up to 1.5.0, which had no specificity check: for a comparison with those releases.
+    'no_specificity': dict(specificity='off'),
     'checks_off': CHECKS_OFF,
     'window': dict(use_primer3=False),
     'filters': dict(CHECKS_OFF, gain_loss_only=True, max_cuts=1, delta=40, flank=500, primer_pairs=5,

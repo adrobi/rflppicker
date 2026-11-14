@@ -17,10 +17,11 @@ from rflp_core import (
     DEFAULT_PARAMS, _PRIMER3_AVAILABLE, _SUPPLIER_CANON, get_base_dir, validate_params,
 )
 
-KEY_PARAMS = ('prod_min', 'prod_max', 'tm_min', 'tm_max', 'commercial_only', 'suppliers', 'dcaps')
+KEY_PARAMS = ('prod_min', 'prod_max', 'tm_min', 'tm_max', 'specificity', 'commercial_only', 'suppliers', 'dcaps')
 ADVANCED_PARAMS = ('min_frag', 'max_frag', 'delta', 'gel_resolution_bp', 'gel_resolution_pct', 'gel_stress_factor',
                    'flank', 'primer_pairs', 'top_results', 'max_cuts', 'group_isoschizomers', 'snp_end_distance',
-                   'exclude_primer_sites', 'mask_repeats', 'exclude_background_sites', 'dcaps_mismatches',
+                   'exclude_primer_sites', 'mask_repeats', 'exclude_background_sites',
+                   'specificity_mismatches', 'specificity_max_product', 'dcaps_mismatches',
                    'dcaps_tm_max', 'dcaps_prod_min', 'dcaps_prod_max', 'dcaps_delta',
                    'use_primer3', 'gain_loss_only', 'skip_norm', 'no_save_norm')
 PANEL_ERROR_KEYS = ('input_file', 'fasta', 'background_vcf', 'prod_min', 'tm_min')
@@ -28,6 +29,7 @@ SUPPLIER_TITLES = {'A': 'Agilent', 'E': 'Thermo Fisher', 'F': 'Promega', 'H': 'M
                    'J': 'Nippon Gene', 'K': 'Takara', 'M': 'Roche', 'N': 'NEB',
                    'R': 'Molecular Biology Resources', 'S': 'Sigma', 'T': 'Toyobo', 'V': 'Vivantis', 'Y': 'EURx',
                    'Z': 'SinaClon'}
+SPECIFICITY_CHOICES = ((N_('Исключать пары'), 'exclude'), (N_('Только отмечать'), 'warn'), (N_('Не проверять'), 'off'))
 DCAPS_CHOICES = ((N_('Нет'), 'off'), (N_('Если нет надёжной схемы'), 'fallback'), (N_('Для каждого SNP'), 'always'))
 CHOOSE_FILE = N_('Выбрать файл…')
 DOWNLOAD_GENOME = N_('Скачать геном…')
@@ -179,6 +181,12 @@ _ADVANCED_FIELDS = {
                      N_('Строчные буквы FASTA (повторы в геномах NCBI/Ensembl) не допускаются на 3′-конце праймера.')),
     'exclude_background_sites': (N_('Исключать схемы с фоновыми вариантами'), 'bool', 0, 0, 0,
                                  N_('Схемы, где известные варианты из VCF меняют разрезы или длины полос.')),
+    'specificity_mismatches': (N_('Специфичность: несовпадений, до'), 'int', 0, 5, 1,
+                               N_('Место отжига праймера в геноме: 12 оснований 3′-конца совпадают точно, в остальной '
+                                  'части праймера — не больше этого числа несовпадений.')),
+    'specificity_max_product': (N_('Специфичность: продукт до, п.н.'), 'int', 100, 20000, 1,
+                                N_('Посторонний продукт ПЦР: два места отжига, обращённые друг к другу, не дальше '
+                                   'этого расстояния.')),
     'dcaps_mismatches': (N_('Несовпадений, до'), 'int', 1, 2, 1,
                          N_('Только для схем dCAPS: наибольшее число несовпадений в праймере.')),
     'dcaps_tm_max': (N_('Tm праймеров до, °C'), 'float', 40, 80, 1,
@@ -202,7 +210,7 @@ _ADVANCED_COLUMNS = (
      (N_('Поиск'), ('flank', 'primer_pairs', 'top_results', 'max_cuts')),
      (N_('Особые случаи'), ('use_primer3', 'gain_loss_only', 'skip_norm', 'no_save_norm'))),
     ((N_('Проверки'), ('group_isoschizomers', 'snp_end_distance', 'exclude_primer_sites', 'mask_repeats',
-                       'exclude_background_sites')),
+                       'exclude_background_sites', 'specificity_mismatches', 'specificity_max_product')),
      (N_('dCAPS (праймер с несовпадением)'), ('dcaps_mismatches', 'dcaps_tm_max', 'dcaps_prod_min',
                                              'dcaps_prod_max', 'dcaps_delta'))),
 )
@@ -378,6 +386,15 @@ class LaunchPanel(QWidget):
         field(t('Продукт, п.н.'), self._pair(self.prod_min_spin, self.prod_max_spin), None, 'prod_min')
         self.tm_min_spin, self.tm_max_spin = self._range_spins('tm', QDoubleSpinBox, 40.0, 80.0)
         field('Tm, °C', self._pair(self.tm_min_spin, self.tm_max_spin), None, 'tm_min')
+
+        self.specificity_combo = QComboBox()
+        self.specificity_combo.setObjectName('specificity_combo')
+        for text, value in SPECIFICITY_CHOICES:
+            self.specificity_combo.addItem(t(text), value)
+        self.specificity_combo.setToolTip(t('Праймеры ищутся по всему геному: пара, которая даёт продукт ПЦР ещё в '
+                                            'одном месте, исключается или получает примечание. Проверка читает '
+                                            'весь геном и добавляет к расчёту около минуты на каждые 3 млрд оснований.'))
+        field(t('Специфичность'), self.specificity_combo)
 
         caption(t('Ферменты'))
         self.supplier_picker = SupplierPicker()
@@ -589,6 +606,7 @@ class LaunchPanel(QWidget):
             prod_min=self.prod_min_spin.value(), prod_max=self.prod_max_spin.value(),
             tm_min=self.tm_min_spin.value(), tm_max=self.tm_max_spin.value(),
             commercial_only=commercial_only, suppliers=suppliers, dcaps=self.dcaps_combo.currentData(),
+            specificity=self.specificity_combo.currentData(),
         )
         params['use_primer3'] = bool(params['use_primer3']) and _PRIMER3_AVAILABLE
         return params
@@ -605,6 +623,10 @@ class LaunchPanel(QWidget):
             current = self.supplier_picker.value()
             self.supplier_picker.set_value(params.get('commercial_only', current[0]),
                                            params.get('suppliers', current[1]))
+        if 'specificity' in params:
+            index = self.specificity_combo.findData(params['specificity'])
+            if index >= 0:
+                self.specificity_combo.setCurrentIndex(index)
         if 'dcaps' in params:
             index = self.dcaps_combo.findData(params['dcaps'])
             if index >= 0:

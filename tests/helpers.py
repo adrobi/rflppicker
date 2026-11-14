@@ -4,11 +4,11 @@ import re
 
 import rflp_core
 
-HEADER = rflp_core.BASE_HEADER + rflp_core.ASSAY_HEADER + rflp_core.V12_HEADER
+HEADER = rflp_core.RESULT_HEADER
 
 # The checks that are on by default, switched off: for tests of the bare search.
 CHECKS_OFF = dict(commercial_only=False, group_isoschizomers=False, snp_end_distance=0, exclude_primer_sites=False,
-                  mask_repeats=False, exclude_background_sites=False, dcaps='off')
+                  mask_repeats=False, exclude_background_sites=False, dcaps='off', specificity='off')
 
 
 def core_row(**values) -> list:

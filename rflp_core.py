@@ -15,6 +15,7 @@ from pyfaidx import Fasta
 from Bio.Seq import Seq
 from Bio.Restriction import AllEnzymes
 from assay_scoring import GelModel, MODEL_VERSION, score_genotypes, rank_key
+import specificity
 
 APP_VERSION = "1.5.0"
 
@@ -32,6 +33,8 @@ DEFAULT_PARAMS = dict(
     # dCAPS designs only: a longer mismatch primer moves the created cut away from the
     # product end, and a short product shows the ~20 bp difference on a gel.
     dcaps_tm_max=70.0, dcaps_prod_min=120, dcaps_prod_max=300, dcaps_delta=20,
+    # Primer pairs that would amplify something else in the genome (specificity.py).
+    specificity='exclude', specificity_mismatches=3, specificity_max_product=2000,
 )
 # Parameters a caller may leave out: run_rflp_gui_mode() takes them from DEFAULT_PARAMS.
 OPTIONAL_PARAMS = (
@@ -39,6 +42,7 @@ OPTIONAL_PARAMS = (
     'gel_stress_factor', 'commercial_only', 'group_isoschizomers', 'snp_end_distance',
     'exclude_primer_sites', 'mask_repeats', 'background_vcf', 'exclude_background_sites', 'dcaps',
     'dcaps_mismatches', 'dcaps_tm_max', 'dcaps_prod_min', 'dcaps_prod_max', 'dcaps_delta',
+    'specificity', 'specificity_mismatches', 'specificity_max_product',
 )
 
 
@@ -100,6 +104,10 @@ def validate_params(params: dict) -> list[str]:
         integer_in('dcaps_delta', dcaps['dcaps_delta'], 1, 1000)
     if params.get('dcaps', 'off') not in ('off', 'fallback', 'always'):
         errors.append("dcaps: допустимо off, fallback или always")
+    if params.get('specificity', 'off') not in ('off', 'warn', 'exclude'):
+        errors.append("specificity: допустимо off, warn или exclude")
+    integer_in('specificity_mismatches', DEFAULT_PARAMS['specificity_mismatches'], 0, 5)
+    integer_in('specificity_max_product', DEFAULT_PARAMS['specificity_max_product'], 100, 20000)
     try:
         gel_model_from_params(params)
     except (ValueError, TypeError) as exc:
@@ -1034,6 +1042,9 @@ ASSAY_HEADER = [
 # Added in 1.2 at the end of the row.
 V12_HEADER = ['isoschizomers', 'primer_site', 'repeat_pct', 'background_variants',
               'background_site_variants', 'design', 'primer_mismatches']
+# Added in 1.6: where else the primers anneal and what the pair amplifies there.
+V16_HEADER = ['primer_sites_left', 'primer_sites_right', 'offtarget_products', 'offtarget_sizes']
+RESULT_HEADER = BASE_HEADER + ASSAY_HEADER + V12_HEADER + V16_HEADER
 
 
 def _primer_candidates(pres, sequence, snp_off):
@@ -1079,6 +1090,7 @@ class _Run:
     use_primer3: bool
     mode: str                    # 'joint' (primer pairs and the enzyme together) or 'window'
     dcaps: str                   # 'off' without Primer3
+    specificity: str = 'off'     # 'off' without Primer3
     status_cb: Optional[Callable] = None
     cancel_cb: Optional[Callable] = None
     background: Optional[dict] = None   # known variants by contig; None without a VCF
@@ -1122,8 +1134,11 @@ def _log_settings(run: _Run, snp_count: int) -> None:
         return
     params, use_primer3 = run.params, run.use_primer3
     run.log(f'[INFO] Поиск: {run.mode}; SNP: {snp_count}; ферментов: {len(run.enzymes)}')
-    run.log('[INFO] Оценка полос: модель присутствия, полная рестрикция; '
-            'яркость и специфичность ПЦР по всему геному не оцениваются.')
+    if run.specificity == 'off':
+        run.log('[INFO] Оценка полос: модель присутствия, полная рестрикция; '
+                'яркость и специфичность ПЦР по всему геному не оцениваются.')
+    else:
+        run.log('[INFO] Оценка полос: модель присутствия, полная рестрикция; яркость не оценивается.')
     options = [label for key, label in (
         ('commercial_only', 'только продаваемые ферменты'),
         ('group_isoschizomers', 'изошизомеры объединены (одна строка на сайт)'),
@@ -1140,6 +1155,11 @@ def _log_settings(run: _Run, snp_count: int) -> None:
                        f"Tm до {params['dcaps_tm_max']:g} °C, "
                        f"продукт {params['dcaps_prod_min']}–{params['dcaps_prod_max']} п.н., "
                        f"Δ {params['dcaps_delta']} п.н.")
+    if run.specificity != 'off':
+        action = 'исключаются' if run.specificity == 'exclude' else 'отмечаются'
+        options.append(f"пары праймеров с посторонним продуктом ПЦР {action} "
+                       f"(до {params['specificity_mismatches']} несовпадений вне 3′-конца, "
+                       f"продукт до {params['specificity_max_product']} п.н.)")
     if options:
         run.log('[INFO] Отбор: ' + '; '.join(options))
 
@@ -1364,8 +1384,10 @@ def _dcaps_hits(run: _Run, window: _Window) -> list:
     return hits
 
 
-def _snp_records(run: _Run, window: _Window, hits: list, failure: Optional[dict]) -> list:
-    """Rank the assays of one SNP and return its result rows (one failure row without assays)."""
+def _snp_records(run: _Run, window: _Window, hits: list, failure: Optional[dict], unspecific: int = 0) -> list:
+    """Rank the assays of one SNP and return its result rows (one failure row without assays).
+
+    ``unspecific`` is the number of assays the specificity check has removed."""
     params, counters = run.params, run.counters
     counters['enzyme_errors'] += window.errors
     counters['ambiguous_templates'] += window.ambiguous
@@ -1381,6 +1403,9 @@ def _snp_records(run: _Run, window: _Window, hits: list, failure: Optional[dict]
     records = [dict(hit, assay_rank=rank) for rank, hit in enumerate(hits[:limit] if limit else hits, 1)]
     if not hits and failure is not None:
         records.append(failure)
+    elif not hits and unspecific:
+        records.append(dict(window.base, status='no_specific_primers',
+                            reason='Все пары праймеров дают посторонние продукты ПЦР или лежат в повторах генома'))
     elif not hits:
         reason = 'Не найдено сочетание для различения трёх генотипов'
         if window.ambiguous:
@@ -1393,24 +1418,109 @@ def _snp_records(run: _Run, window: _Window, hits: list, failure: Optional[dict]
     return records
 
 
-def _analyse_snp(run: _Run, fa, chrom: str, mapped_id: str, pos: int, ref: str, alt: str) -> Tuple[list, bool]:
-    """The result rows of one SNP and whether its window has soft-masked bases."""
+@dataclass
+class _Search:
+    """One SNP after its assays were found and before they are ranked."""
+    window: _Window
+    masked: bool                     # the window has soft-masked bases
+    records: Optional[list] = None   # final rows of an SNP that ended early
+    hits: list = field(default_factory=list)
+    failure: Optional[dict] = None
+    dcaps_tried: bool = False
+    unspecific: int = 0              # assays removed by the specificity check
+
+
+def _search_snp(run: _Run, fa, chrom: str, mapped_id: str, pos: int, ref: str, alt: str) -> _Search:
+    """The assays of one SNP, not ranked yet."""
     window = _snp_window(run, fa, chrom, mapped_id, pos, ref, alt)
-    masked = window.raw != window.seq
+    search = _Search(window, masked=window.raw != window.seq)
     if not 0 <= window.off < len(window.seq) or window.seq[window.off] != ref:
-        return [dict(window.base, status='analysis_error', reason='REF не совпадает с FASTA')], masked
+        search.records = [dict(window.base, status='analysis_error', reason='REF не совпадает с FASTA')]
+        return search
     window.altseq = window.seq[:window.off] + alt + window.seq[window.off + 1:]
     window.known = _known_variants(run, window, mapped_id)
-    failure, pairs = _natural_pairs(run, window)
-    if failure is not None and run.dcaps == 'off':
-        return [failure], masked
+    search.failure, pairs = _natural_pairs(run, window)
+    if search.failure is not None and run.dcaps == 'off':
+        search.records = [search.failure]
+        return search
     window.base['pairs_evaluated'] = len(pairs) if run.use_primer3 else 0
     run.counters['pairs_evaluated'] += window.base['pairs_evaluated']
-    hits = _natural_hits(run, window, pairs)
+    search.hits = _natural_hits(run, window, pairs)
     if run.dcaps == 'always' or (run.dcaps == 'fallback'
-                                 and not any(h['genotype_quality'] == 'robust' for h in hits)):
-        hits += _dcaps_hits(run, window)
-    return _snp_records(run, window, hits, failure), masked
+                                 and not any(h['genotype_quality'] == 'robust' for h in search.hits)):
+        search.hits += _dcaps_hits(run, window)
+        search.dcaps_tried = True
+    return search
+
+
+def _scan_genome(run: _Run, hits: list) -> None:
+    """Look up the primers of the assays in the whole genome and write the result into each assay.
+
+    Sets primer_sites_left/right, offtarget_products, offtarget_sizes and the private
+    '_unspecific' (a product elsewhere, or a primer inside a repeat)."""
+    params = run.params
+    primers = sorted({hit[key].upper() for hit in hits for key in ('primers_left', 'primers_right')})
+    if not primers:
+        return
+    run.counters['specificity_scans'] += 1
+    run.counters['specificity_primers'] += len(primers)
+    run.log(f'[INFO] Специфичность: проход по геному для {len(primers)} праймеров')
+    shown = [0]
+
+    def progress(done, total):
+        tenth = 10 * done // total
+        if tenth > shown[0] and tenth < 10:
+            shown[0] = tenth
+            run.log(f'[INFO] Специфичность: просмотрено {tenth * 10}% генома')
+
+    try:
+        sites = specificity.find_sites(params['fasta'], primers, max_mismatches=params['specificity_mismatches'],
+                                       progress_cb=progress, cancel_cb=run.cancel_cb)
+    except specificity.ScanCancelled:
+        run.report['cancelled'] = True
+        raise AnalysisCancelled() from None
+    for hit in hits:
+        left, right = hit['primers_left'].upper(), hit['primers_right'].upper()
+        intended = (hit['mapped_id'], hit['amplicon_start'] - 1, hit['amplicon_end'])
+        products = specificity.pair_products(sites, left, right, params['specificity_max_product'], intended)
+        repeat = sites[left].saturated or sites[right].saturated
+        sizes = sorted(product.size for product in products)
+        hit.update(primer_sites_left=len(sites[left].sites), primer_sites_right=len(sites[right].sites),
+                   offtarget_products=len(products),
+                   offtarget_sizes='; '.join(map(str, sizes[:5])) + ('; …' if len(sizes) > 5 else ''),
+                   _unspecific=bool(products) or repeat)
+
+
+def _drop_unspecific(run: _Run, search: _Search) -> None:
+    if run.specificity != 'exclude':
+        return
+    kept = [hit for hit in search.hits if not hit.get('_unspecific')]
+    removed = len(search.hits) - len(kept)
+    search.unspecific += removed
+    run.counters['excluded_offtarget'] += removed
+    search.hits = kept
+
+
+def _check_specificity(run: _Run, searches: list) -> None:
+    """One pass over the genome for the primers of all assays; a second one for the dCAPS
+    assays of SNPs whose robust assays with a natural site were all removed."""
+    pending = [search for search in searches if search.records is None]
+    _scan_genome(run, [hit for search in pending for hit in search.hits])
+    for search in pending:
+        _drop_unspecific(run, search)
+    retry = [search for search in pending if run.dcaps == 'fallback' and not search.dcaps_tried
+             and not any(hit['genotype_quality'] == 'robust' for hit in search.hits)]
+    added = []
+    for search in retry:
+        run.check_cancel()
+        extra = _dcaps_hits(run, search.window)
+        search.dcaps_tried = True
+        search.hits += extra
+        added += extra
+    if added:
+        _scan_genome(run, added)
+        for search in retry:
+            _drop_unspecific(run, search)
 
 
 def run_analysis(params, status_cb=None, progress_cb=None, cancel_cb=None, report=None):
@@ -1438,7 +1548,8 @@ def run_analysis(params, status_cb=None, progress_cb=None, cancel_cb=None, repor
                     candidate_sites=0, pairs_near_end=0, excluded_primer_site=0,
                     background_variants_loaded=0, background_ref_mismatch=0,
                     excluded_background_site=0, dcaps_snps=0, dcaps_designs=0,
-                    dcaps_no_primer=0, dcaps_pairs=0, dcaps_candidates=0)
+                    dcaps_no_primer=0, dcaps_pairs=0, dcaps_candidates=0,
+                    specificity_scans=0, specificity_primers=0, excluded_offtarget=0)
 
     cleaned, _, _, _ = normalize_variants_for_rflp(
         fasta_path=params['fasta'], input_path=params['input_file'],
@@ -1448,7 +1559,7 @@ def run_analysis(params, status_cb=None, progress_cb=None, cancel_cb=None, repor
         save_files=not params.get('no_save_norm', True), report=report,
         progress_cb=progress_cb, cancel_cb=cancel_cb,
     )
-    header = BASE_HEADER + ASSAY_HEADER + V12_HEADER
+    header = RESULT_HEADER
     out_rows = []
     if not cleaned:
         counters['rows'] = 0
@@ -1467,6 +1578,7 @@ def run_analysis(params, status_cb=None, progress_cb=None, cancel_cb=None, repor
                # Primer pairs and the enzyme are chosen together; without Primer3 the whole window is the amplicon.
                mode='joint' if use_primer3 else 'window',
                dcaps=params['dcaps'] if use_primer3 and _PRIMER3_AVAILABLE else 'off',
+               specificity=params['specificity'] if use_primer3 else 'off',
                status_cb=status_cb, cancel_cb=cancel_cb)
     names = load_names2(params.get('names2_file', ''))
     _log_settings(run, len(cleaned))
@@ -1489,13 +1601,28 @@ def run_analysis(params, status_cb=None, progress_cb=None, cancel_cb=None, repor
             run.log(f"[INFO] Фоновые варианты: {counters['background_variants_loaded']} в окнах SNP "
                     f"из {records} записей VCF")
 
+        def emit(search):
+            records = search.records
+            if records is None:
+                records = _snp_records(run, search.window, search.hits, search.failure, search.unspecific)
+            out_rows.extend([record.get(key) for key in header] for record in records)
+
+        searches = []
         for vi, (chrom, pos, ref, alt) in enumerate(cleaned, 1):
             run.check_cancel()
-            records, masked = _analyse_snp(run, fa, chrom, contig_of(chrom), pos, ref, alt)
-            masked_windows += masked
-            out_rows.extend([record.get(key) for key in header] for record in records)
+            search = _search_snp(run, fa, chrom, contig_of(chrom), pos, ref, alt)
+            masked_windows += search.masked
+            if run.specificity == 'off':
+                emit(search)             # nothing to wait for
+            else:
+                searches.append(search)
             if progress_cb:
                 progress_cb(vi, len(cleaned))
+        if searches:
+            # The primers of all SNPs are looked up in one pass over the genome.
+            _check_specificity(run, searches)
+            for search in searches:
+                emit(search)
     finally:
         fa.close()
     if params['mask_repeats'] and use_primer3 and not masked_windows:

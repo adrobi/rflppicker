@@ -56,6 +56,23 @@ class LaunchPanelTests(unittest.TestCase):
         self.assertEqual(self.panel.changed_count(), 0)
         self.assertTrue(self.panel.findChild(QLabel, 'changed_badge').isHidden())
 
+    def test_specificity_choice_and_its_settings(self):
+        from PyQt6.QtWidgets import QComboBox
+        combo = self.panel.findChild(QComboBox, 'specificity_combo')
+        self.assertEqual([combo.itemText(i) for i in range(combo.count())],
+                         ['Исключать пары', 'Только отмечать', 'Не проверять'])
+        self.assertEqual(self.panel.collect_params()['specificity'], 'exclude')
+        self.panel.set_params(dict(self.panel.collect_params(), specificity='warn', specificity_mismatches=2,
+                                   specificity_max_product=1500))
+        params = self.panel.collect_params()
+        self.assertEqual((params['specificity'], params['specificity_mismatches'], params['specificity_max_product']),
+                         ('warn', 2, 1500))
+        self.assertEqual(combo.currentText(), 'Только отмечать')
+        dialog = AdvancedDialog(params, self.panel)
+        self.addCleanup(dispose, dialog)
+        self.assertEqual((dialog._widgets['specificity_mismatches'].value(),
+                          dialog._widgets['specificity_max_product'].value()), (2, 1500))
+
     def test_supplier_picker_values_and_text(self):
         picker = self.panel.findChild(SupplierPicker, 'supplier_picker')
         self.assertEqual((picker.value(), picker.text()), ((True, []), 'Все продаваемые'))

@@ -79,6 +79,13 @@ def build_parser():
     choice.add_argument('--exclude-background-sites', dest='exclude_background_sites',
                         action=argparse.BooleanOptionalAction,
                         help=t('Исключать схемы, где фоновые варианты меняют разрезы или длины полос'))
+    choice.add_argument('--specificity', choices=('off', 'warn', 'exclude'),
+                        help=t('Поиск праймеров по всему геному: exclude — исключать пары с посторонним продуктом ПЦР, '
+                               'warn — только отмечать, off — не проверять'))
+    choice.add_argument('--specificity-mismatches', dest='specificity_mismatches', type=int, metavar='N',
+                        help=t('Специфичность: несовпадений вне 12 оснований 3′-конца, не больше'))
+    choice.add_argument('--specificity-max-product', dest='specificity_max_product', type=int, metavar='BP',
+                        help=t('Специфичность: наибольший посторонний продукт, п.н.'))
     choice.add_argument('--dcaps', choices=('off', 'fallback', 'always'),
                         help=t('Праймеры с несовпадением (dCAPS): fallback — только если нет robust-схемы'))
     choice.add_argument('--dcaps-mismatches', dest='dcaps_mismatches', type=int, choices=(1, 2),

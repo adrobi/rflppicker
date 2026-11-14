@@ -195,6 +195,20 @@ class NoteTests(unittest.TestCase):
         self.assertEqual(summary(failure=dict(status='primer3_error', reason='bad input')).note('off'),
                          'bad input. Проверьте параметры Primer3 в окне «Дополнительно»')
 
+    def test_products_elsewhere_in_the_genome(self):
+        robust = dict(genotype_quality='robust', enzyme='EcoRI')
+        self.assertEqual(summary(schemes=[dict(robust, offtarget_products=2, offtarget_sizes='512; 1340')]).note('off'),
+                         'Посторонние продукты ПЦР: 512; 1340 п.н.')
+        self.assertEqual(summary(schemes=[dict(robust, offtarget_products=0, offtarget_sizes='')]).note('off'), '')
+        reason = 'Все пары праймеров дают посторонние продукты ПЦР или лежат в повторах генома'
+        failed = summary(failure=dict(status='no_specific_primers', reason=reason))
+        self.assertEqual(failed.status, snp_summary.NONE)
+        self.assertEqual(failed.note('fallback'), f'{reason}. Попробуйте другой диапазон продукта или Tm')
+        i18n.set_language('en')
+        self.addCleanup(i18n.set_language, 'ru')
+        self.assertEqual(failed.note('fallback'), 'All primer pairs give other PCR products or lie in genome repeats. '
+                                                  'Try another product range or Tm')
+
     def test_errors(self):
         def note(**rejection):
             return summary(rejection=rejection).note('off')

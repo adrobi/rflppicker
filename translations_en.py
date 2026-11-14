@@ -32,6 +32,7 @@ EN = {
     'Поиск по окну, праймеры не подобраны': 'Window search, no primers designed',
     'Нет результата для этой строки': 'No result for this line',
     'Попробуйте другой диапазон продукта': 'Try another product size range',
+    'Попробуйте другой диапазон продукта или Tm': 'Try another product range or Tm',
     'Попробуйте dCAPS «Для каждого SNP»': 'Try dCAPS “For every SNP”',
     'Статус: {status}': 'Status: {status}',
     'Фермент: {enzyme}, сайт {site}': 'Enzyme: {enzyme}, site {site}',
@@ -203,6 +204,36 @@ Download a reference genome from NCBI into the genoms folder next to the program
     'Анализ прерван.': 'Analysis interrupted.',
     '{key}: папка не существует: {folder}': '{key}: the folder does not exist: {folder}',
     'Ошибка: {error}': 'Error: {error}',
+    # specificity
+    'Исключать пары': 'Exclude pairs', 'Только отмечать': 'Flag only', 'Не проверять': 'Do not check',
+    'Специфичность': 'Specificity',
+    'Праймеры ищутся по всему геному: пара, которая даёт продукт ПЦР ещё в '
+    'одном месте, исключается или получает примечание. Проверка читает '
+    'весь геном и добавляет к расчёту около минуты на каждые 3 млрд оснований.':
+        'The primers are looked up in the whole genome: a pair that gives a PCR product in one more place '
+        'is excluded or gets a note. The check reads the whole genome and adds about a minute per '
+        '3 billion bases to the analysis.',
+    'Специфичность: несовпадений, до': 'Specificity: mismatches, up to',
+    'Место отжига праймера в геноме: 12 оснований 3′-конца совпадают точно, в остальной '
+    'части праймера — не больше этого числа несовпадений.':
+        'An annealing site of a primer in the genome: the 12 bases of the 3′ end match exactly, the rest '
+        'of the primer has at most this number of mismatches.',
+    'Специфичность: продукт до, п.н.': 'Specificity: product up to, bp',
+    'Посторонний продукт ПЦР: два места отжига, обращённые друг к другу, не дальше '
+    'этого расстояния.':
+        'Another PCR product: two annealing sites facing each other, not further apart than this.',
+    'Поиск праймеров по всему геному: exclude — исключать пары с посторонним продуктом ПЦР, '
+    'warn — только отмечать, off — не проверять':
+        'Look the primers up in the whole genome: exclude — leave out pairs with another PCR product, '
+        'warn — only flag them, off — do not check',
+    'Специфичность: несовпадений вне 12 оснований 3′-конца, не больше':
+        'Specificity: mismatches outside the 12 bases of the 3′ end, at most',
+    'Специфичность: наибольший посторонний продукт, п.н.': 'Specificity: the largest other product, bp',
+    'Посторонние продукты ПЦР: {sizes} п.н.': 'Other PCR products: {sizes} bp',
+    'Мест отжига левого праймера': 'Annealing sites of the left primer',
+    'Мест отжига правого праймера': 'Annealing sites of the right primer',
+    'Посторонних продуктов ПЦР': 'Other PCR products',
+    'Длины посторонних продуктов, п.н.': 'Sizes of the other products, bp',
     # laboratory sheet
     'Лист PDF': 'PDF sheet',
     'Лабораторный лист выбранной схемы для печати: праймеры, фермент, полосы, гель и карта':
@@ -636,6 +667,16 @@ CORE = [
      r'яркость и специфичность ПЦР по всему геному не оцениваются\.',
      'Band model: presence of bands, complete digestion; '
      'band brightness and genome-wide PCR specificity are not assessed.'),
+    (r'Оценка полос: модель присутствия, полная рестрикция; яркость не оценивается\.',
+     'Band model: presence of bands, complete digestion; band brightness is not assessed.'),
+    (r'пары праймеров с посторонним продуктом ПЦР исключаются', 'primer pairs with another PCR product are excluded'),
+    (r'пары праймеров с посторонним продуктом ПЦР отмечаются', 'primer pairs with another PCR product are flagged'),
+    (r'\(до (\d+) несовпадений вне 3′-конца, продукт до (\d+) п\.н\.\)',
+     r'(up to \1 mismatches outside the 3′ end, product up to \2 bp)'),
+    (r'Специфичность: проход по геному для (\d+) праймеров', r'Specificity: a pass over the genome for \1 primers'),
+    (r'Специфичность: просмотрено (\d+)% генома', r'Specificity: \1% of the genome scanned'),
+    (r'Все пары праймеров дают посторонние продукты ПЦР или лежат в повторах генома',
+     'All primer pairs give other PCR products or lie in genome repeats'),
     (r'\[INFO\] Отбор: ', '[INFO] Filters: '),
     (r'только продаваемые ферменты', 'commercial enzymes only'),
     (r'изошизомеры объединены \(одна строка на сайт\)', 'isoschizomers grouped (one row per site)'),

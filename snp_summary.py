@@ -70,6 +70,7 @@ _ERROR_TEXTS = {
 _FAILURE_HINTS = {
     'no_primers': N_('Попробуйте расширить диапазон продукта или Tm'),
     'primer3_error': N_('Проверьте параметры Primer3 в окне «Дополнительно»'),
+    'no_specific_primers': N_('Попробуйте другой диапазон продукта или Tm'),
 }
 
 
@@ -154,6 +155,8 @@ class SnpSummary:
                            variants=scheme['background_site_variants']))
         elif (scheme.get('background_variants') or 0) > 0:
             parts.append(t('Известных вариантов в ампликоне: {count}', count=scheme['background_variants']))
+        if (scheme.get('offtarget_products') or 0) > 0:
+            parts.append(t('Посторонние продукты ПЦР: {sizes} п.н.', sizes=scheme.get('offtarget_sizes')))
         if (scheme.get('repeat_pct') or 0) >= 50:
             parts.append(t('Повторы {percent}% ампликона', percent=scheme['repeat_pct']))
         if scheme.get('status') == 'window_only':
