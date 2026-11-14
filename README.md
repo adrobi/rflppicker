@@ -259,6 +259,30 @@ dCAPS is tried only for SNPs without a robust assay with a natural site; the
 are ranked together with ordinary ones. On the command line:
 `--dcaps-tm-max`, `--dcaps-prod-min`, `--dcaps-prod-max`, `--dcaps-delta`.
 
+### Primer specificity
+
+*Since version 1.6.* After the primers are designed, the program looks them up
+in the whole genome: one pass over the FASTA for the primers of all SNPs, about
+a minute per 3 billion bases whatever the number of SNPs. A primer is taken to
+anneal where the 12 bases of its 3′ end match exactly and the rest of it has at
+most 3 mismatches, on either strand. A pair has *another PCR product* where two
+such sites face each other within 2000 bp — the two primers in any combination.
+The “Specificity” choice of the “Run” panel sets what happens to such pairs:
+they are excluded (the default), only flagged in the “Note” column, or the check
+is off. A primer with 1000 sites or more lies in a repeat and counts as not
+specific. An SNP whose pairs all fail gets the status “no specific primers”.
+The two numbers are in the “Advanced” dialog; on the command line:
+`--specificity off|warn|exclude`, `--specificity-mismatches`,
+`--specificity-max-product`. The `Results` sheet gains the columns
+`primer_sites_left`, `primer_sites_right`, `offtarget_products` and
+`offtarget_sizes`; the site counts include chance matches of short primers, the
+products are what matters.
+
+The check is a simple sequence model, not a thermodynamic one: it does not judge
+how well a mismatched primer anneals, and it does not see sites with a mismatch
+in the 3′ end. For a dCAPS primer it looks for sites that match the primer as
+synthesized. It does not act in the window search.
+
 Checking the coordinates and that `REF` matches the FASTA is always on. The
 option to skip normalization turns off only the automatic REF/ALT swap.
 

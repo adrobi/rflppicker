@@ -21,7 +21,7 @@ import numpy as np
 from pyfaidx import Fasta
 
 SEED = 12                 # bases of the 3' end that must match exactly
-BLOCK = 1 << 25           # genome bases read at once
+BLOCK = 1 << 23           # genome bases read at once
 MAX_SITES = 1000          # a primer with more sites is a repeat: its products are not counted
 _COMPLEMENT = str.maketrans('ACGT', 'TGCA')
 _CODE = np.full(256, 255, dtype=np.uint8)          # A, C, G, T -> 0..3 in either case; anything else 255
