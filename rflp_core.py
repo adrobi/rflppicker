@@ -7,7 +7,8 @@ import os
 import re
 import logging
 import math
-from typing import List, Dict, Tuple, Optional
+from dataclasses import dataclass, field
+from typing import Callable, List, Dict, Tuple, Optional
 from datetime import datetime
 
 from pyfaidx import Fasta
@@ -1066,7 +1067,359 @@ def _primer_candidates(pres, sequence, snp_off):
                    primer_pair_index=i + 1, primer_pair_penalty=penalty)
 
 
-def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, report=None):
+@dataclass
+class _Run:
+    """What one analysis shares between its SNPs."""
+    params: dict
+    model: GelModel
+    report: dict
+    counters: dict
+    enzymes: list
+    dcaps_enzymes: list          # with a known cut position: the fragment lengths are defined
+    use_primer3: bool
+    mode: str                    # 'joint' (primer pairs and the enzyme together) or 'window'
+    dcaps: str                   # 'off' without Primer3
+    status_cb: Optional[Callable] = None
+    cancel_cb: Optional[Callable] = None
+    background: Optional[dict] = None   # known variants by contig; None without a VCF
+
+    def check_cancel(self) -> None:
+        if self.cancel_cb and self.cancel_cb():
+            self.report['cancelled'] = True
+            raise AnalysisCancelled()
+
+    def log(self, text: str) -> None:
+        if self.status_cb:
+            self.status_cb(text)
+
+
+@dataclass
+class _Window:
+    """The genome around one SNP and what was counted while it was searched."""
+    ref: str
+    alt: str
+    pos: int
+    start: int                   # 1-based genome coordinate of the first base of the window
+    end: int
+    raw: str                     # as in the FASTA: lower case marks soft-masked repeats
+    seq: str                     # upper case, REF allele
+    off: int                     # 0-based offset of the SNP in the window
+    base: dict                   # the result row before an assay is found
+    altseq: str = ''
+    known: list = field(default_factory=list)    # (offset, REF, ALTs) of the known variants of the window
+    errors: int = 0
+    ambiguous: int = 0
+    genotype_rejected: int = 0
+
+    @property
+    def excluded(self) -> list:
+        """(offset, length) regions that primers must not overlap."""
+        return [(q, len(r)) for q, r, _ in self.known]
+
+
+def _log_settings(run: _Run, snp_count: int) -> None:
+    if not run.status_cb:
+        return
+    params, use_primer3 = run.params, run.use_primer3
+    run.log(f'[INFO] Поиск: {run.mode}; SNP: {snp_count}; ферментов: {len(run.enzymes)}')
+    run.log('[INFO] Оценка полос: модель присутствия, полная рестрикция; '
+            'яркость и специфичность ПЦР по всему геному не оцениваются.')
+    options = [label for key, label in (
+        ('commercial_only', 'только продаваемые ферменты'),
+        ('group_isoschizomers', 'изошизомеры объединены (одна строка на сайт)'),
+        ('exclude_primer_sites', 'без сайта фермента в праймерах'),
+        ('mask_repeats', 'повторы (строчные буквы FASTA) не на 3′-концах праймеров'),
+        ('exclude_background_sites', 'без фоновых вариантов, меняющих разрезы'),
+    ) if params[key] and (key != 'exclude_background_sites' or params['background_vcf'])
+        and (use_primer3 or key not in ('exclude_primer_sites', 'mask_repeats'))]   # these two need primers
+    if use_primer3 and params['snp_end_distance']:
+        options.append(f"SNP не ближе {params['snp_end_distance']} п.н. к концам ампликона")
+    if use_primer3 and params['dcaps'] != 'off':
+        when = 'если нет robust-схемы' if params['dcaps'] == 'fallback' else 'для каждого SNP'
+        options.append(f"dCAPS {when}, несовпадений до {params['dcaps_mismatches']}, "
+                       f"Tm до {params['dcaps_tm_max']:g} °C, "
+                       f"продукт {params['dcaps_prod_min']}–{params['dcaps_prod_max']} п.н., "
+                       f"Δ {params['dcaps_delta']} п.н.")
+    if options:
+        run.log('[INFO] Отбор: ' + '; '.join(options))
+
+
+def _snp_window(run: _Run, fa, chrom: str, mapped_id: str, pos: int, ref: str, alt: str) -> _Window:
+    params = run.params
+    start = max(1, pos - params['flank'])
+    end = min(len(fa[mapped_id]), pos + params['flank'])
+    # Soft-masked FASTA: lower case marks repeats; the analysis uses upper case.
+    raw = str(fa[mapped_id][start - 1:end])
+    seq = raw.upper()
+    off = pos - start
+    base = dict(variant=f'{chrom}:{pos} {ref}>{alt}', mapped_id=mapped_id,
+                enzyme='', site='', pattern='no_enzyme_found',
+                amplicon_start=start, amplicon_end=end, amplicon_len=len(seq),
+                snp_offset_in_amplicon=off, delta_threshold_bp=params['delta'],
+                search_mode=run.mode, scoring_model=MODEL_VERSION, pairs_evaluated=0)
+    return _Window(ref=ref, alt=alt, pos=pos, start=start, end=end, raw=raw, seq=seq, off=off, base=base)
+
+
+def _known_variants(run: _Run, window: _Window, mapped_id: str) -> list:
+    """Known variants of the window as (offset, REF, ALTs), except a record of the SNP itself."""
+    known = []
+    if run.background is not None:
+        items = run.background.get(mapped_id, [])
+        first, last = bisect.bisect_left(items, (window.start,)), bisect.bisect_left(items, (window.end + 1,))
+        for p, r, alts in items[first:last]:
+            q = p - window.start
+            if p + len(r) - 1 > window.end or p <= window.pos < p + len(r):
+                continue
+            if window.seq[q:q + len(r)] != r:
+                run.counters['background_ref_mismatch'] += 1
+                continue
+            known.append((q, r, alts))
+    return known
+
+
+def _natural_pairs(run: _Run, window: _Window) -> Tuple[Optional[dict], list]:
+    """Primer pairs around the SNP (the whole window without Primer3), or the failure row."""
+    params, base, seq, off = run.params, window.base, window.seq, window.off
+    mask = params['mask_repeats']
+    end_distance = params['snp_end_distance'] if run.use_primer3 else 0
+    failure, pairs = None, []
+    if end_distance and not end_distance <= off < len(seq) - end_distance:
+        failure = dict(base, status='no_primers',
+                       reason=f'SNP ближе {end_distance} п.н. к краю окна; увеличьте фланг')
+    elif run.use_primer3:
+        run.check_cancel()
+        pres = primer3_pick(window.raw if mask else seq, off, params['prod_min'], params['prod_max'],
+                            params['tm_min'], params['tm_max'],
+                            num_return=params['primer_pairs'],
+                            target_flank=max(0, end_distance - PRIMER_MIN_SIZE),
+                            lowercase_masking=mask, excluded_regions=window.excluded)
+        if not pres:
+            error = primer3_pick.last_error
+            failure = dict(base, status='primer3_error' if error else 'no_primers',
+                           reason=error or 'Primer3 не вернул подходящих пар')
+        else:
+            try:
+                pairs = list(_primer_candidates(pres, seq, off))
+            except (KeyError, TypeError, ValueError) as exc:
+                failure = dict(base, status='primer3_error', reason=str(exc))
+            else:
+                # Guaranteed by the Primer3 target; kept as an explicit check.
+                near = [p for p in pairs if min(off - p['start0'], p['end0'] - 1 - off) < end_distance]
+                run.counters['pairs_near_end'] += len(near)
+                pairs = [p for p in pairs if p not in near]
+    else:
+        pairs = [dict(start0=0, end0=len(seq))]
+    return failure, pairs
+
+
+def _amplicon_record(window: _Window, pair: dict, a: int, b: int, **extra) -> dict:
+    """The result row of the amplicon window.seq[a:b] before an enzyme is chosen."""
+    record = dict(window.base, **{k: v for k, v in pair.items() if k not in ('start0', 'end0')})
+    record.update(amplicon_start=window.start + a, amplicon_end=window.start + b - 1,
+                  amplicon_len=b - a, product_size=b - a,
+                  snp_offset_in_amplicon=window.off - a,
+                  repeat_pct=round(100 * sum(c.islower() for c in window.raw[a:b]) / (b - a), 1),
+                  **extra)
+    return record
+
+
+def _evaluate(run: _Run, window: _Window, enz, refamp: str, altamp: str, record: dict, a: int, b: int):
+    """The assay of one enzyme on one amplicon, or None if it fails a filter."""
+    params, model, counters = run.params, run.model, run.counters
+    try:
+        cr, ca = cut_positions(enz, refamp), cut_positions(enz, altamp)
+    except Exception as exc:
+        window.errors += 1
+        if window.errors <= 3:
+            run.log(f'[WARN] {window.base["variant"]} / {enz.__name__}: {exc}')
+        return None
+    if max(len(cr), len(ca)) - 2 > params['max_cuts']:
+        return None
+    fr, fal = frag_lengths(cr), frag_lengths(ca)
+    if params['gain_loss_only'] and len(cr) == len(ca):
+        return None
+    # min_frag..max_frag is the visibility window of the gel model:
+    # fragments outside it are hidden, the assay itself stays.
+    visible_r = [x for x in fr if model.min_visible <= x <= model.max_visible]
+    visible_a = [x for x in fal if model.min_visible <= x <= model.max_visible]
+    actual_delta = diagnostic_delta(visible_r, visible_a)
+    threshold = params['dcaps_delta'] if record.get('design') == 'dCAPS' else params['delta']
+    if actual_delta < threshold:
+        return None
+    scores = score_genotypes(fr, fal, model)
+    if scores['genotype_quality'] == 'ambiguous':
+        window.genotype_rejected += 1
+        return None
+    reason = {
+        'robust': 'Три генотипа различимы во всём заданном диапазоне разрешения',
+        'nominal_only': 'Три генотипа различимы только при исходном разрешении',
+    }[scores['genotype_quality']]
+    if not run.use_primer3:
+        reason = 'Оценка окна без подобранных праймеров. ' + reason
+    dcaps_design = record.get('design') == 'dCAPS'
+    if dcaps_design:
+        allele = 'REF' if len(cr) > len(ca) else 'ALT'
+        reason = f'dCAPS: несовпадение в праймере создаёт сайт в аллеле {allele}. ' + reason
+    primer_site = primer_site_label(enz, refamp, record.get('primer_left_len'),
+                                    record.get('primer_right_len'))
+    # In a mismatch primer such a site is a design error: every allele is cut.
+    if primer_site and (params['exclude_primer_sites'] or dcaps_design):
+        counters['excluded_primer_site'] += 1
+        return None
+    inside = [(q - a, r, alts) for q, r, alts in window.known if a <= q and q + len(r) <= b]
+    changing = sorted({f'{window.start + a + q} {r}>{x}' for q, r, alts in inside for x in alts
+                       if any(variant_changes_sites(enz, amp, q, r, x, model.resolution_bp)
+                              for amp in (refamp, altamp))},
+                      key=lambda text: int(text.split()[0]))
+    if changing and params['exclude_background_sites']:
+        counters['excluded_background_site'] += 1
+        return None
+    return dict(record, **scores, enzyme=enz.__name__, _enz=enz,
+                site=enzyme_site_string(enz),
+                pattern='gain/loss' if len(cr) != len(ca) else 'shift',
+                frags_ref=frags_to_str(fr), frags_alt=frags_to_str(fal),
+                diag_delta_bp=actual_delta, suppliers=enzyme_suppliers_human(enz),
+                primer_site=primer_site,
+                background_variants=len(inside) if run.background is not None else None,
+                background_site_variants='; '.join(changing),
+                status='ok' if run.use_primer3 else 'window_only', reason=reason)
+
+
+def _natural_hits(run: _Run, window: _Window, pairs: list) -> list:
+    """Assays with a natural site: every primer pair with every enzyme whose site covers the SNP."""
+    # The remaining enzymes give equal REF/ALT fragments in every amplicon,
+    # i.e. Δ = 0, which is below any threshold (delta >= 1).
+    site_enzymes = snp_site_enzymes(run.enzymes, window.seq, window.altseq, window.off)
+    hits = []
+    for pair in pairs:
+        run.check_cancel()
+        a, b = pair['start0'], pair['end0']
+        refamp, altamp = window.seq[a:b], window.altseq[a:b]
+        if set(refamp + altamp) - set('ACGT'):
+            window.ambiguous += 1
+            continue
+        record = _amplicon_record(window, pair, a, b, design='natural')
+        run.counters['enzyme_evaluations'] += len(run.enzymes)
+        for enz in site_enzymes:
+            run.check_cancel()
+            hit = _evaluate(run, window, enz, refamp, altamp, record, a, b)
+            if hit is not None:
+                hits.append(hit)
+    return hits
+
+
+def _dcaps_hits(run: _Run, window: _Window) -> list:
+    """dCAPS assays: a mismatch primer next to the SNP creates the site in one allele."""
+    params, counters, seq, off = run.params, run.counters, window.seq, window.off
+    mask, raw, excluded = params['mask_repeats'], window.raw, window.excluded
+    hits = []
+    counters['dcaps_snps'] += 1
+    designs = dcaps_mismatch_sets(run.dcaps_enzymes, seq, off, window.ref, window.alt, params['dcaps_mismatches'])
+    ordered = sorted(designs.items(), key=lambda item: (len(item[0][1]), -len(item[1]), item[0]))
+    for (side, changes), design_enzymes in ordered[:DCAPS_MAX_DESIGNS]:
+        run.check_cancel()
+        template = list(raw if mask else seq)
+        for j, new in changes:
+            template[j] = new
+        template = ''.join(template)
+        terminal = off - 1 if side == 'left' else off + 1
+        primer = None if mask and raw[terminal].islower() else dcaps_primer(
+            template, off, side, params['tm_min'], params['dcaps_tm_max'], excluded)
+        if primer is None:
+            counters['dcaps_no_primer'] += 1
+            continue
+        counters['dcaps_designs'] += 1
+        pres = primer3_pick(template, off, params['dcaps_prod_min'], params['dcaps_prod_max'],
+                            params['tm_min'], params['dcaps_tm_max'],
+                            num_return=params['primer_pairs'],
+                            lowercase_masking=mask, excluded_regions=excluded,
+                            fixed_left=primer[1] if side == 'left' else None,
+                            fixed_right=primer[1] if side == 'right' else None)
+        mutated = template.upper()
+        try:
+            dpairs = list(_primer_candidates(pres, mutated, off)) if pres else []
+        except (KeyError, TypeError, ValueError):
+            dpairs = []
+        counters['dcaps_pairs'] += len(dpairs)
+        mutated_alt = mutated[:off] + window.alt + mutated[off + 1:]
+        lowered = {j for j, _ in changes}
+        for pair in dpairs:
+            a, b = pair['start0'], pair['end0']
+            refamp, altamp = mutated[a:b], mutated_alt[a:b]
+            if set(refamp + altamp) - set('ACGT'):
+                continue
+            # Mismatched bases in lower case, as usual for dCAPS primers.
+            left = ''.join(c.lower() if a + i in lowered else c
+                           for i, c in enumerate(pair['primers_left']))
+            right = ''.join(c.lower() if b - 1 - i in lowered else c
+                            for i, c in enumerate(pair['primers_right']))
+            record = _amplicon_record(window, pair, a, b, design='dCAPS', primers_left=left,
+                                      primers_right=right, delta_threshold_bp=params['dcaps_delta'],
+                                      primer_mismatches=describe_mismatches(seq, off, side, changes))
+            for enz in design_enzymes:
+                hit = _evaluate(run, window, enz, refamp, altamp, record, a, b)
+                if hit is not None:
+                    hits.append(hit)
+                    counters['dcaps_candidates'] += 1
+    return hits
+
+
+def _snp_records(run: _Run, window: _Window, hits: list, failure: Optional[dict]) -> list:
+    """Rank the assays of one SNP and return its result rows (one failure row without assays)."""
+    params, counters = run.params, run.counters
+    counters['enzyme_errors'] += window.errors
+    counters['ambiguous_templates'] += window.ambiguous
+    counters['genotype_rejected'] += window.genotype_rejected
+    hits.sort(key=rank_key)
+    counters['candidates'] += len(hits)
+    counters['candidate_sites'] += len({site_key(h['_enz']) for h in hits})
+    if params['group_isoschizomers']:
+        hits = group_by_site(hits)
+    counters['variants_with_candidates'] += bool(hits)
+    counters['variants_with_robust_candidates'] += any(h['genotype_quality'] == 'robust' for h in hits)
+    limit = params['top_results']
+    records = [dict(hit, assay_rank=rank) for rank, hit in enumerate(hits[:limit] if limit else hits, 1)]
+    if not hits and failure is not None:
+        records.append(failure)
+    elif not hits:
+        reason = 'Не найдено сочетание для различения трёх генотипов'
+        if window.ambiguous:
+            reason += f"; окон с неопределёнными основаниями: {window.ambiguous}"
+        if window.errors:
+            reason += f"; ошибок расчёта ферментов: {window.errors}"
+        records.append(dict(window.base, status='no_discriminating_assay', reason=reason))
+    run.log(f'[INFO] {window.base["variant"]}: пар {window.base["pairs_evaluated"]}, '
+            f"кандидатов {len(hits)}, неразличимых {window.genotype_rejected}")
+    return records
+
+
+def _analyse_snp(run: _Run, fa, chrom: str, mapped_id: str, pos: int, ref: str, alt: str) -> Tuple[list, bool, bool]:
+    """The result rows of one SNP, whether its window has soft-masked bases, and whether
+    the enzymes were tried (an SNP that fails before that does not report progress)."""
+    window = _snp_window(run, fa, chrom, mapped_id, pos, ref, alt)
+    masked = window.raw != window.seq
+    if not 0 <= window.off < len(window.seq) or window.seq[window.off] != ref:
+        return [dict(window.base, status='analysis_error', reason='REF не совпадает с FASTA')], masked, False
+    window.altseq = window.seq[:window.off] + alt + window.seq[window.off + 1:]
+    window.known = _known_variants(run, window, mapped_id)
+    failure, pairs = _natural_pairs(run, window)
+    if failure is not None and run.dcaps == 'off':
+        return [failure], masked, False
+    window.base['pairs_evaluated'] = len(pairs) if run.use_primer3 else 0
+    run.counters['pairs_evaluated'] += window.base['pairs_evaluated']
+    hits = _natural_hits(run, window, pairs)
+    if run.dcaps == 'always' or (run.dcaps == 'fallback'
+                                 and not any(h['genotype_quality'] == 'robust' for h in hits)):
+        hits += _dcaps_hits(run, window)
+    return _snp_records(run, window, hits, failure), masked, True
+
+
+def run_analysis(params, status_cb=None, progress_cb=None, cancel_cb=None, report=None):
+    """Design assays for every SNP of params['input_file']; return (header, rows).
+
+    ``report`` (a dict) receives the parameters used, the summary counters and the
+    rejected input lines. The window and the command line both call this.
+    """
     params = dict(params)
     # Settings saved before 1.5.0 may carry the switch of the removed single-pair mode.
     params.pop('joint_design', None)
@@ -1088,11 +1441,6 @@ def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, 
                     excluded_background_site=0, dcaps_snps=0, dcaps_designs=0,
                     dcaps_no_primer=0, dcaps_pairs=0, dcaps_candidates=0)
 
-    def check_cancel():
-        if cancel_cb and cancel_cb():
-            report['cancelled'] = True
-            raise AnalysisCancelled()
-
     cleaned, _, _, _ = normalize_variants_for_rflp(
         fasta_path=params['fasta'], input_path=params['input_file'],
         names2_path=params.get('names2_file', ''), block_bp=100_000,
@@ -1107,40 +1455,22 @@ def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, 
         counters['rows'] = 0
         return header, out_rows
     use_primer3 = params.get('use_primer3', False)
-    # Primer pairs and the enzyme are chosen together; without Primer3 the whole window is the amplicon.
-    mode = 'joint' if use_primer3 else 'window'
     codes = parse_suppliers_arg(','.join(params.get('suppliers', [])))
     enzymes = sorted((e for e in AllEnzymes if not codes or enzyme_supplier_codes(e) & codes),
                      key=lambda e: e.__name__)
     if params['commercial_only']:
         # REBASE lists at least one commercial supplier.
         enzymes = [e for e in enzymes if e.suppl]
+    run = _Run(params=params, model=model, report=report, counters=counters, enzymes=enzymes,
+               # Without a known cut position the fragment lengths are unknown.
+               dcaps_enzymes=[e for e in enzymes if not e.is_unknown()],
+               use_primer3=use_primer3,
+               # Primer pairs and the enzyme are chosen together; without Primer3 the whole window is the amplicon.
+               mode='joint' if use_primer3 else 'window',
+               dcaps=params['dcaps'] if use_primer3 and _PRIMER3_AVAILABLE else 'off',
+               status_cb=status_cb, cancel_cb=cancel_cb)
     names = load_names2(params.get('names2_file', ''))
-    if status_cb:
-        status_cb(f'[INFO] Поиск: {mode}; SNP: {len(cleaned)}; ферментов: {len(enzymes)}')
-        status_cb('[INFO] Оценка полос: модель присутствия, полная рестрикция; '
-                  'яркость и специфичность ПЦР по всему геному не оцениваются.')
-        options = [label for key, label in (
-            ('commercial_only', 'только продаваемые ферменты'),
-            ('group_isoschizomers', 'изошизомеры объединены (одна строка на сайт)'),
-            ('exclude_primer_sites', 'без сайта фермента в праймерах'),
-            ('mask_repeats', 'повторы (строчные буквы FASTA) не на 3′-концах праймеров'),
-            ('exclude_background_sites', 'без фоновых вариантов, меняющих разрезы'),
-        ) if params[key] and (key != 'exclude_background_sites' or params['background_vcf'])
-            and (use_primer3 or key not in ('exclude_primer_sites', 'mask_repeats'))]   # these two need primers
-        if use_primer3 and params['snp_end_distance']:
-            options.append(f"SNP не ближе {params['snp_end_distance']} п.н. к концам ампликона")
-        if use_primer3 and params['dcaps'] != 'off':
-            when = 'если нет robust-схемы' if params['dcaps'] == 'fallback' else 'для каждого SNP'
-            options.append(f"dCAPS {when}, несовпадений до {params['dcaps_mismatches']}, "
-                           f"Tm до {params['dcaps_tm_max']:g} °C, "
-                           f"продукт {params['dcaps_prod_min']}–{params['dcaps_prod_max']} п.н., "
-                           f"Δ {params['dcaps_delta']} п.н.")
-        if options:
-            status_cb('[INFO] Отбор: ' + '; '.join(options))
-
-    def append_record(record):
-        out_rows.append([record.get(key) for key in header])
+    _log_settings(run, len(cleaned))
 
     # Always release the FASTA handle, including cancellation and exceptions.
     fa = Fasta(params['fasta'], as_raw=True)
@@ -1150,260 +1480,31 @@ def run_rflp_gui_mode(params, status_cb=None, progress_cb=None, cancel_cb=None, 
         return resolve_contig(chrom, names, lambda name: name in fa)
 
     try:
-        background = None
         if params['background_vcf']:
             regions = {}
             for chrom, pos, _, _ in cleaned:
                 regions.setdefault(contig_of(chrom), []).append(
                     (pos - params['flank'], pos + params['flank']))
-            background, records = load_background_variants(params['background_vcf'], regions, names, cancel_cb)
-            counters['background_variants_loaded'] = sum(map(len, background.values()))
-            if status_cb:
-                status_cb(f"[INFO] Фоновые варианты: {counters['background_variants_loaded']} в окнах SNP "
-                          f"из {records} записей VCF")
-
-        dcaps = params['dcaps'] if use_primer3 and _PRIMER3_AVAILABLE else 'off'
-        # Without a known cut position the fragment lengths are unknown.
-        dcaps_enzymes = [e for e in enzymes if not e.is_unknown()]
+            run.background, records = load_background_variants(params['background_vcf'], regions, names, cancel_cb)
+            counters['background_variants_loaded'] = sum(map(len, run.background.values()))
+            run.log(f"[INFO] Фоновые варианты: {counters['background_variants_loaded']} в окнах SNP "
+                    f"из {records} записей VCF")
 
         for vi, (chrom, pos, ref, alt) in enumerate(cleaned, 1):
-            check_cancel()
-            mapped_id = contig_of(chrom)
-            start = max(1, pos - params['flank'])
-            end = min(len(fa[mapped_id]), pos + params['flank'])
-            # Soft-masked FASTA: lower case marks repeats; the analysis uses upper case.
-            raw = str(fa[mapped_id][start - 1:end])
-            seq = raw.upper()
-            masked_windows += raw != seq
-            off = pos - start
-            base = dict(variant=f'{chrom}:{pos} {ref}>{alt}', mapped_id=mapped_id,
-                        enzyme='', site='', pattern='no_enzyme_found',
-                        amplicon_start=start, amplicon_end=end, amplicon_len=len(seq),
-                        snp_offset_in_amplicon=off, delta_threshold_bp=params['delta'],
-                        search_mode=mode, scoring_model=MODEL_VERSION, pairs_evaluated=0)
-            if not 0 <= off < len(seq) or seq[off] != ref:
-                append_record(dict(base, status='analysis_error', reason='REF не совпадает с FASTA'))
-                continue
-            altseq = seq[:off] + alt + seq[off + 1:]
-            # Known variants of the window (offsets), except a record of the SNP itself.
-            known = []
-            if background is not None:
-                items = background.get(mapped_id, [])
-                for p, r, alts in items[bisect.bisect_left(items, (start,)):bisect.bisect_left(items, (end + 1,))]:
-                    q = p - start
-                    if p + len(r) - 1 > end or p <= pos < p + len(r):
-                        continue
-                    if seq[q:q + len(r)] != r:
-                        counters['background_ref_mismatch'] += 1
-                        continue
-                    known.append((q, r, alts))
-            # The remaining enzymes give equal REF/ALT fragments in every amplicon,
-            # i.e. Δ = 0, which is below any threshold (delta >= 1).
-            site_enzymes = snp_site_enzymes(enzymes, seq, altseq, off)
-            mask = params['mask_repeats']
-            excluded = [(q, len(r)) for q, r, _ in known]
-            end_distance = params['snp_end_distance'] if use_primer3 else 0
-            failure, pairs = None, []
-            if end_distance and not end_distance <= off < len(seq) - end_distance:
-                failure = dict(base, status='no_primers',
-                               reason=f'SNP ближе {end_distance} п.н. к краю окна; увеличьте фланг')
-            elif use_primer3:
-                check_cancel()
-                pres = primer3_pick(raw if mask else seq, off, params['prod_min'], params['prod_max'],
-                                    params['tm_min'], params['tm_max'],
-                                    num_return=params['primer_pairs'],
-                                    target_flank=max(0, end_distance - PRIMER_MIN_SIZE),
-                                    lowercase_masking=mask, excluded_regions=excluded)
-                if not pres:
-                    error = primer3_pick.last_error
-                    failure = dict(base, status='primer3_error' if error else 'no_primers',
-                                   reason=error or 'Primer3 не вернул подходящих пар')
-                else:
-                    try:
-                        pairs = list(_primer_candidates(pres, seq, off))
-                    except (KeyError, TypeError, ValueError) as exc:
-                        failure = dict(base, status='primer3_error', reason=str(exc))
-                    else:
-                        # Guaranteed by the Primer3 target; kept as an explicit check.
-                        near = [p for p in pairs if min(off - p['start0'], p['end0'] - 1 - off) < end_distance]
-                        counters['pairs_near_end'] += len(near)
-                        pairs = [p for p in pairs if p not in near]
-            else:
-                pairs = [dict(start0=0, end0=len(seq))]
-            if failure is not None and dcaps == 'off':
-                append_record(failure)
-                continue
-            base['pairs_evaluated'] = len(pairs) if use_primer3 else 0
-            counters['pairs_evaluated'] += base['pairs_evaluated']
-            hits = []
-            local = dict(errors=0, ambiguous=0, genotype_rejected=0)
-
-            def amplicon_record(pair, a, b, **extra):
-                record = dict(base, **{k: v for k, v in pair.items() if k not in ('start0', 'end0')})
-                record.update(amplicon_start=start + a, amplicon_end=start + b - 1,
-                              amplicon_len=b - a, product_size=b - a,
-                              snp_offset_in_amplicon=off - a,
-                              repeat_pct=round(100 * sum(c.islower() for c in raw[a:b]) / (b - a), 1),
-                              **extra)
-                return record
-
-            def evaluate(enz, refamp, altamp, record, a, b):
-                """The assay of one enzyme on one amplicon, or None if it fails a filter."""
-                try:
-                    cr, ca = cut_positions(enz, refamp), cut_positions(enz, altamp)
-                except Exception as exc:
-                    local['errors'] += 1
-                    if local['errors'] <= 3 and status_cb:
-                        status_cb(f'[WARN] {base["variant"]} / {enz.__name__}: {exc}')
-                    return None
-                if max(len(cr), len(ca)) - 2 > params['max_cuts']:
-                    return None
-                fr, fal = frag_lengths(cr), frag_lengths(ca)
-                if params['gain_loss_only'] and len(cr) == len(ca):
-                    return None
-                # min_frag..max_frag is the visibility window of the gel model:
-                # fragments outside it are hidden, the assay itself stays.
-                visible_r = [x for x in fr if model.min_visible <= x <= model.max_visible]
-                visible_a = [x for x in fal if model.min_visible <= x <= model.max_visible]
-                actual_delta = diagnostic_delta(visible_r, visible_a)
-                threshold = params['dcaps_delta'] if record.get('design') == 'dCAPS' else params['delta']
-                if actual_delta < threshold:
-                    return None
-                scores = score_genotypes(fr, fal, model)
-                if scores['genotype_quality'] == 'ambiguous':
-                    local['genotype_rejected'] += 1
-                    return None
-                reason = {
-                    'robust': 'Три генотипа различимы во всём заданном диапазоне разрешения',
-                    'nominal_only': 'Три генотипа различимы только при исходном разрешении',
-                }[scores['genotype_quality']]
-                if not use_primer3:
-                    reason = 'Оценка окна без подобранных праймеров. ' + reason
-                dcaps_design = record.get('design') == 'dCAPS'
-                if dcaps_design:
-                    allele = 'REF' if len(cr) > len(ca) else 'ALT'
-                    reason = f'dCAPS: несовпадение в праймере создаёт сайт в аллеле {allele}. ' + reason
-                primer_site = primer_site_label(enz, refamp, record.get('primer_left_len'),
-                                                record.get('primer_right_len'))
-                # In a mismatch primer such a site is a design error: every allele is cut.
-                if primer_site and (params['exclude_primer_sites'] or dcaps_design):
-                    counters['excluded_primer_site'] += 1
-                    return None
-                inside = [(q - a, r, alts) for q, r, alts in known if a <= q and q + len(r) <= b]
-                changing = sorted({f'{start + a + q} {r}>{x}' for q, r, alts in inside for x in alts
-                                   if any(variant_changes_sites(enz, amp, q, r, x, model.resolution_bp)
-                                          for amp in (refamp, altamp))},
-                                  key=lambda text: int(text.split()[0]))
-                if changing and params['exclude_background_sites']:
-                    counters['excluded_background_site'] += 1
-                    return None
-                return dict(record, **scores, enzyme=enz.__name__, _enz=enz,
-                            site=enzyme_site_string(enz),
-                            pattern='gain/loss' if len(cr) != len(ca) else 'shift',
-                            frags_ref=frags_to_str(fr), frags_alt=frags_to_str(fal),
-                            diag_delta_bp=actual_delta, suppliers=enzyme_suppliers_human(enz),
-                            primer_site=primer_site,
-                            background_variants=len(inside) if background is not None else None,
-                            background_site_variants='; '.join(changing),
-                            status='ok' if use_primer3 else 'window_only', reason=reason)
-
-            for pair in pairs:
-                check_cancel()
-                a, b = pair['start0'], pair['end0']
-                refamp, altamp = seq[a:b], altseq[a:b]
-                if set(refamp + altamp) - set('ACGT'):
-                    local['ambiguous'] += 1
-                    continue
-                record = amplicon_record(pair, a, b, design='natural')
-                counters['enzyme_evaluations'] += len(enzymes)
-                for enz in site_enzymes:
-                    check_cancel()
-                    hit = evaluate(enz, refamp, altamp, record, a, b)
-                    if hit is not None:
-                        hits.append(hit)
-
-            if dcaps == 'always' or (dcaps == 'fallback'
-                                     and not any(h['genotype_quality'] == 'robust' for h in hits)):
-                counters['dcaps_snps'] += 1
-                designs = dcaps_mismatch_sets(dcaps_enzymes, seq, off, ref, alt, params['dcaps_mismatches'])
-                ordered = sorted(designs.items(), key=lambda item: (len(item[0][1]), -len(item[1]), item[0]))
-                for (side, changes), design_enzymes in ordered[:DCAPS_MAX_DESIGNS]:
-                    check_cancel()
-                    template = list(raw if mask else seq)
-                    for j, new in changes:
-                        template[j] = new
-                    template = ''.join(template)
-                    terminal = off - 1 if side == 'left' else off + 1
-                    primer = None if mask and raw[terminal].islower() else dcaps_primer(
-                        template, off, side, params['tm_min'], params['dcaps_tm_max'], excluded)
-                    if primer is None:
-                        counters['dcaps_no_primer'] += 1
-                        continue
-                    counters['dcaps_designs'] += 1
-                    pres = primer3_pick(template, off, params['dcaps_prod_min'], params['dcaps_prod_max'],
-                                        params['tm_min'], params['dcaps_tm_max'],
-                                        num_return=params['primer_pairs'],
-                                        lowercase_masking=mask, excluded_regions=excluded,
-                                        fixed_left=primer[1] if side == 'left' else None,
-                                        fixed_right=primer[1] if side == 'right' else None)
-                    mutated = template.upper()
-                    try:
-                        dpairs = list(_primer_candidates(pres, mutated, off)) if pres else []
-                    except (KeyError, TypeError, ValueError):
-                        dpairs = []
-                    counters['dcaps_pairs'] += len(dpairs)
-                    mutated_alt = mutated[:off] + alt + mutated[off + 1:]
-                    lowered = {j for j, _ in changes}
-                    for pair in dpairs:
-                        a, b = pair['start0'], pair['end0']
-                        refamp, altamp = mutated[a:b], mutated_alt[a:b]
-                        if set(refamp + altamp) - set('ACGT'):
-                            continue
-                        # Mismatched bases in lower case, as usual for dCAPS primers.
-                        left = ''.join(c.lower() if a + i in lowered else c
-                                       for i, c in enumerate(pair['primers_left']))
-                        right = ''.join(c.lower() if b - 1 - i in lowered else c
-                                        for i, c in enumerate(pair['primers_right']))
-                        record = amplicon_record(pair, a, b, design='dCAPS', primers_left=left,
-                                                 primers_right=right, delta_threshold_bp=params['dcaps_delta'],
-                                                 primer_mismatches=describe_mismatches(seq, off, side, changes))
-                        for enz in design_enzymes:
-                            hit = evaluate(enz, refamp, altamp, record, a, b)
-                            if hit is not None:
-                                hits.append(hit)
-                                counters['dcaps_candidates'] += 1
-
-            counters['enzyme_errors'] += local['errors']
-            counters['ambiguous_templates'] += local['ambiguous']
-            counters['genotype_rejected'] += local['genotype_rejected']
-            hits.sort(key=rank_key)
-            counters['candidates'] += len(hits)
-            counters['candidate_sites'] += len({site_key(h['_enz']) for h in hits})
-            if params['group_isoschizomers']:
-                hits = group_by_site(hits)
-            counters['variants_with_candidates'] += bool(hits)
-            counters['variants_with_robust_candidates'] += any(h['genotype_quality'] == 'robust' for h in hits)
-            limit = params['top_results']
-            for rank, hit in enumerate(hits[:limit] if limit else hits, 1):
-                append_record(dict(hit, assay_rank=rank))
-            if not hits and failure is not None:
-                append_record(failure)
-            elif not hits:
-                reason = 'Не найдено сочетание для различения трёх генотипов'
-                if local['ambiguous']:
-                    reason += f"; окон с неопределёнными основаниями: {local['ambiguous']}"
-                if local['errors']:
-                    reason += f"; ошибок расчёта ферментов: {local['errors']}"
-                append_record(dict(base, status='no_discriminating_assay', reason=reason))
-            if status_cb:
-                status_cb(f'[INFO] {base["variant"]}: пар {base["pairs_evaluated"]}, '
-                          f"кандидатов {len(hits)}, неразличимых {local['genotype_rejected']}")
-            if progress_cb:
+            run.check_cancel()
+            records, masked, tried = _analyse_snp(run, fa, chrom, contig_of(chrom), pos, ref, alt)
+            masked_windows += masked
+            out_rows.extend([record.get(key) for key in header] for record in records)
+            if progress_cb and tried:
                 progress_cb(vi, len(cleaned))
     finally:
         fa.close()
-    if params['mask_repeats'] and use_primer3 and not masked_windows and status_cb:
-        status_cb('[WARN] В окнах SNP нет строчных букв: FASTA без soft-mask, '
-                  'маскирование повторов не действует.')
+    if params['mask_repeats'] and use_primer3 and not masked_windows:
+        run.log('[WARN] В окнах SNP нет строчных букв: FASTA без soft-mask, '
+                'маскирование повторов не действует.')
     counters['rows'] = len(out_rows)
     return header, out_rows
+
+
+# The name of this function up to 1.5.0; tools/regression.py calls it in older source trees too.
+run_rflp_gui_mode = run_analysis
