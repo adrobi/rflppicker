@@ -7,6 +7,18 @@ phrases come before the shorter ones they contain.
 """
 
 EN = {
+    'низкая': 'low',
+    'чувствителен': 'sensitive',
+    'нет данных': 'no data',
+    'Препарат не выбран': 'No preparation selected',
+    'Препарат фермента': 'Enzyme preparation',
+    'Выберите препарат': 'Choose a preparation',
+    'Свойства фермента: нет данных': 'Enzyme properties: no data',
+    'В публикации: инкубация {temp}, буфер {buffer}': 'Published conditions: incubation {temp}, buffer {buffer}',
+    'Метилирование: CpG — {cpg}, Dam — {dam}, Dcm — {dcm}': 'Methylation: CpG — {cpg}, Dam — {dam}, Dcm — {dcm}',
+    'Star-активность: {value}': 'Star activity: {value}',
+    'Сайт перекрывает CpG. Для геномной ДНК учитывайте метилирование образца.': 'Site overlaps CpG. For genomic DNA, consider sample methylation.',
+    'Сайт перекрывает CpG. Обычный ПЦР-продукт не сохраняет метилирование матрицы.': 'Site overlaps CpG. Standard PCR products do not retain template methylation.',
     'Применить': 'Apply',
     'Список ферментов': 'Enzyme list',
     'Выбрать ({count})…': 'Select ({count})…',

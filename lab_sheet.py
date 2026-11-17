@@ -1,8 +1,7 @@
 """Laboratory sheets: one A4 page per SNP with the chosen assay, for printing (PDF).
 
 The page holds what goes to the bench — enzyme, primers, expected bands, the
-virtual gel and the amplicon map — and fields to fill in by hand. Reaction
-conditions are not printed: the program does not know them.
+virtual gel and the amplicon map — and fields to fill in by hand and source-attributed product properties.
 """
 import os
 from datetime import datetime
@@ -11,6 +10,7 @@ from typing import List, Tuple
 from PyQt6.QtCore import QMarginsF, QRectF, Qt
 from PyQt6.QtGui import QColor, QFont, QPageLayout, QPageSize, QPainter, QPdfWriter, QPen
 
+from enzyme_catalog import property_lines
 import palette
 import rflp_core as core
 from i18n import fmt, t
@@ -153,6 +153,11 @@ def draw_sheet(page: _Page, summary: SnpSummary, payload, message: str, dcaps_mo
     page.y = max(left_bottom, top + gel_height) + 8
     page.rule()
 
+    for line in property_lines(summary.scheme, map_panel.allele_sequences() if payload else None):
+        page.text(line, 8.5)
+    page.gap(4)
+    page.rule()
+
     primers = primer_rows(summary)
     if primers:                                   # a window-search assay has none
         page.text(t('Праймеры'), 10, bold=True)
@@ -173,7 +178,9 @@ def draw_sheet(page: _Page, summary: SnpSummary, payload, message: str, dcaps_mo
     page.text(t('Карта ампликона'), 10, bold=True)
     page.gap(3)
     if payload:
-        page.gap(page.scene(map_panel.scene, 0, page.y, page.width, 95 * mm) + 8)
+        # Reserve the footer, photo caption and a writable photo frame on crowded sheets.
+        map_height = min(95 * mm, page.height - page.y - 40 * mm - 38)
+        page.gap(page.scene(map_panel.scene, 0, page.y, page.width, max(1, map_height)) + 8)
     else:
         page.text(message, 9, color=MUTED)
         page.gap(8)

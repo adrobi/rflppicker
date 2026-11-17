@@ -4,10 +4,11 @@ from typing import List, Optional
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
-    QApplication, QGridLayout, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QPushButton, QSizePolicy,
+    QApplication, QComboBox, QScrollArea, QGridLayout, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QPushButton, QSizePolicy,
     QTabWidget, QToolButton, QVBoxLayout, QWidget,
 )
 
+from enzyme_catalog import PRODUCTS, property_lines
 import icons
 import palette
 from i18n import N_, fmt, language, t
@@ -138,6 +139,13 @@ class DetailsPanel(QWidget):
         self.card_details = QLabel()
         self.card_details.setWordWrap(True)
         layout.addWidget(self.card_details)
+        self.product_picker = QComboBox()
+        self.product_picker.setAccessibleName(t('Препарат фермента'))
+        self.product_picker.currentIndexChanged.connect(self._choose_product)
+        layout.addWidget(self.product_picker)
+        self.product_details = self._label('product_details')
+        self.product_details.setWordWrap(True)
+        layout.addWidget(self.product_details)
         buttons = QHBoxLayout()
         self.copy_order_button = QPushButton(t('Копировать для заказа'))
         self.copy_order_button.setObjectName('copy_order_button')
@@ -158,7 +166,10 @@ class DetailsPanel(QWidget):
         buttons.addStretch()
         layout.addLayout(buttons)
         layout.addStretch()
-        return card
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(card)
+        return scroll
 
     # ----- genome -----
     def set_context(self, fasta_path: str, params: dict) -> None:
@@ -300,9 +311,9 @@ class DetailsPanel(QWidget):
         self.schemes_list.blockSignals(False)
         scheme = s.schemes[index]
         self.weakest_label.setText(weakest_text(scheme))
-        self._fill_card()
         payload, error = payload_for_scheme(scheme, self._fasta_path, self._params, fasta=self._open_fasta())
         self._show_payload(payload, error)
+        self._fill_card()
 
     def choose_scheme(self, index: int) -> None:
         s = self._summary
@@ -317,6 +328,17 @@ class DetailsPanel(QWidget):
     def _fill_card(self):
         viewed = self._viewed_summary()
         scheme = viewed.scheme
+        products = PRODUCTS.get(scheme.get('enzyme'), ())
+        self.product_picker.blockSignals(True)
+        self.product_picker.clear()
+        self.product_picker.addItem(t('Выберите препарат'), None)
+        for product in products:
+            self.product_picker.addItem(product.label, product.number)
+        index = self.product_picker.findData(scheme.get('enzyme_product'))
+        self.product_picker.setCurrentIndex(max(0, index))
+        self.product_picker.setVisible(len(products) > 1)
+        self.product_picker.blockSignals(False)
+        self._show_product(scheme)
         for (name, sequence, info), side, primer, tm in zip(
                 self._card_rows, ('F', 'R'), ('primers_left', 'primers_right'), ('tm_left', 'tm_right')):
             text = scheme.get(primer) or ''
@@ -339,6 +361,15 @@ class DetailsPanel(QWidget):
         # Copy only the ★ scheme: its primer names are the ones Excel uses.
         self.copy_order_button.setEnabled(chosen and bool(scheme.get('primers_left')))
         self.copy_all_button.setEnabled(chosen)
+
+    def _show_product(self, scheme):
+        sequences = self.map.allele_sequences() if self._payload else None
+        self.product_details.setText('\n'.join(property_lines(scheme, sequences)))
+
+    def _choose_product(self):
+        scheme = self._viewed_summary().scheme
+        scheme['enzyme_product'] = self.product_picker.currentData()
+        self._show_product(scheme)
 
     def _copy_order(self):
         QApplication.clipboard().setText(order_lines(self._viewed_summary()))

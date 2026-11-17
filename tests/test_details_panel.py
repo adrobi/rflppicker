@@ -71,6 +71,21 @@ class DetailsPanelTests(unittest.TestCase):
             panel.show_summary(summary, 'fallback')
             self.assertEqual(cyrillic_texts(panel), [])
 
+    def test_product_choice_follows_viewed_scheme_into_sheet(self):
+        from enzyme_catalog import property_lines
+        self.panel.show_summary(self.hoxb13, 'off')
+        picker = self.panel.product_picker
+        self.assertEqual(picker.count(), 3)  # unspecified, standard, HF
+        picker.setCurrentIndex(2)
+        viewed = self.panel._viewed_summary()
+        self.assertIn('R3101', self.panel.product_details.text())
+        self.assertEqual(self.panel.product_details.text(), '\n'.join(property_lines(viewed.scheme, None)))
+        self.panel.view_scheme(1)
+        self.assertNotIn('R3101', self.panel.product_details.text())
+        self.panel.view_scheme(0)
+        self.assertEqual(picker.currentData(), 'R3101')
+        self.assertEqual(self.hoxb13.scheme['enzyme_product'], 'R3101')
+
     def test_empty_state(self):
         self.panel.show_summary(None, 'fallback')
         self.assertEqual(self.panel.findChild(QLabel, 'message_label').text(), 'Выберите SNP в списке')

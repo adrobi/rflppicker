@@ -262,6 +262,10 @@ class PrimerGraphicPanel(QWidget):
     def _html_escape(text):
         return html.escape(str(text))
 
+    def allele_sequences(self):
+        """Sequences displayed by the current map, including dCAPS primer changes."""
+        return self._seq_ref, self._seq_alt
+
     @staticmethod
     def _parse_variant(variant_str: str) -> Tuple[str, str]:
         match = re.search(r"(?:^|\s)([ACGTN]+)\s*>\s*([ACGTN-]+)(?:$|\s)", (variant_str or "").strip(), re.IGNORECASE)

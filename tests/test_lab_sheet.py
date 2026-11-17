@@ -63,6 +63,22 @@ class LabSheetTests(unittest.TestCase):
         self.assertEqual(fields['Тип схемы'], 'природный сайт')
         self.assertNotIn('Примечание', fields)             # nothing to warn about
 
+    def test_catalog_handles_partial_and_absent_data_and_the_restriction_material(self):
+        from enzyme_catalog import property_lines
+        for lang, unknown, sensitivity, sample, pcr in (
+                ('ru', 'нет данных', 'чувствителен', 'геномной ДНК', 'ПЦР-продукт'),
+                ('en', 'no data', 'sensitive', 'genomic DNA', 'PCR products')):
+            i18n.set_language(lang)
+            scheme = dict(enzyme='AciI', status='ok')
+            # The reverse-complement site GCGG occurs only on the ALT allele.
+            pair = ('AAAAAA', 'AGCGGA')
+            card = ' '.join(property_lines(scheme, pair))
+            for value in ('R0551S', sensitivity, 'Dam — ' + unknown, pcr, '10.1155/jdr/4342250'):
+                self.assertIn(value, card)
+            self.assertIn(sample, ' '.join(property_lines(dict(scheme, status='window_only'), pair)))
+            self.assertNotIn(pcr, ' '.join(property_lines(scheme, ('AACGAA', 'AAAAAA'))))
+            self.assertIn(unknown, ' '.join(property_lines({'enzyme': 'EcoRV'}, None)))
+
     def test_primer_rows(self):
         rows = lab_sheet.primer_rows(self.summaries[0])
         scheme = self.summaries[0].scheme
