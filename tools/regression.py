@@ -38,7 +38,7 @@ REMOVED_PARAMS = ('joint_design',)
 BASE_PARAMS = dict(names2_file='', flank=300, min_frag=80, max_frag=800, delta=25, max_cuts=3,
                    prod_min=250, prod_max=600, tm_min=58.0, tm_max=62.0,
                    gel_resolution_bp=10.0, gel_resolution_pct=3.0, gel_stress_factor=1.5,
-                   gain_loss_only=False, suppliers=[], use_primer3=True, joint_design=True,
+                   gain_loss_only=False, suppliers=[], enzyme_mode='off', lab_enzymes=[], use_primer3=True, joint_design=True,
                    top_results=0, primer_pairs=10, skip_norm=False, no_save_norm=True,
                    commercial_only=True, group_isoschizomers=True, snp_end_distance=100,
                    exclude_primer_sites=True, mask_repeats=True, background_vcf='',

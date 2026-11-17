@@ -27,7 +27,7 @@ DEFAULT_PARAMS = dict(
     tm_min=58.0, tm_max=62.0, primer_pairs=10, top_results=10,
     gel_resolution_bp=10.0, gel_resolution_pct=3.0, gel_stress_factor=1.5,
     skip_norm=False, no_save_norm=True,
-    commercial_only=True, group_isoschizomers=True, snp_end_distance=100,
+    enzyme_mode='off', lab_enzymes=[], commercial_only=True, group_isoschizomers=True, snp_end_distance=100,
     exclude_primer_sites=True, mask_repeats=True,
     background_vcf='', exclude_background_sites=True, dcaps='fallback', dcaps_mismatches=1,
     # dCAPS designs only: a longer mismatch primer moves the created cut away from the
@@ -38,12 +38,28 @@ DEFAULT_PARAMS = dict(
 )
 # Parameters a caller may leave out: run_rflp_gui_mode() takes them from DEFAULT_PARAMS.
 OPTIONAL_PARAMS = (
-    'primer_pairs', 'top_results', 'gel_resolution_bp', 'gel_resolution_pct',
+    'enzyme_mode', 'lab_enzymes', 'primer_pairs', 'top_results', 'gel_resolution_bp', 'gel_resolution_pct',
     'gel_stress_factor', 'commercial_only', 'group_isoschizomers', 'snp_end_distance',
     'exclude_primer_sites', 'mask_repeats', 'background_vcf', 'exclude_background_sites', 'dcaps',
     'dcaps_mismatches', 'dcaps_tm_max', 'dcaps_prod_min', 'dcaps_prod_max', 'dcaps_delta',
     'specificity', 'specificity_mismatches', 'specificity_max_product',
 )
+
+
+ENZYME_NAMES = {e.__name__.casefold(): e.__name__ for e in AllEnzymes}
+
+
+def read_enzyme_list(path) -> list[str]:
+    """Read a UTF-8 inventory, returning unique canonical enzyme names."""
+    with open(path, encoding='utf-8-sig') as stream:
+        names = re.split(r'[\s,;]+', stream.read().strip())
+    names = [name for name in names if name]
+    unknown = sorted({name for name in names if name.casefold() not in ENZYME_NAMES})
+    if unknown:
+        raise ValueError('Неизвестные ферменты: ' + ', '.join(unknown))
+    if not names:
+        raise ValueError('Список ферментов пуст')
+    return sorted({ENZYME_NAMES[name.casefold()] for name in names})
 
 
 class AnalysisCancelled(Exception):
@@ -52,6 +68,15 @@ class AnalysisCancelled(Exception):
 
 def validate_params(params: dict) -> list[str]:
     errors = []
+    mode = params.get('enzyme_mode', 'off')
+    if mode not in ('off', 'only', 'prefer'):
+        errors.append('enzyme_mode: допустимо off, prefer или only')
+    if mode != 'off':
+        inventory = params.get('lab_enzymes')
+        if not isinstance(inventory, list) or not inventory:
+            errors.append('lab_enzymes: список ферментов пуст')
+        elif any(not isinstance(name, str) or ENZYME_NAMES.get(name.casefold()) != name for name in inventory):
+            errors.append('lab_enzymes: список содержит неизвестные ферменты')
     required = ('fasta', 'input_file')
     for key in required:
         if not str(params.get(key, '')).strip():
@@ -915,10 +940,17 @@ def site_key(enzyme) -> str:
     return min(site, site.translate(_IUPAC_COMPLEMENT)[::-1])
 
 
-def group_by_site(hits: list) -> list:
+def _inventory_priority(hit, preferred):
+    if preferred:
+        return (hit['genotype_quality'] != 'robust', hit['enzyme'] not in preferred)
+    return ()
+
+
+def group_by_site(hits: list, preferred=frozenset()) -> list:
     """Keep one hit per recognition site; the others are listed as isoschizomers.
 
     ``hits`` carry the enzyme class in ``_enz``. A site is represented by a
+    listed enzyme within its quality class in prefer mode, then by a
     commercially available enzyme when there is one (a neoschizomer cutting
     a base further may score marginally higher), then by the best score, then
     by the number of suppliers. The result is in rank order.
@@ -928,11 +960,12 @@ def group_by_site(hits: list) -> list:
         groups.setdefault((hit.get('design'), site_key(hit['_enz'])), []).append(hit)
     grouped = []
     for members in groups.values():
-        keep = min(members, key=lambda h: (_flagged(h), not h['_enz'].suppl, rank_key(h)[:4],
+        keep = min(members, key=lambda h: (*_inventory_priority(h, preferred), _flagged(h),
+                                           not h['_enz'].suppl, rank_key(h)[:4],
                                            -len(h['_enz'].suppl), rank_key(h)[4:]))
         others = sorted({h['enzyme'] for h in members} - {keep['enzyme']})
         grouped.append(dict(keep, isoschizomers='; '.join(others)))
-    return sorted(grouped, key=_order)
+    return sorted(grouped, key=lambda h: _order(h, preferred))
 
 
 def _flagged(hit: dict) -> bool:
@@ -940,9 +973,9 @@ def _flagged(hit: dict) -> bool:
     return bool(hit.get('_unspecific'))
 
 
-def _order(hit: dict) -> tuple:
-    """Assays of one SNP in the order of the output: a flagged pair after every clean one."""
-    return (_flagged(hit), *rank_key(hit))
+def _order(hit: dict, preferred=frozenset()) -> tuple:
+    """Inventory preferences precede the existing specificity and band ranking."""
+    return (*_inventory_priority(hit, preferred), _flagged(hit), *rank_key(hit))
 
 
 def enzyme_suppliers_human(enzyme) -> str:
@@ -1157,8 +1190,11 @@ def _log_settings(run: _Run, snp_count: int) -> None:
         ('exclude_primer_sites', 'без сайта фермента в праймерах'),
         ('mask_repeats', 'повторы (строчные буквы FASTA) не на 3′-концах праймеров'),
         ('exclude_background_sites', 'без фоновых вариантов, меняющих разрезы'),
-    ) if params[key] and (key != 'exclude_background_sites' or params['background_vcf'])
+    ) if params[key] and (key != 'commercial_only' or params.get('enzyme_mode', 'off') == 'off')
+        and (key != 'exclude_background_sites' or params['background_vcf'])
         and (use_primer3 or key not in ('exclude_primer_sites', 'mask_repeats'))]   # these two need primers
+    if params.get('enzyme_mode') in ('prefer', 'only'):
+        options.append(f"enzyme_mode={params['enzyme_mode']} ({', '.join(params['lab_enzymes'])})")
     if use_primer3 and params['snp_end_distance']:
         options.append(f"SNP не ближе {params['snp_end_distance']} п.н. к концам ампликона")
     if use_primer3 and params['dcaps'] != 'off':
@@ -1404,11 +1440,12 @@ def _snp_records(run: _Run, window: _Window, hits: list, failure: Optional[dict]
     counters['enzyme_errors'] += window.errors
     counters['ambiguous_templates'] += window.ambiguous
     counters['genotype_rejected'] += window.genotype_rejected
-    hits.sort(key=_order)
+    preferred = set(params['lab_enzymes']) if params.get('enzyme_mode') == 'prefer' else set()
+    hits.sort(key=lambda h: _order(h, preferred))
     counters['candidates'] += len(hits)
     counters['candidate_sites'] += len({site_key(h['_enz']) for h in hits})
     if params['group_isoschizomers']:
-        hits = group_by_site(hits)
+        hits = group_by_site(hits, preferred)
     counters['variants_with_candidates'] += bool(hits)
     counters['variants_with_robust_candidates'] += any(h['genotype_quality'] == 'robust' for h in hits)
     limit = params['top_results']
@@ -1601,11 +1638,14 @@ def run_analysis(params, status_cb=None, progress_cb=None, cancel_cb=None, repor
         return header, out_rows
     use_primer3 = params.get('use_primer3', False)
     codes = parse_suppliers_arg(','.join(params.get('suppliers', [])))
-    enzymes = sorted((e for e in AllEnzymes if not codes or enzyme_supplier_codes(e) & codes),
-                     key=lambda e: e.__name__)
-    if params['commercial_only']:
-        # REBASE lists at least one commercial supplier.
-        enzymes = [e for e in enzymes if e.suppl]
+    inventory = set(params['lab_enzymes'])
+    if params['enzyme_mode'] == 'only':
+        enzymes = [e for e in AllEnzymes if e.__name__ in inventory]
+    else:
+        preferred = inventory if params['enzyme_mode'] == 'prefer' else set()
+        enzymes = [e for e in AllEnzymes if e.__name__ in preferred or
+                   ((not codes or enzyme_supplier_codes(e) & codes) and (not params['commercial_only'] or e.suppl))]
+    enzymes.sort(key=lambda e: e.__name__)
     run = _Run(params=params, model=model, report=report, counters=counters, enzymes=enzymes,
                # Without a known cut position the fragment lengths are unknown.
                dcaps_enzymes=[e for e in enzymes if not e.is_unknown()],

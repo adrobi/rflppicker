@@ -60,6 +60,10 @@ def build_parser():
     search.add_argument('--suppliers', type=lambda s: [part.strip() for part in s.split(',') if part.strip()],
                         help=t('Поставщики через запятую: коды REBASE (N,E) или названия'))
 
+    search.add_argument('--enzyme-list', metavar='FILE', help=t('Список ферментов лаборатории (UTF-8)'))
+    search.add_argument('--enzyme-mode', choices=('off', 'prefer', 'only'),
+                        help=t('Режим списка ферментов (с файлом по умолчанию prefer)'))
+
     choice = parser.add_argument_group(t('отбор и проверки'))
     choice.add_argument('--commercial-only', dest='commercial_only', action=argparse.BooleanOptionalAction,
                         help=t('Только ферменты, у которых в REBASE есть поставщик'))
@@ -133,6 +137,9 @@ def params_from_args(args):
     for key, value in vars(args).items():
         if key in params and value is not None:
             params[key] = value
+    if args.enzyme_list:
+        params['lab_enzymes'] = core.read_enzyme_list(args.enzyme_list)
+        params['enzyme_mode'] = args.enzyme_mode or 'prefer'
     if args.save_norm is not None:
         params['no_save_norm'] = not args.save_norm
     params.update(fasta=str(Path(args.fasta).resolve()), input_file=str(Path(args.variants).resolve()))
@@ -230,7 +237,11 @@ def main(argv=None):
             parser.error(t('{key}: это папка, а не файл: {path}', key=key, path=target))
         if not os.access(target.parent, os.W_OK):
             parser.error(t('{key}: нет права записи в папку: {folder}', key=key, folder=target.parent))
-    params = params_from_args(args)
+    try:
+        params = params_from_args(args)
+    except (OSError, ValueError) as exc:
+        print(t('Ошибка параметров: {error}', error=core_text(str(exc))), file=sys.stderr)
+        return 2
     errors = core.validate_params(params)
     if errors:
         for error in errors:

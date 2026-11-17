@@ -7,6 +7,17 @@ phrases come before the shorter ones they contain.
 """
 
 EN = {
+    'Применить': 'Apply',
+    'Список ферментов': 'Enzyme list',
+    'Выбрать ({count})…': 'Select ({count})…',
+    'Только из списка': 'Listed only',
+    'Не использовать': 'Off',
+    'Предпочитать': 'Prefer listed',
+    'Загрузить список…': 'Load list…',
+    'Найти фермент': 'Find an enzyme',
+    'Ферменты лаборатории': 'Lab enzymes',
+    'Режим списка ферментов (с файлом по умолчанию prefer)': 'Inventory mode (default with a list file: prefer)',
+    'Список ферментов лаборатории (UTF-8)': 'Lab enzyme list (UTF-8)',
     # snp_summary: statuses, notes, texts for the lab notebook, Excel sheets.
     'Надёжно': 'Robust',
     'Только на хорошем геле': 'Good gel only',
@@ -618,6 +629,11 @@ Download a reference genome from NCBI into the genoms folder next to the program
 }
 
 CORE = [
+    (r'Неизвестные ферменты:', 'Unknown enzymes:'),
+    (r'Список ферментов пуст', 'The enzyme list is empty'),
+    (r'список ферментов пуст', 'the enzyme list is empty'),
+    (r'список содержит неизвестные ферменты', 'the list contains unknown enzymes'),
+    (r'допустимо off, prefer или only', 'allowed values are off, prefer or only'),
     # Reasons in the result rows.
     (r'SNP ближе (\d+) п\.н\. к краю окна; увеличьте фланг',
      r'SNP is closer than \1 bp to the window edge; increase the flank'),

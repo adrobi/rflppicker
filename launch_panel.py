@@ -4,8 +4,8 @@ from typing import Dict, List, Optional, Tuple
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
-    QMenu, QPushButton, QScrollArea, QSizePolicy, QSpinBox, QToolButton, QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
+    QListWidget, QListWidgetItem, QMessageBox, QMenu, QPushButton, QScrollArea, QSizePolicy, QSpinBox, QToolButton, QVBoxLayout, QWidget,
 )
 
 import icons
@@ -14,17 +14,17 @@ from app_settings import AppSettings
 from genome_dialog import GenomeDownloadDialog
 from i18n import N_, core_text, t
 from rflp_core import (
-    DEFAULT_PARAMS, _PRIMER3_AVAILABLE, _SUPPLIER_CANON, get_base_dir, validate_params,
+    DEFAULT_PARAMS, ENZYME_NAMES, read_enzyme_list, _PRIMER3_AVAILABLE, _SUPPLIER_CANON, get_base_dir, validate_params,
 )
 
-KEY_PARAMS = ('prod_min', 'prod_max', 'tm_min', 'tm_max', 'specificity', 'commercial_only', 'suppliers', 'dcaps')
+KEY_PARAMS = ('prod_min', 'prod_max', 'tm_min', 'tm_max', 'specificity', 'commercial_only', 'suppliers', 'enzyme_mode', 'lab_enzymes', 'dcaps')
 ADVANCED_PARAMS = ('min_frag', 'max_frag', 'delta', 'gel_resolution_bp', 'gel_resolution_pct', 'gel_stress_factor',
                    'flank', 'primer_pairs', 'top_results', 'max_cuts', 'group_isoschizomers', 'snp_end_distance',
                    'exclude_primer_sites', 'mask_repeats', 'exclude_background_sites',
                    'specificity_mismatches', 'specificity_max_product', 'dcaps_mismatches',
                    'dcaps_tm_max', 'dcaps_prod_min', 'dcaps_prod_max', 'dcaps_delta',
                    'use_primer3', 'gain_loss_only', 'skip_norm', 'no_save_norm')
-PANEL_ERROR_KEYS = ('input_file', 'fasta', 'background_vcf', 'prod_min', 'tm_min')
+PANEL_ERROR_KEYS = ('input_file', 'fasta', 'background_vcf', 'prod_min', 'tm_min', 'lab_enzymes')
 SUPPLIER_TITLES = {'A': 'Agilent', 'E': 'Thermo Fisher', 'F': 'Promega', 'H': 'Minotech', 'I': 'SibEnzyme',
                    'J': 'Nippon Gene', 'K': 'Takara', 'M': 'Roche', 'N': 'NEB',
                    'R': 'Molecular Biology Resources', 'S': 'Sigma', 'T': 'Toyobo', 'V': 'Vivantis', 'Y': 'EURx',
@@ -79,6 +79,54 @@ def _error_label(key: str) -> QLabel:
     label.setWordWrap(True)
     label.hide()
     return label
+
+
+class InventoryDialog(QDialog):
+    def __init__(self, selected, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(t('Ферменты лаборатории'))
+        layout = QVBoxLayout(self)
+        search = QLineEdit()
+        search.setPlaceholderText(t('Найти фермент'))
+        layout.addWidget(search)
+        self.list_widget = QListWidget()
+        layout.addWidget(self.list_widget)
+        self.items = {}
+        selected = set(selected)
+        for name in sorted(ENZYME_NAMES.values()):
+            item = QListWidgetItem(name, self.list_widget)
+            item.setCheckState(Qt.CheckState.Checked if name in selected else Qt.CheckState.Unchecked)
+            self.items[name] = item
+        search.textChanged.connect(self.filter_names)
+        load = QPushButton(t('Загрузить список…'))
+        load.clicked.connect(self.load_file)
+        layout.addWidget(load)
+        buttons = QDialogButtonBox()
+        buttons.addButton(t('Применить'), QDialogButtonBox.ButtonRole.AcceptRole)
+        buttons.addButton(t('Отмена'), QDialogButtonBox.ButtonRole.RejectRole)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def filter_names(self, text):
+        query = text.casefold()
+        for name, item in self.items.items():
+            item.setHidden(query not in name.casefold())
+
+    def load_file(self):
+        path, _ = QFileDialog.getOpenFileName(self, t('Список ферментов лаборатории (UTF-8)'))
+        if not path:
+            return
+        try:
+            selected = set(read_enzyme_list(path))
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, self.windowTitle(), core_text(str(exc)))
+            return
+        for name, item in self.items.items():
+            item.setCheckState(Qt.CheckState.Checked if name in selected else Qt.CheckState.Unchecked)
+
+    def selected_names(self):
+        return [name for name, item in self.items.items() if item.checkState() == Qt.CheckState.Checked]
 
 
 class SupplierPicker(QToolButton):
@@ -399,6 +447,16 @@ class LaunchPanel(QWidget):
         caption(t('Ферменты'))
         self.supplier_picker = SupplierPicker()
         field(t('Поставщики'), self.supplier_picker)
+        self.inventory_names = []
+        self.inventory_mode = QComboBox()
+        self.inventory_mode.addItem(t('Не использовать'), 'off')
+        self.inventory_mode.addItem(t('Предпочитать'), 'prefer')
+        self.inventory_mode.addItem(t('Только из списка'), 'only')
+        self.inventory_mode.currentIndexChanged.connect(
+            lambda: self.supplier_picker.setEnabled(self.inventory_mode.currentData() != 'only'))
+        self.inventory_button = QPushButton(t('Выбрать ({count})…', count=0))
+        self.inventory_button.clicked.connect(self.edit_inventory)
+        field(t('Список ферментов'), self.inventory_mode, self.inventory_button, 'lab_enzymes')
         self.dcaps_combo = QComboBox()
         self.dcaps_combo.setObjectName('dcaps_combo')
         for text, value in DCAPS_CHOICES:
@@ -597,6 +655,12 @@ class LaunchPanel(QWidget):
         widget.setToolTip(t('Файл не найден') if missing else (path or ''))
 
     # ----- parameters -----
+    def edit_inventory(self):
+        dialog = InventoryDialog(self.inventory_names, self)
+        if dialog.exec():
+            self.set_params({'lab_enzymes': dialog.selected_names()})
+        dialog.deleteLater()
+
     def collect_params(self) -> dict:
         commercial_only, suppliers = self.supplier_picker.value()
         params = dict(self._advanced)
@@ -605,6 +669,7 @@ class LaunchPanel(QWidget):
             background_vcf=self.vcf_edit.text().strip(),
             prod_min=self.prod_min_spin.value(), prod_max=self.prod_max_spin.value(),
             tm_min=self.tm_min_spin.value(), tm_max=self.tm_max_spin.value(),
+            enzyme_mode=self.inventory_mode.currentData(), lab_enzymes=list(self.inventory_names),
             commercial_only=commercial_only, suppliers=suppliers, dcaps=self.dcaps_combo.currentData(),
             specificity=self.specificity_combo.currentData(),
         )
@@ -619,6 +684,13 @@ class LaunchPanel(QWidget):
                           ('tm_min', self.tm_min_spin), ('tm_max', self.tm_max_spin)):
             if key in params:
                 spin.setValue(params[key])
+        if 'lab_enzymes' in params:
+            self.inventory_names = list(params['lab_enzymes'])
+            self.inventory_button.setText(t('Выбрать ({count})…', count=len(self.inventory_names)))
+        if 'enzyme_mode' in params:
+            index = self.inventory_mode.findData(params['enzyme_mode'])
+            if index >= 0:
+                self.inventory_mode.setCurrentIndex(index)
         if 'commercial_only' in params or 'suppliers' in params:
             current = self.supplier_picker.value()
             self.supplier_picker.set_value(params.get('commercial_only', current[0]),
