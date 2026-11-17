@@ -17,7 +17,7 @@ from Bio.Restriction import AllEnzymes
 from assay_scoring import GelModel, MODEL_VERSION, score_genotypes, rank_key
 import specificity
 
-APP_VERSION = "1.5.0"
+APP_VERSION = "1.6.0"
 
 # Analysis defaults of the window and the command line; the checks were chosen
 # from the validation on published assays.
@@ -1491,12 +1491,14 @@ def _scan_genome(run: _Run, hits: list) -> None:
     except specificity.ScanCancelled:
         run.report['cancelled'] = True
         raise AnalysisCancelled() from None
+    run.check_cancel()
     def count(entry):
         # "More than the limit" for a primer inside a repeat: its list of sites is cut.
         return specificity.MAX_SITES + 1 if entry.saturated else len(entry.sites)
 
     checked = {}        # the assays of one primer pair share the answer
     for hit in hits:
+        run.check_cancel()
         left, right = ((hit.get(key) or '').upper() for key in ('primers_left', 'primers_right'))
         intended = (hit['mapped_id'], hit['amplicon_start'] - 1, hit['amplicon_end'])
         answer = checked.get((left, right, intended))
@@ -1635,6 +1637,7 @@ def run_analysis(params, status_cb=None, progress_cb=None, cancel_cb=None, repor
                     f"из {records} записей VCF")
 
         def emit(search):
+            run.check_cancel()
             records = search.records
             if records is None:
                 records = _snp_records(run, search.window, search.hits, search.failure, search.unspecific)
@@ -1662,6 +1665,7 @@ def run_analysis(params, status_cb=None, progress_cb=None, cancel_cb=None, repor
     if params['mask_repeats'] and use_primer3 and not masked_windows:
         run.log('[WARN] В окнах SNP нет строчных букв: FASTA без soft-mask, '
                 'маскирование повторов не действует.')
+    run.check_cancel()
     counters['rows'] = len(out_rows)
     return header, out_rows
 

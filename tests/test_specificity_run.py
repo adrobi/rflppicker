@@ -191,6 +191,46 @@ class SpecificityRunTests(unittest.TestCase):
             core.run_analysis(params, cancel_cb=cancel, report=report)
         self.assertTrue(report['cancelled'])
 
+    def test_cancellation_after_scan_stops_before_results(self):
+        cancelled = [False]
+        real = specificity.find_sites
+
+        def finish_scan(*args, **kwargs):
+            sites = real(*args, **kwargs)
+            cancelled[0] = True
+            return sites
+
+        fasta = self.root / 'after_scan.fa'
+        fasta.write_text(f'>1\n{self.sequence}\n')
+        params = dict(core.DEFAULT_PARAMS, **CHECKS_OFF, fasta=str(fasta),
+                      input_file=str(self.root / 'variants.tsv'), flank=500,
+                      prod_min=200, prod_max=500, tm_min=50, tm_max=70)
+        params['specificity'] = 'exclude'
+        report = {}
+        with patch.object(specificity, 'find_sites', finish_scan), self.assertRaises(core.AnalysisCancelled):
+            core.run_analysis(params, cancel_cb=lambda: cancelled[0], report=report)
+        self.assertTrue(report['cancelled'])
+
+    def test_cancellation_during_product_checks_stops_before_results(self):
+        cancelled = [False]
+        real = specificity.pair_products
+
+        def finish_pair(*args, **kwargs):
+            products = real(*args, **kwargs)
+            cancelled[0] = True
+            return products
+
+        fasta = self.root / 'during_products.fa'
+        fasta.write_text(f'>1\n{self.sequence}\n')
+        params = dict(core.DEFAULT_PARAMS, **CHECKS_OFF, fasta=str(fasta),
+                      input_file=str(self.root / 'variants.tsv'), flank=500,
+                      prod_min=200, prod_max=500, tm_min=50, tm_max=70)
+        params['specificity'] = 'exclude'
+        report = {}
+        with patch.object(specificity, 'pair_products', finish_pair), self.assertRaises(core.AnalysisCancelled):
+            core.run_analysis(params, cancel_cb=lambda: cancelled[0], report=report)
+        self.assertTrue(report['cancelled'])
+
     def test_parameters_are_validated(self):
         base = dict(core.DEFAULT_PARAMS, fasta=__file__, input_file=__file__)
         self.assertEqual(core.validate_params(base), [])

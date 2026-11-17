@@ -1,4 +1,4 @@
-# RFLP Picker 1.5
+# RFLP Picker 1.6
 
 English | [Русский](README.ru.md)
 
@@ -9,6 +9,24 @@ list of SNPs and a reference genome it designs Primer3 primer pairs, finds
 restriction enzymes that tell the three genotypes apart and shows the expected
 bands on a virtual gel. The program compares REF and ALT on the reference FASTA,
 reports fragment sizes and draws a map of the amplicon.
+
+## What's new in 1.6
+
+- Whole-genome primer specificity checking without an index or external
+  programs: pairs with predicted off-target products are excluded by default.
+  They can instead be flagged, or the check can be turned off — see
+  [Primer specificity](#primer-specificity).
+- Results report primer binding-site counts, off-target product counts and
+  sizes. An SNP whose pairs are all excluded gets the status “no specific
+  primers”.
+- Fallback dCAPS design is also tried when the specificity check excludes all
+  robust assays with a natural site.
+
+This is a sequence model: it does not evaluate annealing thermodynamics or
+find sites with a mismatch at the 3′ end, including those of a dCAPS primer.
+With specificity turned off, assay results are preserved relative to 1.5.0;
+four columns are appended to the export. Details are in the
+[CHANGELOG](CHANGELOG.md) (in Russian).
 
 ## What's new in 1.5
 
@@ -262,8 +280,9 @@ are ranked together with ordinary ones. On the command line:
 ### Primer specificity
 
 *Since version 1.6.* After the primers are designed, the program looks them up
-in the whole genome: one pass over the FASTA for the primers of all SNPs, about
-a minute per 3 billion bases whatever the number of SNPs. A primer is taken to
+in the whole genome. The list is split into batches of up to 2000 SNPs, with
+one FASTA pass for the primers in each batch. Run time depends on genome size
+and the number of primers. A primer is taken to
 anneal where the 12 bases of its 3′ end match exactly and the rest of it has at
 most 3 mismatches, on either strand. A pair has *another PCR product* where two
 such sites face each other within 2000 bp — the two primers in any combination.
@@ -280,11 +299,13 @@ products are what matters.
 
 The check is a simple sequence model, not a thermodynamic one: it does not judge
 how well a mismatched primer anneals, and it does not see sites with a mismatch
-in the 3′ end. For a dCAPS primer it looks for sites that match the primer as
+in the 3′ end. Products with overlapping primer binding sites are not counted.
+For a dCAPS primer it looks for sites that match the primer as
 synthesized, so the mismatch primer itself often shows 0 sites: its own target
 has the mismatch inside the 3′ end. With “flag only” the flagged pairs come after
-the clean ones. Large SNP lists are checked 2000 SNPs at a time, one pass over
-the genome for each part. It does not act in the window search.
+the clean ones. Large SNP lists require several genome passes. If dCAPS design
+is needed after non-specific assays are excluded, its primers are checked in
+an additional pass. The check does not act in the window search.
 
 Checking the coordinates and that `REF` matches the FASTA is always on. The
 option to skip normalization turns off only the automatic REF/ALT swap.
