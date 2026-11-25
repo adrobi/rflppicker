@@ -253,6 +253,11 @@ line: `python rflp_cli.py --download-genome GCF_016772045.1`.
 
 ## Parameters
 
+For a biallelic insertion or deletion, provide both alleles as nonempty A/C/G/T
+sequences with a shared anchor, for example `A → ACT` or `ACT → A`. The 1-based
+`pos` points to the first base of REF. The program checks the entire REF
+against the FASTA and tries product lengths without digestion before restriction.
+
 In the 2.0.0 development version, **Double digest** is enabled by default.
 When no single natural enzyme gives a robust assay after the enabled checks,
 the program tries pairs on the same amplicons before fallback dCAPS.

@@ -92,8 +92,8 @@ def _rejection_text(rejection: dict) -> str:
 @dataclass
 class SnpSummary:
     record: InputRecord
-    schemes: List[dict] = field(default_factory=list)   # core rows with an enzyme, '_index' = row index
-    failure: Optional[dict] = None                       # core row without an enzyme
+    schemes: List[dict] = field(default_factory=list)   # core assay rows, '_index' = row index
+    failure: Optional[dict] = None
     rejection: Optional[dict] = None                     # entry of report['rejected']
     chosen: int = 0
     primer_base: str = ''
@@ -145,7 +145,7 @@ class SnpSummary:
         if quality not in _QUALITY_STATUS:
             parts.append(t('Три генотипа неразличимы по присутствию полос'))
         if self.manual:
-            parts.append(t('Выбрано вручную, лучшая — {enzyme}', enzyme=self.schemes[0].get('enzyme')))
+            parts.append(t('Выбрано вручную, лучшая — {enzyme}', enzyme=scheme_label(self.schemes[0])))
         if quality == 'nominal_only':
             parts.append(t('Только при исходном разрешении; труднее всего: {pair}',
                            pair=scheme.get('weakest_genotypes')))
@@ -156,7 +156,9 @@ class SnpSummary:
         if scheme.get('primer_site'):
             parts.append(t('Сайт фермента в праймере'))
         if scheme.get('background_site_variants'):
-            parts.append(t('Фоновые варианты меняют разрезы: {variants}',
+            warning = (N_('Фоновые варианты меняют длину продукта: {variants}') if scheme.get('design') == 'amplicon_length'
+                       else N_('Фоновые варианты меняют разрезы: {variants}'))
+            parts.append(t(warning,
                            variants=scheme['background_site_variants']))
         elif (scheme.get('background_variants') or 0) > 0:
             parts.append(t('Известных вариантов в ампликоне: {count}', count=scheme['background_variants']))
@@ -218,10 +220,16 @@ def build_summaries(records: List[InputRecord], header: List[str], rows: List[li
             if not found:
                 found = groups.get(f'{r.chrom}:{r.pos} {r.alt}>{r.ref}') or []
                 swapped = bool(found)
+        schemes, failure = [], None
+        for values in found:
+            if values.get('enzyme') or values.get('design') == 'amplicon_length':
+                schemes.append(values)
+            elif failure is None:
+                failure = values
         summaries.append(SnpSummary(
             record=r,
-            schemes=[values for values in found if values.get('enzyme')],
-            failure=next((values for values in found if not values.get('enzyme')), None),
+            schemes=schemes,
+            failure=failure,
             rejection=rejection,
             swapped=swapped,
         ))
@@ -261,12 +269,13 @@ def summary_text(summary: SnpSummary, dcaps_mode: str) -> str:
              t('Статус: {status}', status=status_title(summary.status))]
     scheme = summary.scheme
     if scheme is not None:
-        lines.append(t('Фермент: {enzyme}, сайт {site}', enzyme=scheme.get('enzyme'), site=scheme.get('site')))
+        lines.append(t('Фермент: {enzyme}, сайт {site}', enzyme=scheme.get('enzyme'), site=scheme.get('site'))
+                     if scheme.get('enzyme') else scheme_label(scheme))
         for side, primer, tm in (('F', 'primers_left', 'tm_left'), ('R', 'primers_right', 'tm_right')):
             if scheme.get(primer):
                 tm_text = f" (Tm {scheme[tm]:.1f} °C)" if scheme.get(tm) is not None else ''
                 lines.append(f'{summary.primer_base}_{side}: {scheme[primer]}{tm_text}')
-        lines.append(t('Продукт: {size} п.н.', size=scheme.get('product_size')))
+        lines.append(t('Продукт: {size} п.н.', size=product_size_text(scheme)))
         lines.append(t('Полосы: REF/REF {ref_ref}; REF/ALT {ref_alt}; ALT/ALT {alt_alt}',
                        ref_ref=scheme.get('bands_ref_ref'), ref_alt=scheme.get('bands_ref_alt'),
                        alt_alt=scheme.get('bands_alt_alt')))
@@ -290,13 +299,24 @@ SUMMARY_HEADER = ['ID', 'SNP', N_('Хромосома в геноме'), N_('С�
                   N_('Полосы REF/ALT'), N_('Полосы ALT/ALT'), N_('Оценка'), N_('Оценка при ухудшении'),
                   N_('Примечание'), N_('Строка файла')]
 PRIMER_HEADER = [N_('Имя'), N_('Последовательность 5′→3′'), N_('Длина'), 'Tm', 'SNP', N_('Фермент')]
-_DESIGN_TITLES = {'double_digest': N_('Двойная рестрикция'), 'natural': N_('природный сайт'), 'dCAPS': 'dCAPS'}
+_DESIGN_TITLES = {'amplicon_length': N_('Без рестрикции'), 'double_digest': N_('Двойная рестрикция'),
+                  'natural': N_('природный сайт'), 'dCAPS': 'dCAPS'}
 _SCHEME_COLUMNS = ('enzyme', 'site', 'isoschizomers', 'suppliers', 'design', 'primers_left', 'primers_right',
                    'tm_left', 'tm_right', 'product_size', 'bands_ref_ref', 'bands_ref_alt', 'bands_alt_alt',
                    'genotype_margin', 'worst_margin')
 
 
+def scheme_label(scheme: dict) -> str:
+    return t(_DESIGN_TITLES['amplicon_length']) if scheme.get('design') == 'amplicon_length' else scheme.get('enzyme') or ''
+
+
+def product_size_text(scheme: dict) -> str:
+    ref, alt = scheme.get('product_size'), scheme.get('product_size_alt')
+    return str(ref) if alt is None else f'REF {ref} / ALT {alt}'
+
+
 def summary_table(summaries: List[SnpSummary], dcaps_mode: str) -> Tuple[List[str], List[list]]:
+    has_alt_size = any(s.scheme and s.scheme.get('product_size_alt') is not None for s in summaries)
     rows = []
     for s in summaries:
         scheme = s.scheme or {}
@@ -304,10 +324,13 @@ def summary_table(summaries: List[SnpSummary], dcaps_mode: str) -> Tuple[List[st
         values = [scheme.get(name) for name in _SCHEME_COLUMNS]
         design = scheme.get('design')
         values[_SCHEME_COLUMNS.index('design')] = t(_DESIGN_TITLES[design]) if design in _DESIGN_TITLES else design
+        if has_alt_size:
+            values.append(scheme.get('product_size_alt'))
         choice = (t('вручную') if s.manual else t('авто')) if s.scheme is not None else ''
         rows.append([s.record.snp_id, s.label, source.get('mapped_id'), status_title(s.status), choice,
                      *values, s.note(dcaps_mode), s.record.line])
-    return [t(title) for title in SUMMARY_HEADER], rows
+    header = [*SUMMARY_HEADER[:-2], N_('Продукт ALT, п.н.'), *SUMMARY_HEADER[-2:]] if has_alt_size else SUMMARY_HEADER
+    return [t(title) for title in header], rows
 
 
 def primer_table(summaries: List[SnpSummary]) -> Tuple[List[str], List[list]]:

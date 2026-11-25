@@ -12,7 +12,7 @@ import palette
 from app_settings import AppSettings
 from i18n import N_, fmt, t
 from result_model import LABELS
-from snp_summary import ERROR, NONE, STATUS_ORDER, SnpSummary, status_title
+from snp_summary import ERROR, NONE, STATUS_ORDER, SnpSummary, product_size_text, scheme_label, status_title
 
 SORT_ROLE = Qt.ItemDataRole.UserRole
 _HIDDEN_KEYS = ('mapped_id', 'site', 'isoschizomers', 'suppliers', 'primers_left', 'primers_right', 'tm_left',
@@ -106,7 +106,7 @@ class SnpListModel(QAbstractTableModel):
             r = s.record
             return s.label, (_chrom_key(r.chrom), r.pos if r.pos is not None else -1)
         if key == 'enzyme':
-            enzyme = scheme.get('enzyme') or ''
+            enzyme = scheme_label(scheme)
             return (f'{enzyme} ✎' if s.manual else enzyme), enzyme.lower() or None
         if key == 'bands':
             if not scheme:
@@ -115,7 +115,7 @@ class SnpListModel(QAbstractTableModel):
             return text, text
         if key == 'product':
             value = scheme.get('product_size')
-            return fmt(value), value
+            return (product_size_text(scheme) if scheme.get('product_size_alt') is not None else fmt(value)), value
         if key == 'score':
             value = scheme.get('genotype_margin')
             return fmt(value), value

@@ -2,6 +2,7 @@
 from i18n import N_
 
 LABELS = {
+    'product_size_alt': N_('Продукт ALT, п.н.'),
     'enzyme_1': N_('Первый фермент'), 'enzyme_2': N_('Второй фермент'),
     'site_1': N_('Сайт первого фермента'), 'site_2': N_('Сайт второго фермента'),
     'reaction_compatibility': N_('Совместимость условий реакции'),

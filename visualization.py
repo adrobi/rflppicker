@@ -297,12 +297,16 @@ class PrimerGraphicPanel(QWidget):
     def _make_alt_seq(seq_ref, snp_offset, ref, alt):
         if snp_offset is None or not 0 <= snp_offset < len(seq_ref):
             return None, t("ALT недоступна: позиция SNP отсутствует или находится за пределами ампликона.")
-        if len(ref) != 1 or len(alt) != 1 or ref not in "ACGT" or alt not in "ACGT":
-            return None, t("ALT недоступна: для двух дорожек требуется одиночная замена A/C/G/T.")
-        if seq_ref[snp_offset] != ref:
-            return None, t("ALT недоступна: REF {ref} не совпадает с основанием {base} в FASTA.",
-                           ref=ref, base=seq_ref[snp_offset])
-        return seq_ref[:snp_offset] + alt + seq_ref[snp_offset + 1:], ""
+        if not ref or not alt or set(ref + alt) - set('ACGT'):
+            return None, t("ALT недоступна: требуются последовательности REF и ALT из A/C/G/T.")
+        end = snp_offset + len(ref)
+        observed = seq_ref[snp_offset:end]
+        if observed != ref:
+            if len(ref) == 1:
+                return None, t("ALT недоступна: REF {ref} не совпадает с основанием {base} в FASTA.",
+                               ref=ref, base=observed)
+            return None, t("ALT недоступна: последовательность REF не совпадает с FASTA.")
+        return seq_ref[:snp_offset] + alt + seq_ref[end:], ""
 
     def _render_impl(self, **payload):
         self._apply_theme()
@@ -315,6 +319,10 @@ class PrimerGraphicPanel(QWidget):
         offset = _safe_int(payload["snp_offset"])
         ref, alt = self._parse_variant(payload["variant_str"])
         alt_sequence, alt_error = self._make_alt_seq(sequence, offset, ref, alt)
+        alt_length = len(alt_sequence) if alt_sequence is not None else length
+        axis_length = max(length, alt_length)
+        indel = alt_length != length
+        uncut = payload["pattern"] == "amplicon_length"
         left, right = ((payload[key] or "").upper().strip() for key in ("primer_left", "primer_right"))
         left_pos, right_pos = self._map_primer_positions(sequence, left, right, payload["primer_left_start"], payload["primer_left_len"], payload["primer_right_start"], payload["primer_right_len"])
         names = payload["enzyme_names"] or (payload["enzyme_name"],)
@@ -349,16 +357,16 @@ class PrimerGraphicPanel(QWidget):
         x0, x1 = 100.0, 1150.0
 
         def x_at(boundary):
-            return x0 + float(boundary) / length * (x1 - x0)
+            return x0 + float(boundary) / axis_length * (x1 - x0)
 
         no_pen = QtGui.QPen(Qt.PenStyle.NoPen)
         self._draw_text(30, 15, payload["variant_str"] or t("Карта ампликона"), 17, True, width=790)
-        self._draw_text(865, 19, payload["enzyme_name"] or t("Фермент не выбран"), 13, True, width=305)
+        self._draw_text(865, 19, payload["enzyme_name"] or t(N_("Без рестрикции") if uncut else N_("Фермент не выбран")), 13, True, width=305)
         self._draw_text(30, 52, t("{chrom}:{start}–{end}  ·  {length} п.н.  ·  геномные координаты 1-based",
                                   chrom=payload['mapped_id'], start=payload['genome_start'], end=payload['genome_end'],
                                   length=length), 10, color=c["muted"], width=800)
         patterns = {"gain/loss": N_("Появление / исчезновение сайта"), "shift": N_("Изменение фрагментов")}
-        pattern = t(patterns[payload["pattern"]]) if payload["pattern"] in patterns else payload["pattern"]
+        pattern = "" if uncut else t(patterns.get(payload["pattern"], payload["pattern"]))
         self._draw_text(865, 51, pattern, 9, color=c["muted"], width=305)
 
         def tm_text(value):
@@ -388,28 +396,28 @@ class PrimerGraphicPanel(QWidget):
         primer_arrow(left_pos, left, 124, 1, c["left"], t("Левый праймер →"), payload["tm_left"])
         primer_arrow(right_pos, right, 174, -1, c["right"], t("← Правый праймер"), payload["tm_right"])
 
-        def track(label, y, cuts, color, available):
+        def track(label, y, cuts, color, available, track_length):
             self.scene.addRect(25, y - 39, 1150, 106, no_pen, QtGui.QBrush(QtGui.QColor(c["card"])))
             self._draw_text(37, y - 17, label, 14, True, color=color)
             pen = QtGui.QPen(QtGui.QColor(c["line"]), 3)
             if not available:
                 pen.setStyle(Qt.PenStyle.DashLine)
-            self.scene.addLine(x0, y, x1, y, pen)
+            self.scene.addLine(x0, y, x_at(track_length), y, pen)
             if not available:
                 self._draw_text(x0, y + 15, t("Дорожка недоступна — см. сообщение над схемой"), 10, color=c["muted"])
                 return
-            positions = sorted(set(position for position in cuts if 0 <= position <= length))
+            positions = sorted(set(position for position in cuts if 0 <= position <= track_length))
             fragments = [b - a for a, b in zip(positions, positions[1:])]
             last_label_right = -1000.0
             for position in positions:
                 x = x_at(position)
                 marker = self.scene.addLine(x, y - 13, x, y + 13, QtGui.QPen(QtGui.QColor(color), 2))
-                if 0 < position < length:
+                if 0 < position < track_length:
                     tip = t("{label}: после {position} п.н. от начала ампликона", label=label, position=position)
                 else:
                     tip = t("Граница ампликона: {position} п.н.", position=position)
                 marker.setToolTip(tip)
-                if 0 < position < length and x - 19 >= last_label_right:
+                if 0 < position < track_length and x - 19 >= last_label_right:
                     text = self._draw_text(x - 19, y - 39, str(position), 9, color=color)
                     text.setToolTip(marker.toolTip())
                     last_label_right = text.sceneBoundingRect().right() + 8
@@ -423,32 +431,35 @@ class PrimerGraphicPanel(QWidget):
             detail = " + ".join(str(value) for value in fragments)
             summary = (t("Фрагменты: {detail} п.н.", detail=detail) if self._digest_available
                        else t("Разрезы не рассчитаны: фермент не выбран или неизвестен."))
+            if uncut:
+                summary = t("Продукт: {size} п.н.", size=track_length)
             summary_item = self._draw_text(x0, y + 36, summary, 9, color=c["muted"], width=1040)
             summary_item.setToolTip(summary)
             if summary_item.boundingRect().height() > 28:
                 summary_item.setPlainText(t("Фрагментов: {count}; полные длины — в последовательностях и подсказке.",
                                             count=len(fragments)))
 
-        track("REF", 245, self._cuts_ref, c["ref"], True)
-        track("ALT", 360, self._cuts_alt, c["alt"], alt_sequence is not None)
+        track("REF", 245, self._cuts_ref, c["ref"], True, length)
+        track("ALT", 360, self._cuts_alt, c["alt"], alt_sequence is not None, alt_length)
         if offset is not None and 0 <= offset < length:
             x = x_at(offset + 0.5)
             marker = self.scene.addLine(x, 203, x, 382, QtGui.QPen(QtGui.QColor(c["snp"]), 2, Qt.PenStyle.DashLine))
-            marker.setToolTip(t("SNP: основание {base} в ампликоне; геномная позиция {position}", base=offset + 1,
+            marker.setToolTip(t(N_("Вариант: основание {base} в ампликоне; геномная позиция {position}") if indel else
+                                N_("SNP: основание {base} в ампликоне; геномная позиция {position}"), base=offset + 1,
                                 position=payload['genome_start'] + offset))
             for y in (245, 360):
                 self.scene.addEllipse(x - 5, y - 5, 10, 10, QtGui.QPen(QtGui.QColor(c["snp"]), 1.5),
                                       QtGui.QBrush(QtGui.QColor(c["snp_bg"])))
         axis_y = 445
         self.scene.addLine(x0, axis_y, x1, axis_y, QtGui.QPen(QtGui.QColor(c["grid"]), 1))
-        raw_step = max(1, length / 10)
+        raw_step = max(1, axis_length / 10)
         power = 10 ** math.floor(math.log10(raw_step))
         step = next(multiplier * power for multiplier in (1, 2, 5, 10) if multiplier * power >= raw_step)
-        ticks = list(range(0, length + 1, int(step)))
-        if ticks[-1] != length:
-            if length - ticks[-1] < step * 0.6 and len(ticks) > 1:
+        ticks = list(range(0, axis_length + 1, int(step)))
+        if ticks[-1] != axis_length:
+            if axis_length - ticks[-1] < step * 0.6 and len(ticks) > 1:
                 ticks.pop()
-            ticks.append(length)
+            ticks.append(axis_length)
         for position in ticks:
             x = x_at(position)
             self.scene.addLine(x, axis_y - 4, x, axis_y + 4, QtGui.QPen(QtGui.QColor(c["line"]), 1))
@@ -457,7 +468,8 @@ class PrimerGraphicPanel(QWidget):
                                     "под дорожками"), 9, color=c["muted"])
         if alt_sequence is not None:
             start, stop = max(0, offset - 12), min(length, offset + 13)
-            self._draw_text(30, 518, t("SNP  {ref} → {alt}  ·  основание {base}", ref=ref, alt=alt, base=offset + 1),
+            self._draw_text(30, 518, t(N_("Вариант · основание {base}") if indel else N_("SNP  {ref} → {alt}  ·  основание {base}"),
+                                       ref=ref, alt=alt, base=offset + 1),
                             11, True, color=c["snp"], width=390)
             context = f"REF  {sequence[start:stop]}\nALT  {alt_sequence[start:stop]}"
             item = self._draw_text(475, 510, context, 11)
@@ -481,6 +493,15 @@ class PrimerGraphicPanel(QWidget):
         snp_style = f"background-color:{colors['snp_bg']};color:{colors['snp']};font-weight:bold"
         lines = [f"<div style='color:{colors['text']};font-family:\"{mono_font().family()}\",monospace;"
                  f"font-size:10pt'>"]
+        if alt is not None and len(alt) != length:
+            for label, bases in (("REF", sequence), ("ALT", alt)):
+                lo, hi = (max(0, offset - 240), min(len(bases), offset + 241)) if len(bases) > 1500 else (0, len(bases))
+                lines.append("<p>" + t("{allele}: {length} п.н. · показаны основания {begin}–{end}",
+                                       allele=label, length=len(bases), begin=lo + 1, end=hi) + "</p><pre>")
+                lines.extend(html.escape(bases[start:min(start + 70, hi)]) + "\n" for start in range(lo, hi, 70))
+                lines.append("</pre>")
+            self.seq_view.setHtml("".join(lines) + "</div>")
+            return
         if begin or end != length:
             lines.append("<p>" + t("Показаны основания {begin}–{end} из {length}. Кнопки копируют полную "
                                    "последовательность.", begin=begin + 1, end=end, length=length) + "</p>")
@@ -570,22 +591,25 @@ class PrimerGraphicPanel(QWidget):
 LADDER_BP = (50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 800, 1000, 1500, 2000)
 
 
-def gel_lanes(frags_ref, frags_alt, product):
+def gel_lanes(frags_ref, frags_alt, product, product_alt=None, uncut=False):
     """Lanes of the virtual gel as ``(label, [(length, amount), ...])``.
 
-    The amount of DNA in a band is its mass relative to the whole product:
-    length / product per copy, summed over equal lengths; each allele of a
-    heterozygote contributes half. Complete digestion, as in the band model.
+    Equal-length fragments contribute to the same band. Intensity is relative
+    to the total DNA length for that genotype, assuming complete digestion.
     """
-    def lane(*alleles):
+    product_alt = product if product_alt is None else product_alt
+
+    def lane(mass, *alleles):
         amounts = {}
         for fragments in alleles:
             for length in fragments:
-                amounts[length] = amounts.get(length, 0.0) + length / product / len(alleles)
+                amounts[length] = amounts.get(length, 0.0) + length / mass
         return sorted(amounts.items(), reverse=True)
 
-    return [(N_("Без фермента"), [(product, 1.0)]), ("REF/REF", lane(frags_ref)),
-            ("REF/ALT", lane(frags_ref, frags_alt)), ("ALT/ALT", lane(frags_alt))]
+    control = [] if uncut else [(N_("Без фермента"), lane(product + product_alt, [product], [product_alt]))]
+    return control + [("REF/REF", lane(product, frags_ref)),
+                      ("REF/ALT", lane(product + product_alt, frags_ref, frags_alt)),
+                      ("ALT/ALT", lane(product_alt, frags_alt))]
 
 
 def save_scene_png(scene, path, background, hints, scale=2.0):
@@ -698,26 +722,29 @@ class GelPanel(QWidget):
         self._set_enabled(False)
         self.view.fit_diagram()
 
-    def render(self, frags_ref, frags_alt, product, variant="", enzyme="", min_visible=80, max_visible=800):
+    def render(self, frags_ref, frags_alt, product, variant="", enzyme="", min_visible=80, max_visible=800,
+               product_alt=None, uncut=False):
         if not product or product <= 0:
             self.show_message(t("Длина продукта неизвестна."))
             return
         self._message = ""
-        self._lanes = gel_lanes(frags_ref, frags_alt, product)
+        self._lanes = gel_lanes(frags_ref, frags_alt, product, product_alt, uncut)
         self._title = f"{variant} · {enzyme}".strip(" ·")
         self.scene.clear()
         self.scene.setSceneRect(0, 0, 900, 700)
         lengths = [length for _, bands in self._lanes for length, _ in bands]
         low = max(10.0, min(min(lengths), 50) * 0.8)
-        high = max(600.0, product * 1.3)
+        high = max(600.0, max(product, product_alt or product) * 1.3)
         top, bottom, left, right = 95.0, 560.0, 110.0, 860.0
 
         def y_at(length):
             return top + (math.log10(high) - math.log10(length)) / (math.log10(high) - math.log10(low)) * (bottom - top)
 
         self._text(30, 12, self._title or t("Виртуальный гель"), 16, True, width=840)
-        self._text(30, 44, t("Продукт {product} п.н. · видимые фрагменты {low}–{high} п.н. · полная рестрикция",
-                             product=product, low=min_visible, high=max_visible), 10, width=840)
+        size = product if product_alt is None else f'REF {product} / ALT {product_alt}'
+        caption = (N_("Продукт {product} п.н. · видимые фрагменты {low}–{high} п.н. · без рестрикции") if uncut else
+                   N_("Продукт {product} п.н. · видимые фрагменты {low}–{high} п.н. · полная рестрикция"))
+        self._text(30, 44, t(caption, product=size, low=min_visible, high=max_visible), 10, width=840)
         gel = palette.GEL
         lanes = [("M", [(size, None) for size in LADDER_BP if low <= size <= high])] + self._lanes
         width = (right - left) / len(lanes)
@@ -823,8 +850,10 @@ def render_payload(panel: PrimerGraphicPanel, gel: GelPanel, payload: Optional[d
             gel.show_message(t("Гель недоступен: нет последовательности ALT (см. карту ампликона)."))
             return
         fragments = [[b - a for a, b in zip(cuts, cuts[1:])] for cuts in (panel._cuts_ref, panel._cuts_alt)]
-        gel.render(*fragments, len(panel._seq_ref), payload.get("variant_str", ""),
-                   payload.get("enzyme_name", ""), **gel_params)
+        ref_size, alt_size = len(panel._seq_ref), len(panel._seq_alt)
+        gel.render(*fragments, ref_size, payload.get("variant_str", ""), payload.get("enzyme_name", ""),
+                   product_alt=alt_size if alt_size != ref_size else None,
+                   uncut=payload.get("pattern") == "amplicon_length", **gel_params)
     else:
         if message:
             panel.show_message(message)

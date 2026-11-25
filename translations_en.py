@@ -7,6 +7,18 @@ phrases come before the shorter ones they contain.
 """
 
 EN = {
+    'Без рестрикции': 'No digest',
+    'Продукт ALT, п.н.': 'ALT product, bp',
+    'Фоновые варианты меняют длину продукта: {variants}': 'Background variants change product length: {variants}',
+    'ALT недоступна: требуются последовательности REF и ALT из A/C/G/T.':
+        'ALT unavailable: REF and ALT sequences must contain only A/C/G/T.',
+    'ALT недоступна: последовательность REF не совпадает с FASTA.': 'ALT unavailable: REF sequence differs from FASTA.',
+    'Вариант: основание {base} в ампликоне; геномная позиция {position}':
+        'Variant: amplicon base {base}, genomic position {position}',
+    'Вариант · основание {base}': 'Variant · base {base}',
+    '{allele}: {length} п.н. · показаны основания {begin}–{end}': '{allele}: {length} bp · bases {begin}–{end} shown',
+    'Продукт {product} п.н. · видимые фрагменты {low}–{high} п.н. · без рестрикции':
+        'Product {product} bp · visible fragments {low}–{high} bp · no digest',
     'Двойная рестрикция': 'Double digest',
     'Совместимость условий не подтверждена': 'Reaction compatibility unconfirmed',
     'Подбирать два фермента, если один не дал надёжной схемы': 'Try enzyme pairs when no single-enzyme assay is robust',
@@ -552,8 +564,6 @@ Download a reference genome from NCBI into the genoms folder next to the program
     'Карта появится после выбора результата': 'The map appears when a result is chosen',
     'ALT недоступна: позиция SNP отсутствует или находится за пределами ампликона.':
         'ALT is not available: the SNP position is missing or outside the amplicon.',
-    'ALT недоступна: для двух дорожек требуется одиночная замена A/C/G/T.':
-        'ALT is not available: two lanes need a single A/C/G/T substitution.',
     'ALT недоступна: REF {ref} не совпадает с основанием {base} в FASTA.':
         'ALT is not available: REF {ref} does not match the base {base} in the FASTA.',
     'Не удалось получить последовательность ампликона.': 'Could not get the amplicon sequence.',
@@ -647,6 +657,14 @@ Download a reference genome from NCBI into the genoms folder next to the program
 }
 
 CORE = [
+    (r'Поддерживаются биаллельные SNP и индели с известными последовательностями A/C/G/T',
+     'Supported variants are biallelic SNPs and indels with explicit A/C/G/T alleles'),
+    (r'Вариант ближе (\d+) п\.н\. к краю окна; увеличьте фланг',
+     r'Variant is less than \1 bp from the window edge; increase the flank'),
+    (r'Длины продуктов REF и ALT не укладываются в заданный диапазон',
+     'REF and ALT product lengths do not fit the selected range'),
+    (r'Primer3 вернул праймеры вне окна или перекрывающие вариант',
+     'Primer3 returned primers outside the window or overlapping the variant'),
     (r'Совместимость условий не подтверждена', 'Reaction compatibility unconfirmed'),
     (r'Неизвестные ферменты:', 'Unknown enzymes:'),
     (r'Список ферментов пуст', 'The enzyme list is empty'),

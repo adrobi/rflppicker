@@ -43,6 +43,7 @@ def sheet_fields(summary: SnpSummary, dcaps_mode: str) -> List[Tuple[str, str]]:
         (t('Тип схемы'), t(_DESIGN_TITLES[design]) if design in _DESIGN_TITLES else design),
         (t('Несовпадения в праймере'), mismatches),
         (t('Продукт, п.н.'), scheme.get('product_size')),
+        (t('Продукт ALT, п.н.'), scheme.get('product_size_alt')),
         (t('Полосы REF/REF'), scheme.get('bands_ref_ref')),
         (t('Полосы REF/ALT'), scheme.get('bands_ref_alt')),
         (t('Полосы ALT/ALT'), scheme.get('bands_alt_alt')),
@@ -159,16 +160,17 @@ def draw_sheet(page: _Page, summary: SnpSummary, payload, message: str, dcaps_mo
     page.rule()
 
     sections = product_sections(summary.scheme, map_panel.allele_sequences() if payload else None)
-    top = bottom = page.y
-    column = page.width / len(sections)
-    for index, lines in enumerate(sections):
-        page.y = top
-        for line in lines:
-            page.text(line, 8.5, x=index * column, width=column - (8 if len(sections) == 2 else 0))
-        bottom = max(bottom, page.y)
-    page.y = bottom
-    page.gap(4)
-    page.rule()
+    if sections:
+        top = bottom = page.y
+        column = page.width / len(sections)
+        for index, lines in enumerate(sections):
+            page.y = top
+            for line in lines:
+                page.text(line, 8.5, x=index * column, width=column - (8 if len(sections) == 2 else 0))
+            bottom = max(bottom, page.y)
+        page.y = bottom
+        page.gap(4)
+        page.rule()
 
     primers = primer_rows(summary)
     if primers:                                   # a window-search assay has none

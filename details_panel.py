@@ -12,7 +12,7 @@ from enzyme_catalog import PRODUCTS, property_lines
 import icons
 import palette
 from i18n import N_, fmt, language, t
-from snp_summary import SnpSummary, order_lines, status_title, summary_text, weakest_text
+from snp_summary import SnpSummary, order_lines, product_size_text, scheme_label, status_title, summary_text, weakest_text
 from theme import mono_font
 from visualization import GelPanel, PrimerGraphicPanel, RFLPVisualizationDialog, payload_for_scheme, render_payload
 
@@ -261,7 +261,7 @@ class DetailsPanel(QWidget):
             star.setToolTip(t('Выбрана для Excel') if chosen else t('Сделать выбранной'))
             star.clicked.connect(lambda _=False, i=index: self.choose_scheme(i))
             layout.addWidget(star)
-            parts = [scheme.get('enzyme') or '']
+            parts = [scheme_label(scheme)]
             others = [n for n in (scheme.get('isoschizomers') or '').split('; ') if n]
             if others:
                 parts.append(_isoschizomer_text(len(others)))
@@ -271,7 +271,7 @@ class DetailsPanel(QWidget):
                 parts.append(t('лучшая'))
             first = ' · '.join(parts)
             second = t('{ref_ref} | {alt_alt} · продукт {size}', ref_ref=scheme.get('bands_ref_ref') or '',
-                       alt_alt=scheme.get('bands_alt_alt') or '', size=scheme.get('product_size'))
+                       alt_alt=scheme.get('bands_alt_alt') or '', size=product_size_text(scheme))
             text = QLabel(f'{first}\n{second}')
             if others:
                 text.setToolTip(t('Изошизомеры: {names}', names=', '.join(others)))
@@ -350,11 +350,14 @@ class DetailsPanel(QWidget):
             tm_value = scheme.get(tm)
             info.setText(t('{length} нт · Tm {tm} °C', length=len(text), tm=f'{tm_value:.1f}')
                          if text and tm_value is not None else '')
-        details = [t('Продукт {size} п.н. · {enzyme} ({site})', size=scheme.get('product_size'),
-                     enzyme=scheme.get('enzyme'), site=scheme.get('site'))]
-        if scheme.get('enzyme_2'):
+        size = product_size_text(scheme)
+        details = [t('Продукт {size} п.н. · {enzyme} ({site})', size=size,
+                     enzyme=scheme.get('enzyme'), site=scheme.get('site')) if scheme.get('enzyme') else
+                   f"{t('Продукт: {size} п.н.', size=size)} · {scheme_label(scheme)}"]
+        if scheme.get('enzyme_2') or scheme.get('product_size_alt') is not None:
             details.extend(f"{label}: {scheme.get(key) or '—'}" for label, key in
                            [('REF/REF', 'bands_ref_ref'), ('REF/ALT', 'bands_ref_alt'), ('ALT/ALT', 'bands_alt_alt')])
+        if scheme.get('enzyme_2'):
             details.append(t('Совместимость условий не подтверждена'))
         if scheme.get('suppliers'):
             details.append(t('Поставщики: {suppliers}', suppliers=scheme['suppliers']))
@@ -363,7 +366,7 @@ class DetailsPanel(QWidget):
         chosen = self._viewed == self._summary.chosen
         if not chosen:
             details.append(t('Эта схема не выбрана: в Excel идёт ★ {enzyme}. Отметьте её звёздочкой, чтобы копировать.',
-                             enzyme=self._summary.scheme.get('enzyme')))
+                             enzyme=scheme_label(self._summary.scheme)))
         self.card_details.setText('\n'.join(details))
         # Copy only the ★ scheme: its primer names are the ones Excel uses.
         self.copy_order_button.setEnabled(chosen and bool(scheme.get('primers_left')))

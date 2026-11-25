@@ -55,6 +55,8 @@ def property_lines(scheme, sequences):
 
 
 def product_sections(scheme, sequences):
+    if scheme.get('design') == 'amplicon_length':
+        return []
     names = (scheme['enzyme_1'], scheme['enzyme_2']) if scheme.get('enzyme_2') else (scheme.get('enzyme'),)
     sections = []
     for name, key in zip(names, ('enzyme_product', 'enzyme_product_2')):
