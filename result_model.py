@@ -2,6 +2,9 @@
 from i18n import N_
 
 LABELS = {
+    'allele_products': N_('Продукты по аллелям'),
+    'genotype_bands': N_('Ожидаемые полосы, п.н.'),
+    'worst_genotype_bands': N_('Полосы при ухудшении, п.н.'),
     'product_size_alt': N_('Продукт ALT, п.н.'),
     'enzyme_1': N_('Первый фермент'), 'enzyme_2': N_('Второй фермент'),
     'site_1': N_('Сайт первого фермента'), 'site_2': N_('Сайт второго фермента'),

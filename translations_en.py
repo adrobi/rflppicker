@@ -7,6 +7,22 @@ phrases come before the shorter ones they contain.
 """
 
 EN = {
+    'Продукты по аллелям': 'Products by allele',
+    'Ожидаемые полосы, п.н.': 'Expected bands, bp',
+    'Полосы при ухудшении, п.н.': 'Bands at lower resolution, bp',
+    'Различимых генотипов: {count}': 'Distinguishable genotypes: {count}',
+    'Последовательности всех ALT в формате FASTA': 'All ALT sequences in FASTA format',
+    'Аллели ALT скопированы в формате FASTA': 'ALT alleles copied in FASTA format',
+    'Дорожки диплоидных генотипов · видимые фрагменты {low}–{high} п.н.':
+        'Diploid genotype lanes · visible fragments {low}–{high} bp',
+    'Локус': 'Locus',
+    'Аллели': 'Alleles',
+    'Аллель': 'Allele',
+    'Последовательность аллеля': 'Allele sequence',
+    'Фрагменты, п.н.': 'Fragments, bp',
+    'Генотипы': 'Genotypes',
+    'Генотип': 'Genotype',
+    'Не удалось создать страницу PDF': 'Could not create a PDF page',
     'Без рестрикции': 'No digest',
     'Продукт ALT, п.н.': 'ALT product, bp',
     'Фоновые варианты меняют длину продукта: {variants}': 'Background variants change product length: {variants}',
@@ -640,8 +656,7 @@ Download a reference genome from NCBI into the genoms folder next to the program
         'Drawn from the program model: brightness follows fragment mass, a heterozygote has half of each '
         'allele; fragments outside the visible range are faint and in brackets.',
     'Виртуальный гель RFLP': 'RFLP virtual gel',
-    'Ожидаемые полосы REF/REF, REF/ALT и ALT/ALT по модели RFLP Picker.':
-        'Expected REF/REF, REF/ALT and ALT/ALT bands by the RFLP Picker model.',
+    'Ожидаемые полосы генотипов по модели RFLP Picker.': 'Expected genotype bands by the RFLP Picker model.',
     'Сохранить гель': 'Save the gel',
     'Экспорт геля': 'Gel export',
     'Карта ампликона · RFLP REF / ALT': 'Amplicon map · RFLP REF / ALT',
@@ -657,6 +672,14 @@ Download a reference genome from NCBI into the genoms folder next to the program
 }
 
 CORE = [
+    (r'Укажите поддерживаемый SNP, индел или набор разных ALT из A/C/G/T без повтора REF',
+     'Enter a supported SNP, indel or distinct A/C/G/T ALT alleles different from REF'),
+    (r'Все генотипы локуса различимы во всём заданном диапазоне разрешения',
+     'All genotypes at the locus are distinguishable across the selected resolution range'),
+    (r'Все генотипы локуса различимы только при исходном разрешении',
+     'All genotypes at the locus are distinguishable at nominal resolution only'),
+    (r'Не найдено сочетание для различения всех генотипов локуса',
+     'No assay distinguishes all genotypes at the locus'),
     (r'Поддерживаются биаллельные SNP и индели с известными последовательностями A/C/G/T',
      'Supported variants are biallelic SNPs and indels with explicit A/C/G/T alleles'),
     (r'Вариант ближе (\d+) п\.н\. к краю окна; увеличьте фланг',

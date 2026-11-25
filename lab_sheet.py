@@ -15,7 +15,7 @@ import palette
 import rflp_core as core
 from i18n import fmt, t
 from reporting import _atomic_destination
-from snp_summary import _DESIGN_TITLES, SnpSummary, status_title
+from snp_summary import _DESIGN_TITLES, SnpSummary, allele_products, locus_bands, status_title
 from visualization import GelPanel, PrimerGraphicPanel, payload_for_scheme, render_payload
 
 DPI = 150
@@ -86,7 +86,7 @@ class _Page:
         return font
 
     def text(self, text: str, points: float = 9.5, bold: bool = False, mono: bool = False, color: str = INK,
-             x: float = 0.0, width: float = None, advance: bool = True) -> float:
+             x: float = 0.0, width: float = None, advance: bool = True, draw: bool = True) -> float:
         """Draw wrapped text at the current height; return its height."""
         self.p.setFont(self.font(points, bold, mono))
         self.p.setPen(QColor(color))
@@ -96,7 +96,8 @@ class _Page:
             flags |= Qt.TextFlag.TextWrapAnywhere
         flags = int(flags.value) if hasattr(flags, 'value') else int(flags)
         used = self.p.boundingRect(rect, flags, text).height()
-        self.p.drawText(rect, flags, text)
+        if draw:
+            self.p.drawText(rect, flags, text)
         if advance:
             self.y += used
         return used
@@ -132,7 +133,9 @@ def draw_sheet(page: _Page, summary: SnpSummary, payload, message: str, dcaps_mo
 
     page.text(t('RFLP Picker · лабораторный лист'), 8, color=MUTED)
     page.gap(2)
-    page.text(f'{snp_id} · {summary.label}' if snp_id else summary.label, 16, bold=True)
+    label = (f'{summary.record.chrom}:{summary.record.pos}' if summary.scheme.get('genotype_bands')
+             else summary.label)
+    page.text(f'{snp_id} · {label}' if snp_id else label, 16, bold=True)
     page.gap(6)
     # To fill in by hand.
     column = page.width / len(handwritten_fields())
@@ -223,8 +226,60 @@ def footer_text(fasta_path: str, params: dict) -> str:
     return ' · '.join(parts)
 
 
+def _draw_locus_tables(writer, painter, area, summary):
+    scheme = summary.scheme
+    worst = locus_bands(scheme, stressed=True)
+    products = allele_products(scheme)
+    product_rows = []
+    for product in products:
+        sequence = product['sequence']
+        product_rows.append((product['allele'], sequence[:240], str(product['length']),
+                             ' + '.join(map(str, product['fragments']))))
+        product_rows.extend(('', sequence[start:start + 240], '', '') for start in range(240, len(sequence), 240))
+    genotype_rows = [(name, bands, worst[name]) for name, bands in locus_bands(scheme).items()]
+    locus = f'{summary.record.chrom}:{summary.record.pos}'
+    name = f'{summary.record.snp_id} · {locus}' if summary.record.snp_id else locus
+    page = None
+    pages = 0
+    for headings, rows, fractions, sequence_column in (
+            ((t('Аллель'), t('Последовательность аллеля'), t('Продукт, п.н.'), t('Фрагменты, п.н.')),
+             product_rows, (0.13, 0.42, 0.17, 0.28), 1),
+            ((t('Генотип'), t('Ожидаемые полосы, п.н.'), t('Полосы при ухудшении, п.н.')),
+             genotype_rows, (0.19, 0.40, 0.41), None)):
+        widths = [area.width() * fraction for fraction in fractions]
+        x_positions = [sum(widths[:i]) for i in range(len(widths))]
+
+        def table_row(values, bold=False, draw=True):
+            return max(page.text(value, 9.5, bold=bold, mono=(i == sequence_column and not bold),
+                                 x=x, width=width - 7, advance=False, draw=draw)
+                       for i, (value, x, width) in enumerate(zip(values, x_positions, widths))) + 6
+
+        def start_page():
+            if not writer.newPage():
+                raise OSError(t('Не удалось создать страницу PDF'))
+            new_page = _Page(painter, area.width(), area.height())
+            new_page.text(name, 16, bold=True)
+            new_page.gap(12)
+            return new_page
+
+        if page is None or page.y > area.height() - 150:
+            page = start_page()
+            pages += 1
+        page.gap(table_row(headings, bold=True))
+        page.rule()
+        for values in rows:
+            if page.y + table_row(values, draw=False) > area.height() - 24:
+                page = start_page()
+                pages += 1
+                page.gap(table_row(headings, bold=True))
+                page.rule()
+            page.gap(table_row(values))
+        page.gap(20)
+    return pages
+
+
 def export_lab_sheets(path: str, summaries: List[SnpSummary], fasta_path: str, params: dict, dcaps_mode: str) -> int:
-    """Write one page per SNP that has an assay; return the number of pages.
+    """Write sheets for loci with an assay; return the number of pages.
 
     Without such SNPs no file is written. The destination is replaced only after
     a complete write. A missing genome leaves the pictures out, not the sheet.
@@ -240,6 +295,7 @@ def export_lab_sheets(path: str, summaries: List[SnpSummary], fasta_path: str, p
     # Drawn on paper: the light palette whatever the theme of the window.
     panels = PrimerGraphicPanel(compact=True), GelPanel(compact=True)
     panels[0].apply_colors(palette.colors(False))
+    pages = len(printable)
     try:
         with _atomic_destination(path) as temporary:
             writer = QPdfWriter(str(temporary))
@@ -261,6 +317,8 @@ def export_lab_sheets(path: str, summaries: List[SnpSummary], fasta_path: str, p
                     payload, message = payload_for_scheme(summary.scheme, fasta_path, params, fasta)
                     draw_sheet(_Page(painter, area.width(), area.height()), summary, payload, message, dcaps_mode,
                                footer, panels)
+                    if summary.scheme.get('genotype_bands'):
+                        pages += _draw_locus_tables(writer, painter, area, summary)
             finally:
                 painter.end()
     finally:
@@ -268,4 +326,4 @@ def export_lab_sheets(path: str, summaries: List[SnpSummary], fasta_path: str, p
             fasta.close()
         for panel in panels:
             panel.deleteLater()
-    return len(printable)
+    return pages

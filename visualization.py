@@ -19,8 +19,10 @@ from PyQt6.QtWidgets import (
 )
 
 import palette
+from assay_scoring import diploid_genotypes
 from i18n import N_, t
 from rflp_core import cut_positions, revcomp
+from snp_summary import allele_products
 from theme import mono_font
 
 
@@ -214,6 +216,8 @@ class PrimerGraphicPanel(QWidget):
         for button in (self.zoom_out_btn, self.zoom_in_btn, self.fit_btn, self.export_png_btn, self.export_svg_btn, self.copy_ref_btn):
             button.setEnabled(available)
         self.copy_alt_btn.setEnabled(available and self._seq_alt is not None)
+        self.copy_alt_btn.setToolTip(t("Последовательности всех ALT в формате FASTA") if self._locus_sequences else
+                                    t("Полная последовательность ALT без разметки"))
         self.copy_primers_btn.setEnabled(available and any(self._primers))
 
     def show_empty(self):
@@ -222,6 +226,7 @@ class PrimerGraphicPanel(QWidget):
     def show_message(self, msg: str):
         self._last_payload = None
         self._seq_ref, self._seq_alt = "", None
+        self._locus_sequences = ()
         self._primers = ("", "")
         self._cuts_ref, self._cuts_alt = [], []
         self._primer_positions = (-1, -1)
@@ -241,7 +246,7 @@ class PrimerGraphicPanel(QWidget):
                primer_left_start: Optional[int] = None, primer_left_len: Optional[int] = None,
                primer_right_start: Optional[int] = None, primer_right_len: Optional[int] = None,
                variant_str: str = "", enzyme_name: str = "", pattern: str = "",
-               frags_ref: str = "", frags_alt: str = "", enzyme_names=()):
+               frags_ref: str = "", frags_alt: str = "", enzyme_names=(), locus_products=()):
         payload = dict(locals())
         payload.pop("self")
         self._last_payload = payload
@@ -264,7 +269,7 @@ class PrimerGraphicPanel(QWidget):
 
     def allele_sequences(self):
         """Sequences displayed by the current map, including dCAPS primer changes."""
-        return self._seq_ref, self._seq_alt
+        return tuple(seq for _, seq in self._locus_sequences) or (self._seq_ref, self._seq_alt)
 
     @staticmethod
     def _parse_variant(variant_str: str) -> Tuple[str, str]:
@@ -317,11 +322,18 @@ class PrimerGraphicPanel(QWidget):
         colors = self._colors()
         length = len(sequence)
         offset = _safe_int(payload["snp_offset"])
-        ref, alt = self._parse_variant(payload["variant_str"])
-        alt_sequence, alt_error = self._make_alt_seq(sequence, offset, ref, alt)
-        alt_length = len(alt_sequence) if alt_sequence is not None else length
-        axis_length = max(length, alt_length)
-        indel = alt_length != length
+        products = payload["locus_products"]
+        if products:
+            ref, alt = products[0]["sequence"], products[1]["sequence"]
+            alternates = [(item["allele"], *self._make_alt_seq(sequence, offset, ref, item["sequence"]))
+                          for item in products[1:]]
+        else:
+            ref, alt = self._parse_variant(payload["variant_str"])
+            alternates = [("ALT", *self._make_alt_seq(sequence, offset, ref, alt))]
+        _, alt_sequence, _ = alternates[0]
+        lengths = [length, *(len(seq) for _, seq, _ in alternates if seq)]
+        axis_length = max(lengths)
+        indel = len(set(lengths)) > 1
         uncut = payload["pattern"] == "amplicon_length"
         left, right = ((payload[key] or "").upper().strip() for key in ("primer_left", "primer_right"))
         left_pos, right_pos = self._map_primer_positions(sequence, left, right, payload["primer_left_start"], payload["primer_left_len"], payload["primer_right_start"], payload["primer_right_len"])
@@ -335,11 +347,12 @@ class PrimerGraphicPanel(QWidget):
             return sorted({cut for enzyme in enzymes for cut in cut_positions(enzyme, seq)})
 
         self._seq_ref, self._seq_alt = sequence, alt_sequence
+        self._locus_sequences = (("REF", sequence), *((name, seq) for name, seq, _ in alternates)) if products else ()
         self._primers = left, right
         self._primer_positions = left_pos, right_pos
         self._cuts_ref = digest(sequence)
         self._cuts_alt = digest(alt_sequence) if alt_sequence else []
-        self._warnings = [alt_error] if alt_error else []
+        self._warnings = list(dict.fromkeys(error for _, _, error in alternates if error))
         if left and left_pos < 0:
             self._warnings.append(t("Левый праймер не найден в ампликоне."))
         if right and right_pos < 0:
@@ -352,7 +365,8 @@ class PrimerGraphicPanel(QWidget):
                           t("Сравните разрезы и длины фрагментов; наведите курсор на метку для точных координат."))
         self.status_label.setText(t("Ctrl + колесо — масштаб; перетаскивание — перемещение схемы."))
         self.scene.clear()
-        self.scene.setSceneRect(0, 0, 1200, 590)
+        extra_height = 115 * (len(alternates) - 1)
+        self.scene.setSceneRect(0, 0, 1200, 590 + extra_height)
         c = colors
         x0, x1 = 100.0, 1150.0
 
@@ -360,7 +374,8 @@ class PrimerGraphicPanel(QWidget):
             return x0 + float(boundary) / axis_length * (x1 - x0)
 
         no_pen = QtGui.QPen(Qt.PenStyle.NoPen)
-        self._draw_text(30, 15, payload["variant_str"] or t("Карта ампликона"), 17, True, width=790)
+        variant_title = payload["variant_str"].partition(' ')[0] if products else payload["variant_str"]
+        self._draw_text(30, 15, variant_title or t("Карта ампликона"), 17, True, width=790)
         self._draw_text(865, 19, payload["enzyme_name"] or t(N_("Без рестрикции") if uncut else N_("Фермент не выбран")), 13, True, width=305)
         self._draw_text(30, 52, t("{chrom}:{start}–{end}  ·  {length} п.н.  ·  геномные координаты 1-based",
                                   chrom=payload['mapped_id'], start=payload['genome_start'], end=payload['genome_end'],
@@ -440,17 +455,19 @@ class PrimerGraphicPanel(QWidget):
                                             count=len(fragments)))
 
         track("REF", 245, self._cuts_ref, c["ref"], True, length)
-        track("ALT", 360, self._cuts_alt, c["alt"], alt_sequence is not None, alt_length)
+        for i, (name, seq, _) in enumerate(alternates):
+            cuts = self._cuts_alt if i == 0 else digest(seq) if seq else []
+            track(name, 360 + 115 * i, cuts, c["alt"], seq is not None, len(seq) if seq else length)
         if offset is not None and 0 <= offset < length:
             x = x_at(offset + 0.5)
-            marker = self.scene.addLine(x, 203, x, 382, QtGui.QPen(QtGui.QColor(c["snp"]), 2, Qt.PenStyle.DashLine))
-            marker.setToolTip(t(N_("Вариант: основание {base} в ампликоне; геномная позиция {position}") if indel else
+            marker = self.scene.addLine(x, 203, x, 382 + extra_height, QtGui.QPen(QtGui.QColor(c["snp"]), 2, Qt.PenStyle.DashLine))
+            marker.setToolTip(t(N_("Вариант: основание {base} в ампликоне; геномная позиция {position}") if indel or products else
                                 N_("SNP: основание {base} в ампликоне; геномная позиция {position}"), base=offset + 1,
                                 position=payload['genome_start'] + offset))
-            for y in (245, 360):
+            for y in range(245, 361 + extra_height, 115):
                 self.scene.addEllipse(x - 5, y - 5, 10, 10, QtGui.QPen(QtGui.QColor(c["snp"]), 1.5),
                                       QtGui.QBrush(QtGui.QColor(c["snp_bg"])))
-        axis_y = 445
+        axis_y = 445 + extra_height
         self.scene.addLine(x0, axis_y, x1, axis_y, QtGui.QPen(QtGui.QColor(c["grid"]), 1))
         raw_step = max(1, axis_length / 10)
         power = 10 ** math.floor(math.log10(raw_step))
@@ -464,9 +481,12 @@ class PrimerGraphicPanel(QWidget):
             x = x_at(position)
             self.scene.addLine(x, axis_y - 4, x, axis_y + 4, QtGui.QPen(QtGui.QColor(c["line"]), 1))
             self._draw_text(x - 13, axis_y + 6, str(position), 9, color=c["muted"])
-        self._draw_text(100, 477, t("Шкала и метки разрезов: п.н. от начала ампликона · длины фрагментов указаны "
+        self._draw_text(100, 477 + extra_height, t("Шкала и метки разрезов: п.н. от начала ампликона · длины фрагментов указаны "
                                     "под дорожками"), 9, color=c["muted"])
-        if alt_sequence is not None:
+        if products and offset is not None:
+            self._draw_text(30, 518 + extra_height, t("Вариант · основание {base}", base=offset + 1),
+                            11, True, color=c["snp"], width=390)
+        elif alt_sequence is not None:
             start, stop = max(0, offset - 12), min(length, offset + 13)
             self._draw_text(30, 518, t(N_("Вариант · основание {base}") if indel else N_("SNP  {ref} → {alt}  ·  основание {base}"),
                                        ref=ref, alt=alt, base=offset + 1),
@@ -493,8 +513,10 @@ class PrimerGraphicPanel(QWidget):
         snp_style = f"background-color:{colors['snp_bg']};color:{colors['snp']};font-weight:bold"
         lines = [f"<div style='color:{colors['text']};font-family:\"{mono_font().family()}\",monospace;"
                  f"font-size:10pt'>"]
-        if alt is not None and len(alt) != length:
-            for label, bases in (("REF", sequence), ("ALT", alt)):
+        if self._locus_sequences or (alt is not None and len(alt) != length):
+            for label, bases in self._locus_sequences or (("REF", sequence), ("ALT", alt)):
+                if not bases:
+                    continue
                 lo, hi = (max(0, offset - 240), min(len(bases), offset + 241)) if len(bases) > 1500 else (0, len(bases))
                 lines.append("<p>" + t("{allele}: {length} п.н. · показаны основания {begin}–{end}",
                                        allele=label, length=len(bases), begin=lo + 1, end=hi) + "</p><pre>")
@@ -545,6 +567,11 @@ class PrimerGraphicPanel(QWidget):
         sequence = self._seq_ref if allele == "REF" else self._seq_alt
         if not sequence:
             return False
+        if allele == "ALT" and self._locus_sequences:
+            alternates = [(label, bases) for label, bases in self._locus_sequences[1:] if bases]
+            QApplication.clipboard().setText("".join(f">{label}\n{bases}\n" for label, bases in alternates))
+            self.status_label.setText(t("Аллели ALT скопированы в формате FASTA"))
+            return True
         QApplication.clipboard().setText(sequence)
         self.status_label.setText(t("{allele}: скопировано {length} п.н.", allele=allele, length=len(sequence)))
         return True
@@ -591,6 +618,14 @@ class PrimerGraphicPanel(QWidget):
 LADDER_BP = (50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 800, 1000, 1500, 2000)
 
 
+def _gel_lane(mass, *alleles):
+    amounts = {}
+    for fragments in alleles:
+        for length in fragments:
+            amounts[length] = amounts.get(length, 0.0) + length / mass
+    return sorted(amounts.items(), reverse=True)
+
+
 def gel_lanes(frags_ref, frags_alt, product, product_alt=None, uncut=False):
     """Lanes of the virtual gel as ``(label, [(length, amount), ...])``.
 
@@ -599,17 +634,10 @@ def gel_lanes(frags_ref, frags_alt, product, product_alt=None, uncut=False):
     """
     product_alt = product if product_alt is None else product_alt
 
-    def lane(mass, *alleles):
-        amounts = {}
-        for fragments in alleles:
-            for length in fragments:
-                amounts[length] = amounts.get(length, 0.0) + length / mass
-        return sorted(amounts.items(), reverse=True)
-
-    control = [] if uncut else [(N_("Без фермента"), lane(product + product_alt, [product], [product_alt]))]
-    return control + [("REF/REF", lane(product, frags_ref)),
-                      ("REF/ALT", lane(product + product_alt, frags_ref, frags_alt)),
-                      ("ALT/ALT", lane(product_alt, frags_alt))]
+    control = [] if uncut else [(N_("Без фермента"), _gel_lane(product + product_alt, [product], [product_alt]))]
+    return control + [("REF/REF", _gel_lane(product, frags_ref)),
+                      ("REF/ALT", _gel_lane(product + product_alt, frags_ref, frags_alt)),
+                      ("ALT/ALT", _gel_lane(product_alt, frags_alt))]
 
 
 def save_scene_png(scene, path, background, hints, scale=2.0):
@@ -723,28 +751,39 @@ class GelPanel(QWidget):
         self.view.fit_diagram()
 
     def render(self, frags_ref, frags_alt, product, variant="", enzyme="", min_visible=80, max_visible=800,
-               product_alt=None, uncut=False):
+               product_alt=None, uncut=False, locus_products=()):
         if not product or product <= 0:
             self.show_message(t("Длина продукта неизвестна."))
             return
         self._message = ""
-        self._lanes = gel_lanes(frags_ref, frags_alt, product, product_alt, uncut)
-        self._title = f"{variant} · {enzyme}".strip(" ·")
+        if locus_products:
+            self._lanes = [(label, _gel_lane(locus_products[i]['length'] + locus_products[j]['length'],
+                                            locus_products[i]['fragments'], locus_products[j]['fragments']))
+                           for label, i, j in diploid_genotypes(len(locus_products))]
+        else:
+            self._lanes = gel_lanes(frags_ref, frags_alt, product, product_alt, uncut)
+        variant_title = variant.partition(' ')[0] if locus_products else variant
+        self._title = f"{variant_title} · {enzyme}".strip(" ·")
         self.scene.clear()
-        self.scene.setSceneRect(0, 0, 900, 700)
+        scene_width = max(900, 150 + 108 * (len(self._lanes) + 1))
+        self.scene.setSceneRect(0, 0, scene_width, 700)
         lengths = [length for _, bands in self._lanes for length, _ in bands]
         low = max(10.0, min(min(lengths), 50) * 0.8)
-        high = max(600.0, max(product, product_alt or product) * 1.3)
-        top, bottom, left, right = 95.0, 560.0, 110.0, 860.0
+        max_product = max((item['length'] for item in locus_products), default=max(product, product_alt or product))
+        high = max(600.0, max_product * 1.3)
+        top, bottom, left, right = 95.0, 560.0, 110.0, scene_width - 40
 
         def y_at(length):
             return top + (math.log10(high) - math.log10(length)) / (math.log10(high) - math.log10(low)) * (bottom - top)
 
-        self._text(30, 12, self._title or t("Виртуальный гель"), 16, True, width=840)
+        self._text(30, 12, self._title or t("Виртуальный гель"), 16, True, width=scene_width - 60)
         size = product if product_alt is None else f'REF {product} / ALT {product_alt}'
         caption = (N_("Продукт {product} п.н. · видимые фрагменты {low}–{high} п.н. · без рестрикции") if uncut else
                    N_("Продукт {product} п.н. · видимые фрагменты {low}–{high} п.н. · полная рестрикция"))
-        self._text(30, 44, t(caption, product=size, low=min_visible, high=max_visible), 10, width=840)
+        subtitle = (t("Дорожки диплоидных генотипов · видимые фрагменты {low}–{high} п.н.",
+                      low=min_visible, high=max_visible) if locus_products else
+                    t(caption, product=size, low=min_visible, high=max_visible))
+        self._text(30, 44, subtitle, 10, width=scene_width - 60)
         gel = palette.GEL
         lanes = [("M", [(size, None) for size in LADDER_BP if low <= size <= high])] + self._lanes
         width = (right - left) / len(lanes)
@@ -793,7 +832,7 @@ class GelPanel(QWidget):
         if not self._lanes:
             raise ValueError(t("Сначала выберите результат для визуализации."))
         return save_scene_svg(self.scene, path, t("Виртуальный гель RFLP"),
-                              t("Ожидаемые полосы REF/REF, REF/ALT и ALT/ALT по модели RFLP Picker."),
+                              t("Ожидаемые полосы генотипов по модели RFLP Picker."),
                               self.view.renderHints())
 
     def _export_dialog(self, extension):
@@ -846,14 +885,15 @@ def render_payload(panel: PrimerGraphicPanel, gel: GelPanel, payload: Optional[d
         payload = dict(payload)
         gel_params = payload.pop("gel", None) or {}
         panel.render(**payload)
-        if panel._seq_alt is None or not panel._seq_ref:
+        if not all(panel.allele_sequences()):
             gel.show_message(t("Гель недоступен: нет последовательности ALT (см. карту ампликона)."))
             return
         fragments = [[b - a for a, b in zip(cuts, cuts[1:])] for cuts in (panel._cuts_ref, panel._cuts_alt)]
         ref_size, alt_size = len(panel._seq_ref), len(panel._seq_alt)
         gel.render(*fragments, ref_size, payload.get("variant_str", ""), payload.get("enzyme_name", ""),
                    product_alt=alt_size if alt_size != ref_size else None,
-                   uncut=payload.get("pattern") == "amplicon_length", **gel_params)
+                   uncut=payload.get("pattern") == "amplicon_length",
+                   locus_products=payload.get("locus_products", ()), **gel_params)
     else:
         if message:
             panel.show_message(message)
@@ -924,6 +964,7 @@ def payload_for_scheme(scheme: dict, fasta_path: str, params: dict, fasta=None) 
         primer_right_len=_safe_int(scheme.get("primer_right_len")),
         variant_str=str(scheme.get("variant") or "").strip(), enzyme_name=str(scheme.get("enzyme") or "").strip(),
         enzyme_names=(scheme["enzyme_1"], scheme["enzyme_2"]) if scheme.get("enzyme_2") else (),
+        locus_products=allele_products(scheme),
         pattern=str(scheme.get("pattern") or "").strip(), frags_ref=str(scheme.get("frags_ref") or "").strip(),
         frags_alt=str(scheme.get("frags_alt") or "").strip(),
         gel=dict(min_visible=params.get("min_frag", 80), max_visible=params.get("max_frag", 800)),

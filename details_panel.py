@@ -12,7 +12,7 @@ from enzyme_catalog import PRODUCTS, property_lines
 import icons
 import palette
 from i18n import N_, fmt, language, t
-from snp_summary import SnpSummary, order_lines, product_size_text, scheme_label, status_title, summary_text, weakest_text
+from snp_summary import SnpSummary, locus_bands, order_lines, product_size_text, scheme_label, status_title, summary_text, weakest_text
 from theme import mono_font
 from visualization import GelPanel, PrimerGraphicPanel, RFLPVisualizationDialog, payload_for_scheme, render_payload
 
@@ -270,8 +270,11 @@ class DetailsPanel(QWidget):
             if index == 0:
                 parts.append(t('лучшая'))
             first = ' · '.join(parts)
-            second = t('{ref_ref} | {alt_alt} · продукт {size}', ref_ref=scheme.get('bands_ref_ref') or '',
-                       alt_alt=scheme.get('bands_alt_alt') or '', size=product_size_text(scheme))
+            if scheme.get('genotype_bands'):
+                second = t('Различимых генотипов: {count}', count=len(locus_bands(scheme)))
+            else:
+                second = t('{ref_ref} | {alt_alt} · продукт {size}', ref_ref=scheme.get('bands_ref_ref') or '',
+                           alt_alt=scheme.get('bands_alt_alt') or '', size=product_size_text(scheme))
             text = QLabel(f'{first}\n{second}')
             if others:
                 text.setToolTip(t('Изошизомеры: {names}', names=', '.join(others)))
@@ -354,7 +357,9 @@ class DetailsPanel(QWidget):
         details = [t('Продукт {size} п.н. · {enzyme} ({site})', size=size,
                      enzyme=scheme.get('enzyme'), site=scheme.get('site')) if scheme.get('enzyme') else
                    f"{t('Продукт: {size} п.н.', size=size)} · {scheme_label(scheme)}"]
-        if scheme.get('enzyme_2') or scheme.get('product_size_alt') is not None:
+        if scheme.get('genotype_bands'):
+            details.extend(f'{name}: {bands}' for name, bands in locus_bands(scheme).items())
+        elif scheme.get('enzyme_2') or scheme.get('product_size_alt') is not None:
             details.extend(f"{label}: {scheme.get(key) or '—'}" for label, key in
                            [('REF/REF', 'bands_ref_ref'), ('REF/ALT', 'bands_ref_alt'), ('ALT/ALT', 'bands_alt_alt')])
         if scheme.get('enzyme_2'):

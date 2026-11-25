@@ -258,6 +258,12 @@ sequences with a shared anchor, for example `A → ACT` or `ACT → A`. The 1-ba
 `pos` points to the first base of REF. The program checks the entire REF
 against the FASTA and tries product lengths without digestion before restriction.
 
+For a multiallelic locus, put distinct ALT sequences in one field in input
+order, for example `C,G` with REF `A`. Quote the ALT field in a comma-delimited
+CSV. The same primer pair and digest must distinguish every diploid genotype.
+Results include allele products and genotype bands. The Excel and laboratory
+PDF exports include separate tables for the alleles and genotypes.
+
 In the 2.0.0 development version, **Double digest** is enabled by default.
 When no single natural enzyme gives a robust assay after the enabled checks,
 the program tries pairs on the same amplicons before fallback dCAPS.

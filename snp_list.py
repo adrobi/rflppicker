@@ -12,7 +12,7 @@ import palette
 from app_settings import AppSettings
 from i18n import N_, fmt, t
 from result_model import LABELS
-from snp_summary import ERROR, NONE, STATUS_ORDER, SnpSummary, product_size_text, scheme_label, status_title
+from snp_summary import ERROR, NONE, STATUS_ORDER, SnpSummary, locus_bands, product_size_text, scheme_label, status_title
 
 SORT_ROLE = Qt.ItemDataRole.UserRole
 _HIDDEN_KEYS = ('mapped_id', 'site', 'isoschizomers', 'suppliers', 'primers_left', 'primers_right', 'tm_left',
@@ -111,11 +111,15 @@ class SnpListModel(QAbstractTableModel):
         if key == 'bands':
             if not scheme:
                 return '', None
+            if scheme.get('genotype_bands'):
+                count = len(locus_bands(scheme))
+                return t('Различимых генотипов: {count}', count=count), str(count)
             text = f"{scheme.get('bands_ref_ref') or ''} | {scheme.get('bands_alt_alt') or ''}"
             return text, text
         if key == 'product':
             value = scheme.get('product_size')
-            return (product_size_text(scheme) if scheme.get('product_size_alt') is not None else fmt(value)), value
+            has_alt = scheme.get('product_size_alt') is not None or scheme.get('allele_products')
+            return (product_size_text(scheme) if has_alt else fmt(value)), value
         if key == 'score':
             value = scheme.get('genotype_margin')
             return fmt(value), value

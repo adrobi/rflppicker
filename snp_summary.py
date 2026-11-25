@@ -5,6 +5,7 @@ rejected lines. The window, the Excel export and the CLI need the opposite
 view: every line of the user's file in file order, with its schemes, its
 status and a plain-language note. This module builds that view.
 """
+import json
 import re
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
@@ -12,7 +13,7 @@ from typing import Dict, List, Optional, Tuple
 from i18n import N_, core_text, t
 from palette import EXCEL_STATUS_FILLS
 from reporting import ExtraSheet
-from rflp_core import clean_chrom, parse_fields, read_input_table
+from rflp_core import clean_chrom, is_simple_snp, parse_fields, read_input_table
 
 
 @dataclass(frozen=True)
@@ -183,7 +184,8 @@ class SnpSummary:
         if self.failure.get('search_mode') == 'window':
             hint = ''   # dCAPS and the product range do not act without Primer3
         elif status in ('no_discriminating_assay', 'no_enzyme_found'):
-            hint = (t('Попробуйте другой диапазон продукта') if dcaps_mode == 'always'
+            hint = (t('Попробуйте другой диапазон продукта') if dcaps_mode == 'always' or
+                    not is_simple_snp(self.record.ref, self.record.alt)
                     else t('Попробуйте dCAPS «Для каждого SNP»'))
         return '. '.join(text for text in (reason, hint) if text)
 
@@ -276,9 +278,12 @@ def summary_text(summary: SnpSummary, dcaps_mode: str) -> str:
                 tm_text = f" (Tm {scheme[tm]:.1f} °C)" if scheme.get(tm) is not None else ''
                 lines.append(f'{summary.primer_base}_{side}: {scheme[primer]}{tm_text}')
         lines.append(t('Продукт: {size} п.н.', size=product_size_text(scheme)))
-        lines.append(t('Полосы: REF/REF {ref_ref}; REF/ALT {ref_alt}; ALT/ALT {alt_alt}',
-                       ref_ref=scheme.get('bands_ref_ref'), ref_alt=scheme.get('bands_ref_alt'),
-                       alt_alt=scheme.get('bands_alt_alt')))
+        if scheme.get('genotype_bands'):
+            lines.extend(f'{name}: {bands}' for name, bands in locus_bands(scheme).items())
+        else:
+            lines.append(t('Полосы: REF/REF {ref_ref}; REF/ALT {ref_alt}; ALT/ALT {alt_alt}',
+                           ref_ref=scheme.get('bands_ref_ref'), ref_alt=scheme.get('bands_ref_alt'),
+                           alt_alt=scheme.get('bands_alt_alt')))
     note = summary.note(dcaps_mode)
     if note:
         lines.append(t('Примечание: {note}', note=note))
@@ -311,8 +316,20 @@ def scheme_label(scheme: dict) -> str:
 
 
 def product_size_text(scheme: dict) -> str:
+    products = allele_products(scheme)
+    if products:
+        return ' / '.join(f"{item['allele']} {item['length']}" for item in products)
     ref, alt = scheme.get('product_size'), scheme.get('product_size_alt')
     return str(ref) if alt is None else f'REF {ref} / ALT {alt}'
+
+
+def allele_products(scheme: dict) -> list:
+    return json.loads(scheme['allele_products']) if scheme.get('allele_products') else []
+
+
+def locus_bands(scheme: dict, stressed=False) -> dict:
+    value = scheme.get('worst_genotype_bands' if stressed else 'genotype_bands')
+    return json.loads(value) if value else {}
 
 
 def summary_table(summaries: List[SnpSummary], dcaps_mode: str) -> Tuple[List[str], List[list]]:
@@ -351,8 +368,27 @@ def excel_sheets(summaries: List[SnpSummary], dcaps_mode: str) -> List[ExtraShee
     header, rows = summary_table(summaries, dcaps_mode)
     primer_header, primer_rows = primer_table(summaries)
     fills = {status_title(status): EXCEL_STATUS_FILLS[status] for status in STATUS_ORDER}
-    return [ExtraSheet(t('Сводка'), header, rows, 'RFLPSummary', {t('Статус'): fills}),
-            ExtraSheet(t('Праймеры'), primer_header, primer_rows, 'RFLPPrimers')]
+    sheets = [ExtraSheet(t('Сводка'), header, rows, 'RFLPSummary', {t('Статус'): fills}),
+              ExtraSheet(t('Праймеры'), primer_header, primer_rows, 'RFLPPrimers')]
+    alleles, genotypes = [], []
+    for summary in summaries:
+        scheme = summary.scheme or {}
+        products = allele_products(scheme)
+        if not products:
+            continue
+        prefix = [summary.record.snp_id, summary.record.line, summary.label]
+        for item in products:
+            alleles.append(prefix + [item['allele'], item['sequence'], item['length'],
+                                     ' + '.join(map(str, item['fragments']))])
+        worst = locus_bands(scheme, stressed=True)
+        genotypes.extend(prefix + [name, bands, worst[name]] for name, bands in locus_bands(scheme).items())
+    if genotypes:
+        locus_header = ['ID', t('Строка файла'), t('Локус')]
+        sheets.append(ExtraSheet(t('Аллели'), locus_header + [t('Аллель'), t('Последовательность аллеля'),
+                                 t('Продукт, п.н.'), t('Фрагменты, п.н.')], alleles, 'RFLPAlleles'))
+        sheets.append(ExtraSheet(t('Генотипы'), locus_header + [t('Генотип'), t('Ожидаемые полосы, п.н.'),
+                                 t('Полосы при ухудшении, п.н.')], genotypes, 'RFLPGenotypes'))
+    return sheets
 
 
 def results_table(summaries: List[SnpSummary], header: List[str], rows: List[list]) -> Tuple[List[str], List[list]]:

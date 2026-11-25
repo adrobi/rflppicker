@@ -4,6 +4,7 @@ This is a deterministic screening model, not a calibrated gel simulator.
 See docs/assay_design.md for equations, assumptions and ranking rules.
 """
 from dataclasses import dataclass
+from itertools import combinations, combinations_with_replacement
 from math import isfinite
 
 MODEL_VERSION = "band-presence-maximin-v1"
@@ -34,16 +35,24 @@ class GelModel:
                                          self.resolution_pct * max(a, b) / 100.0))
 
 
-def _scenario(ref, alt, model, scale):
-    # Shared bins across all lanes prevent artificial genotype differences
-    # caused by independently moving the centres of merged bands.
-    lengths = sorted(set(ref) | set(alt))
+def _band_clusters(lengths, model, scale):
+    # All lanes share band bins at a given resolution.
     clusters = []
-    for size in lengths:
+    for size in sorted(set(lengths)):
         if clusters and model.distance(clusters[-1][-1], size, scale) <= 1:
             clusters[-1].append(size)
         else:
             clusters.append([size])
+    return clusters
+
+
+def _band_text(clusters, ids):
+    return "; ".join(str(clusters[i][0]) if len(clusters[i]) == 1
+                     else f"{clusters[i][0]}–{clusters[i][-1]}" for i in sorted(ids))
+
+
+def _scenario(ref, alt, model, scale):
+    clusters = _band_clusters((*ref, *alt), model, scale)
     rset, aset = set(ref), set(alt)
     rids = {i for i, cluster in enumerate(clusters) if rset.intersection(cluster)}
     aids = {i for i, cluster in enumerate(clusters) if aset.intersection(cluster)}
@@ -66,9 +75,7 @@ def _scenario(ref, alt, model, scale):
     weakest = min(distances, key=distances.get)
 
     def lane(ids):
-        return "; ".join(str(clusters[i][0]) if len(clusters[i]) == 1
-                         else f"{clusters[i][0]}–{clusters[i][-1]}"
-                         for i in sorted(ids))
+        return _band_text(clusters, ids)
 
     return {"margin": distances[weakest], "weakest": weakest,
             "bands_rr": lane(rids), "bands_ra": lane(rids | aids),
@@ -106,6 +113,44 @@ def score_genotypes(frags_ref, frags_alt, model):
         "hidden_ref_count": len(frags_ref) - len(ref),
         "hidden_alt_count": len(frags_alt) - len(alt),
     }
+
+
+def diploid_genotypes(count):
+    names = ['REF', *(f'ALT{i}' for i in range(1, count))]
+    return [(f'{names[i]}/{names[j]}', i, j) for i, j in combinations_with_replacement(range(count), 2)]
+
+
+def _locus_scenario(lanes, model, scale, check_cancel):
+    clusters = _band_clusters((size for _, lengths in lanes for size in lengths), model, scale)
+    cluster_ids = {size: i for i, cluster in enumerate(clusters) for size in cluster}
+    ids = {label: {cluster_ids[size] for size in lengths} for label, lengths in lanes}
+
+    def directed(source, target, target_lengths):
+        if not source or not target:
+            return 0.0
+        return max((min(model.distance(a, b, scale) for a in clusters[i] for b in target_lengths)
+                    for i in source - target), default=0.0)
+
+    weakest, margin = '', float('inf')
+    for (a, a_lengths), (b, b_lengths) in combinations(lanes, 2):
+        check_cancel()
+        value = max(directed(ids[a], ids[b], b_lengths), directed(ids[b], ids[a], a_lengths))
+        if value < margin:
+            weakest, margin = f'{a}–{b}', value
+    return margin, weakest, {label: _band_text(clusters, lane) for label, lane in ids.items()}, len(clusters)
+
+
+def score_locus(fragments, model, check_cancel=lambda: None):
+    """Score all diploid genotype pairs using clusters shared across the locus."""
+    visible = [{size for size in allele if model.min_visible <= size <= model.max_visible}
+               for allele in fragments]
+    lanes = [(label, visible[i] | visible[j]) for label, i, j in diploid_genotypes(len(fragments))]
+    nominal, _, bands, count = _locus_scenario(lanes, model, 1.0, check_cancel)
+    stressed, weakest, worst_bands, _ = _locus_scenario(lanes, model, model.stress_factor, check_cancel)
+    quality = 'robust' if stressed > 1 else 'nominal_only' if nominal > 1 else 'ambiguous'
+    return dict(genotype_quality=quality, genotype_margin=nominal, worst_margin=stressed,
+                weakest_genotypes=weakest, genotype_bands=bands, worst_genotype_bands=worst_bands,
+                visible_band_count=count)
 
 
 def rank_key(record):

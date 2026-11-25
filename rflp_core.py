@@ -2,11 +2,13 @@ import sys
 import bisect
 import csv
 import gzip
+import json
 import locale
 import os
 import re
 import logging
 import math
+from itertools import combinations
 from dataclasses import dataclass, field
 from typing import Callable, List, Dict, Tuple, Optional
 from datetime import datetime
@@ -14,7 +16,7 @@ from datetime import datetime
 from pyfaidx import Fasta
 from Bio.Seq import Seq
 from Bio.Restriction import AllEnzymes
-from assay_scoring import GelModel, MODEL_VERSION, score_genotypes, rank_key
+from assay_scoring import GelModel, MODEL_VERSION, diploid_genotypes, score_genotypes, score_locus, rank_key
 import specificity
 
 APP_VERSION = "1.6.0"
@@ -379,7 +381,7 @@ def parse_fields(parts: List[str], columns: Dict[str, Optional[int]]) -> Tuple[s
         clean_chrom(field("chrom", 0)),
         int(field("pos", 1)),
         field("ref", 2).strip().upper(),
-        field("alt", 3).strip().upper(),
+        ','.join(allele.strip() for allele in field("alt", 3).upper().split(',')),
     )
 
 
@@ -437,7 +439,15 @@ def is_indel(ref: str, alt: str) -> bool:
     return prefix + suffix >= len(short)
 
 
-UNSUPPORTED_VARIANT = 'Поддерживаются биаллельные SNP и индели с известными последовательностями A/C/G/T'
+def multiallelic_alts(ref: str, alt: str) -> tuple[str, ...]:
+    alleles = tuple(alt.split(','))
+    if (len(alleles) > 1 and len(set(alleles)) == len(alleles) and ref not in alleles
+            and ref and set(ref) <= DNA and all(a and set(a) <= DNA for a in alleles)):
+        return alleles
+    return ()
+
+
+UNSUPPORTED_VARIANT = 'Укажите поддерживаемый SNP, индел или набор разных ALT из A/C/G/T без повтора REF'
 
 
 class FastaBlockCache:
@@ -541,7 +551,7 @@ def normalize_variants_for_rflp(
                 mapped = resolve_contig(chrom, names2_skip, check_cache.has_contig)
                 reason = ''
                 details = ''
-                if not (is_simple_snp(ref, alt) or is_indel(ref, alt)):
+                if not (is_simple_snp(ref, alt) or is_indel(ref, alt) or multiallelic_alts(ref, alt)):
                     reason, details = 'unsupported_variant', UNSUPPORTED_VARIANT
                 elif not check_cache.has_contig(mapped):
                     reason, details = 'bad_chrom', f"CHROM '{mapped}' отсутствует в FASTA"
@@ -611,8 +621,8 @@ def normalize_variants_for_rflp(
             continue
 
         clen = cache.contig_len(mapped_chrom)
-        indel = is_indel(ref, alt)
-        if pos < 1 or pos > clen or (indel and pos + len(ref) - 1 > clen):
+        explicit = is_indel(ref, alt) or bool(multiallelic_alts(ref, alt))
+        if pos < 1 or pos > clen or (explicit and pos + len(ref) - 1 > clen):
             stats["rejected_pos_oob"] += 1
             rejected.append((line_no, orig_chrom, pos, ref, alt, "pos_oob", f"POS {pos} out of [1,{clen}]"))
             continue
@@ -622,7 +632,7 @@ def normalize_variants_for_rflp(
             rejected.append((line_no, orig_chrom, pos, ref, alt, "bad_ref_chars", "REF must be A/C/G/T only"))
             continue
 
-        if not indel and not is_simple_snp(ref, alt):
+        if not explicit and not is_simple_snp(ref, alt):
             stats["rejected_bad_alt_chars"] += 1
             rejected.append((line_no, orig_chrom, pos, ref, alt, "unsupported_variant", UNSUPPORTED_VARIANT))
             continue
@@ -632,7 +642,7 @@ def normalize_variants_for_rflp(
             stats["kept"] += 1
             continue
 
-        if indel:
+        if explicit:
             stats['rejected_ref_not_match'] += 1
             rejected.append((line_no, orig_chrom, pos, ref, alt, 'ref_not_match', 'REF не совпадает с FASTA'))
             continue
@@ -1120,7 +1130,8 @@ V12_HEADER = ['isoschizomers', 'primer_site', 'repeat_pct', 'background_variants
 # Added in 1.6: where else the primers anneal and what the pair amplifies there.
 V16_HEADER = ['primer_sites_left', 'primer_sites_right', 'offtarget_products', 'offtarget_sizes']
 DOUBLE_HEADER = ['enzyme_1', 'enzyme_2', 'site_1', 'site_2', 'reaction_compatibility']
-RESULT_HEADER = BASE_HEADER + ASSAY_HEADER + V12_HEADER + V16_HEADER + DOUBLE_HEADER + ['product_size_alt']
+LOCUS_HEADER = ['allele_products', 'genotype_bands', 'worst_genotype_bands']
+RESULT_HEADER = BASE_HEADER + ASSAY_HEADER + V12_HEADER + V16_HEADER + DOUBLE_HEADER + ['product_size_alt'] + LOCUS_HEADER
 # SNPs whose assays are held in memory for one pass over the genome (about 0.25 MB each).
 SPECIFICITY_BATCH = 2000
 
@@ -1202,10 +1213,15 @@ class _Window:
     ambiguous: int = 0
     genotype_rejected: int = 0
     indel: bool = False
+    alternates: tuple[str, ...] = ()
 
     @property
     def length_change(self) -> int:
         return len(self.alt) - len(self.ref) if self.indel else 0
+
+    @property
+    def length_changes(self) -> tuple[int, ...]:
+        return (0, *(len(alt) - len(self.ref) for alt in self.alternates)) if self.alternates else (0, self.length_change)
 
     def amplicons(self, start: int, end: int) -> tuple[str, str]:
         return self.seq[start:end], self.altseq[start:end + self.length_change]
@@ -1268,7 +1284,7 @@ def _snp_window(run: _Run, fa, chrom: str, mapped_id: str, pos: int, ref: str, a
                 snp_offset_in_amplicon=off, delta_threshold_bp=params['delta'],
                 search_mode=run.mode, scoring_model=MODEL_VERSION, pairs_evaluated=0)
     return _Window(ref=ref, alt=alt, pos=pos, start=start, end=end, raw=raw, seq=seq, off=off,
-                   base=base, indel=is_indel(ref, alt))
+                   base=base, indel=is_indel(ref, alt), alternates=multiallelic_alts(ref, alt))
 
 
 def _known_variants(run: _Run, window: _Window, mapped_id: str) -> list:
@@ -1297,14 +1313,14 @@ def _natural_pairs(run: _Run, window: _Window) -> Tuple[Optional[dict], list]:
     target_end = off + target_length
     failure, pairs = None, []
     if end_distance and min(off, len(seq) - target_end) < end_distance:
-        label = 'Вариант' if window.indel else 'SNP'
+        label = 'Вариант' if window.indel or window.alternates else 'SNP'
         failure = dict(base, status='no_primers', reason=f'{label} ближе {end_distance} п.н. к краю окна; увеличьте фланг')
     elif run.use_primer3:
         run.check_cancel()
-        # Primer3 designs on REF. Restrict its range so ALT also fits.
-        change = window.length_change
-        prod_min = params['prod_min'] + max(0, -change)
-        prod_max = params['prod_max'] - max(0, change)
+        # Primer3 designs on REF. Restrict its range so every allele fits.
+        changes = window.length_changes
+        prod_min = params['prod_min'] - min(changes)
+        prod_max = params['prod_max'] - max(changes)
         if prod_min > prod_max:
             return dict(base, status='no_primers', reason='Длины продуктов REF и ALT не укладываются в заданный диапазон'), []
         pres = primer3_pick(window.raw if mask else seq, off, prod_min, prod_max,
@@ -1368,7 +1384,7 @@ def _evaluate(run, window, enz, refamp, altamp, record, a, b):
 
 def _score_digest(run, window, enzymes, cr, ca, refamp, altamp, record, a, b):
     """Apply the same visibility, genotype and background rules to the final digest."""
-    params, model, counters = run.params, run.model, run.counters
+    params, model = run.params, run.model
     if max(len(cr), len(ca)) - 2 > params['max_cuts']:
         return None
     fr, fal = frag_lengths(cr), frag_lengths(ca)
@@ -1386,17 +1402,27 @@ def _score_digest(run, window, enzymes, cr, ca, refamp, altamp, record, a, b):
     if scores['genotype_quality'] == 'ambiguous':
         window.genotype_rejected += 1
         return None
+    scores.update(frags_ref=frags_to_str(fr), frags_alt=frags_to_str(fal))
+    return _digest_record(run, window, enzymes, (refamp, altamp), record, a, b, scores, actual_delta,
+                          len(cr) != len(ca), 'REF' if len(cr) > len(ca) else 'ALT')
+
+
+def _digest_record(run, window, enzymes, amplicons, record, a, b, scores, actual_delta, gain_loss, dcaps_allele=''):
     reason = {
         'robust': 'Три генотипа различимы во всём заданном диапазоне разрешения',
         'nominal_only': 'Три генотипа различимы только при исходном разрешении',
     }[scores['genotype_quality']]
+    if window.alternates:
+        reason = {
+            'robust': 'Все генотипы локуса различимы во всём заданном диапазоне разрешения',
+            'nominal_only': 'Все генотипы локуса различимы только при исходном разрешении',
+        }[scores['genotype_quality']]
     if not run.use_primer3:
         reason = 'Оценка окна без подобранных праймеров. ' + reason
     dcaps_design = record.get('design') == 'dCAPS'
     if dcaps_design:
-        allele = 'REF' if len(cr) > len(ca) else 'ALT'
-        reason = f'dCAPS: несовпадение в праймере создаёт сайт в аллеле {allele}. ' + reason
-    primer_sites = [primer_site_label(enz, refamp, record.get('primer_left_len'), record.get('primer_right_len'))
+        reason = f'dCAPS: несовпадение в праймере создаёт сайт в аллеле {dcaps_allele}. ' + reason
+    primer_sites = [primer_site_label(enz, amplicons[0], record.get('primer_left_len'), record.get('primer_right_len'))
                     for enz in enzymes]
     if not enzymes:
         primer_site = ''
@@ -1405,24 +1431,25 @@ def _score_digest(run, window, enzymes, cr, ca, refamp, altamp, record, a, b):
     else:
         primer_site = '; '.join(f'{enz.__name__}: {label}' for enz, label in zip(enzymes, primer_sites) if label)
     # In a mismatch primer such a site is a design error: every allele is cut.
-    if primer_site and (params['exclude_primer_sites'] or dcaps_design):
-        counters['excluded_primer_site'] += 1
+    if primer_site and (run.params['exclude_primer_sites'] or dcaps_design):
+        run.counters['excluded_primer_site'] += 1
         return None
     inside = [(q - a, r, alts) for q, r, alts in window.known if a <= q and q + len(r) <= b]
     changing = set()
+    shifts = window.length_changes
     for q, r, alts in inside:
-        alt_offset = q + window.length_change if a + q > window.off else q
+        downstream = a + q > window.off
         for x in alts:
             if enzymes:
-                affects_bands = any(variant_changes_sites(enz, refamp, q, r, x, model.resolution_bp) or
-                                    variant_changes_sites(enz, altamp, alt_offset, r, x, model.resolution_bp)
-                                    for enz in enzymes)
+                affects_bands = any(variant_changes_sites(enz, amp, q + (shift if downstream else 0),
+                                                         r, x, run.model.resolution_bp)
+                                    for enz in enzymes for amp, shift in zip(amplicons, shifts))
             else:
                 affects_bands = len(r) != len(x)
             if affects_bands:
                 changing.add(f'{window.start + a + q} {r}>{x}')
-    if changing and params['exclude_background_sites']:
-        counters['excluded_background_site'] += 1
+    if changing and run.params['exclude_background_sites']:
+        run.counters['excluded_background_site'] += 1
         return None
     names = [enz.__name__ for enz in enzymes]
     sites = [enzyme_site_string(enz) for enz in enzymes]
@@ -1435,8 +1462,7 @@ def _score_digest(run, window, enzymes, cr, ca, refamp, altamp, record, a, b):
         suppliers = '; '.join(f'{enz.__name__}: {enzyme_suppliers_human(enz)}' for enz in enzymes)
     return dict(record, **scores, **extra, enzyme=' + '.join(names),
                 site=' + '.join(sites),
-                pattern=('gain/loss' if len(cr) != len(ca) else 'shift') if enzymes else 'amplicon_length',
-                frags_ref=frags_to_str(fr), frags_alt=frags_to_str(fal),
+                pattern=('gain/loss' if gain_loss else 'shift') if enzymes else 'amplicon_length',
                 diag_delta_bp=actual_delta, suppliers=suppliers,
                 primer_site=primer_site,
                 background_variants=len(inside) if run.background is not None else None,
@@ -1444,7 +1470,92 @@ def _score_digest(run, window, enzymes, cr, ca, refamp, altamp, record, a, b):
                 status='ok' if run.use_primer3 else 'window_only', reason=reason)
 
 
+def _score_multiallelic_digest(run, window, enzymes, cuts, amplicons, record, start, end):
+    counts = {len(positions) for positions in cuts}
+    if (max(counts) - 2 > run.params['max_cuts'] or
+            (enzymes and run.params['gain_loss_only'] and len(counts) == 1)):
+        return None
+    fragments = [frag_lengths(positions) for positions in cuts]
+    scores = score_locus(fragments, run.model, run.check_cancel)
+    if scores['genotype_quality'] == 'ambiguous':
+        window.genotype_rejected += 1
+        return None
+    visible = [{n for n in sizes if run.model.min_visible <= n <= run.model.max_visible} for sizes in fragments]
+    lanes = [visible[i] | visible[j] for _, i, j in diploid_genotypes(len(fragments))]
+    actual_delta = math.inf
+    for first, second in combinations(lanes, 2):
+        run.check_cancel()
+        actual_delta = min(actual_delta, diagnostic_delta(first, second))
+        if actual_delta < run.params['delta']:
+            return None
+    alleles = (window.ref, *window.alternates)
+    products = [dict(allele='REF' if i == 0 else f'ALT{i}', sequence=allele,
+                     length=len(amplicons[i]), fragments=sizes)
+                for i, (allele, sizes) in enumerate(zip(alleles, fragments))]
+    scores['allele_products'] = json.dumps(products)
+    for key in ('genotype_bands', 'worst_genotype_bands'):
+        scores[key] = json.dumps(scores[key], ensure_ascii=False)
+    return _digest_record(run, window, enzymes, amplicons, record, start, end, scores, actual_delta, len(counts) > 1)
+
+
+def _multiallelic_hits(run, window, pairs, design):
+    enzymes = run.known_cut_enzymes
+    counters = run.counters
+    if design == 'double_digest':
+        counters['double_snps'] += 1
+    hits = []
+    for pair in pairs:
+        run.check_cancel()
+        a, b = pair['start0'], pair['end0']
+        prefix, suffix = window.seq[a:window.off], window.seq[window.off + len(window.ref):b]
+        amplicons = (window.seq[a:b], *(prefix + alt + suffix for alt in window.alternates))
+        if any(set(amp) - DNA for amp in amplicons):
+            if design == 'natural':
+                window.ambiguous += 1
+            continue
+        record = _amplicon_record(window, pair, a, b, design=design)
+
+        def append_hit(members, cuts):
+            hit = _score_multiallelic_digest(run, window, members, cuts, amplicons, record, a, b)
+            if hit is not None:
+                hits.append(hit)
+
+        if design == 'amplicon_length':
+            append_hit((), [(0, len(amp)) for amp in amplicons])
+            continue
+        if design == 'natural':
+            counters['enzyme_evaluations'] += len(enzymes)
+        else:
+            counters['double_amplicons'] += 1
+            counters['double_pairs_possible'] += len(enzymes) * (len(enzymes) - 1) // 2
+        maps = {}
+        for enzyme in enzymes:
+            run.check_cancel()
+            cuts = [_enzyme_cuts(run, window, enzyme, amp) for amp in amplicons]
+            if any(c is None or len(c) - 2 > run.params['max_cuts'] for c in cuts):
+                continue
+            if all(len(c) == 2 for c in cuts):
+                continue
+            if design == 'natural':
+                append_hit((enzyme,), cuts)
+            else:
+                maps[enzyme] = tuple(frozenset(c) for c in cuts)
+        diagnostic = {enzyme for enzyme, cuts in maps.items() if len(set(cuts)) > 1}
+        for (first, left), (second, right) in combinations(maps.items(), 2):
+            run.check_cancel()
+            if first not in diagnostic and second not in diagnostic:
+                continue
+            combined = tuple(l | r for l, r in zip(left, right))
+            if combined in (left, right) or any(len(c) - 2 > run.params['max_cuts'] for c in combined):
+                continue
+            counters['double_pairs_scored'] += 1
+            append_hit((first, second), [sorted(c) for c in combined])
+    return hits
+
+
 def _length_hits(run: _Run, window: _Window, pairs: list) -> list:
+    if window.alternates:
+        return _multiallelic_hits(run, window, pairs, 'amplicon_length')
     hits = []
     for pair in pairs:
         run.check_cancel()
@@ -1461,6 +1572,8 @@ def _length_hits(run: _Run, window: _Window, pairs: list) -> list:
 
 def _natural_hits(run: _Run, window: _Window, pairs: list) -> list:
     """Assays with a natural site: every primer pair with every enzyme whose site covers the SNP."""
+    if window.alternates:
+        return _multiallelic_hits(run, window, pairs, 'natural')
     # The remaining enzymes give equal REF/ALT fragments in every amplicon,
     # i.e. Δ = 0, which is below any threshold (delta >= 1).
     site_enzymes = (run.known_cut_enzymes if window.indel else
@@ -1513,6 +1626,8 @@ def _double_cut_maps(run, window, ref, alt, potential):
 
 def _double_hits(run, window, pairs):
     """Try SNP-dependent cut maps with every productive partner on the same amplicon."""
+    if window.alternates:
+        return _multiallelic_hits(run, window, pairs, 'double_digest')
     counters = run.counters
     counters['double_snps'] += 1
     enzymes = run.known_cut_enzymes
@@ -1628,7 +1743,8 @@ def _snp_records(run: _Run, window: _Window, hits: list, failure: Optional[dict]
     elif not hits and failure is not None:
         records.append(failure)
     elif not hits:
-        reason = 'Не найдено сочетание для различения трёх генотипов'
+        reason = ('Не найдено сочетание для различения всех генотипов локуса' if window.alternates else
+                  'Не найдено сочетание для различения трёх генотипов')
         if window.ambiguous:
             reason += f"; окон с неопределёнными основаниями: {window.ambiguous}"
         if window.errors:
@@ -1662,15 +1778,17 @@ def _search_snp(run: _Run, fa, chrom: str, mapped_id: str, pos: int, ref: str, a
     if window.off < 0 or window.seq[window.off:ref_end] != ref:
         search.records = [dict(window.base, status='analysis_error', reason='REF не совпадает с FASTA')]
         return search
-    window.altseq = window.seq[:window.off] + alt + window.seq[ref_end:]
+    if not window.alternates:
+        window.altseq = window.seq[:window.off] + alt + window.seq[ref_end:]
+    can_dcaps = not (window.indel or window.alternates)
     window.known = _known_variants(run, window, mapped_id)
     search.failure, pairs = _natural_pairs(run, window)
-    if search.failure is not None and (window.indel or run.dcaps == 'off'):
+    if search.failure is not None and (not can_dcaps or run.dcaps == 'off'):
         search.records = [search.failure]
         return search
     window.base['pairs_evaluated'] = len(pairs) if run.use_primer3 else 0
     run.counters['pairs_evaluated'] += window.base['pairs_evaluated']
-    if window.indel:
+    if window.indel or (window.alternates and len(set(window.length_changes)) == len(window.length_changes)):
         search.pairs = pairs
         search.hits = _length_hits(run, window, pairs)
     if not any(h['genotype_quality'] == 'robust' for h in search.hits):
@@ -1681,7 +1799,7 @@ def _search_snp(run: _Run, fa, chrom: str, mapped_id: str, pos: int, ref: str, a
         if not any(h['genotype_quality'] == 'robust' for h in search.hits):
             search.hits += _double_hits(run, window, pairs)
             search.double_tried = True
-    if not window.indel and (run.dcaps == 'always' or (run.dcaps == 'fallback'
+    if can_dcaps and (run.dcaps == 'always' or (run.dcaps == 'fallback'
                             and not any(h['genotype_quality'] == 'robust' for h in search.hits))):
         search.hits += _dcaps_hits(run, window)
         search.dcaps_tried = True
@@ -1774,7 +1892,7 @@ def _check_specificity(run: _Run, searches: list) -> None:
     _scan_genome(run, [hit for search in pending for hit in search.hits], checked)
     for search in pending:
         _drop_unspecific(run, search)
-    retry_natural = [s for s in pending if s.window.indel and s.pairs and not s.natural_tried
+    retry_natural = [s for s in pending if s.pairs and not s.natural_tried
                      and not any(h['genotype_quality'] == 'robust' for h in s.hits)]
     added = []
     for search in retry_natural:
@@ -1802,7 +1920,8 @@ def _check_specificity(run: _Run, searches: list) -> None:
         _scan_genome(run, added, checked)
         for search in retry_double:
             _drop_unspecific(run, search)
-    retry = [search for search in pending if not search.window.indel and run.dcaps == 'fallback' and not search.dcaps_tried
+    retry = [search for search in pending if not (search.window.indel or search.window.alternates)
+             and run.dcaps == 'fallback' and not search.dcaps_tried
              and not any(hit['genotype_quality'] == 'robust' for hit in search.hits)]
     added = []
     if retry:
