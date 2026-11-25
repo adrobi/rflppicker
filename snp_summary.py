@@ -149,6 +149,8 @@ class SnpSummary:
         if quality == 'nominal_only':
             parts.append(t('Только при исходном разрешении; труднее всего: {pair}',
                            pair=scheme.get('weakest_genotypes')))
+        if scheme.get('reaction_compatibility') == 'unconfirmed':
+            parts.append(t('Совместимость условий не подтверждена'))
         if scheme.get('design') == 'dCAPS':
             parts.append(f"dCAPS: {scheme.get('primer_mismatches')}")
         if scheme.get('primer_site'):
@@ -288,7 +290,7 @@ SUMMARY_HEADER = ['ID', 'SNP', N_('Хромосома в геноме'), N_('С�
                   N_('Полосы REF/ALT'), N_('Полосы ALT/ALT'), N_('Оценка'), N_('Оценка при ухудшении'),
                   N_('Примечание'), N_('Строка файла')]
 PRIMER_HEADER = [N_('Имя'), N_('Последовательность 5′→3′'), N_('Длина'), 'Tm', 'SNP', N_('Фермент')]
-_DESIGN_TITLES = {'natural': N_('природный сайт'), 'dCAPS': 'dCAPS'}
+_DESIGN_TITLES = {'double_digest': N_('Двойная рестрикция'), 'natural': N_('природный сайт'), 'dCAPS': 'dCAPS'}
 _SCHEME_COLUMNS = ('enzyme', 'site', 'isoschizomers', 'suppliers', 'design', 'primers_left', 'primers_right',
                    'tm_left', 'tm_right', 'product_size', 'bands_ref_ref', 'bands_ref_alt', 'bands_alt_alt',
                    'genotype_margin', 'worst_margin')

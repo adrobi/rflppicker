@@ -7,7 +7,7 @@ import rflp_core
 HEADER = rflp_core.RESULT_HEADER
 
 # The checks that are on by default, switched off: for tests of the bare search.
-CHECKS_OFF = dict(commercial_only=False, group_isoschizomers=False, snp_end_distance=0, exclude_primer_sites=False,
+CHECKS_OFF = dict(double_digest=False, commercial_only=False, group_isoschizomers=False, snp_end_distance=0, exclude_primer_sites=False,
                   mask_repeats=False, exclude_background_sites=False, dcaps='off', specificity='off')
 
 

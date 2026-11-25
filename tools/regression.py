@@ -35,7 +35,7 @@ ROOT = Path(__file__).resolve().parent.parent
 # joint_design: up to 1.4.0 it chose the search that is now the only one.
 REMOVED_PARAMS = ('joint_design',)
 # The settings of the program window (rflp_core.DEFAULT_PARAMS), with every assay reported.
-BASE_PARAMS = dict(names2_file='', flank=300, min_frag=80, max_frag=800, delta=25, max_cuts=3,
+BASE_PARAMS = dict(double_digest=True, names2_file='', flank=300, min_frag=80, max_frag=800, delta=25, max_cuts=3,
                    prod_min=250, prod_max=600, tm_min=58.0, tm_max=62.0,
                    gel_resolution_bp=10.0, gel_resolution_pct=3.0, gel_stress_factor=1.5,
                    gain_loss_only=False, suppliers=[], enzyme_mode='off', lab_enzymes=[], use_primer3=True, joint_design=True,
@@ -45,7 +45,7 @@ BASE_PARAMS = dict(names2_file='', flank=300, min_frag=80, max_frag=800, delta=2
                    exclude_background_sites=True, dcaps='fallback', dcaps_mismatches=1,
                    dcaps_tm_max=70.0, dcaps_prod_min=120, dcaps_prod_max=300, dcaps_delta=20,
                    specificity='exclude', specificity_mismatches=3, specificity_max_product=2000)
-CHECKS_OFF = dict(commercial_only=False, group_isoschizomers=False, snp_end_distance=0,
+CHECKS_OFF = dict(double_digest=False, commercial_only=False, group_isoschizomers=False, snp_end_distance=0,
                   exclude_primer_sites=False, mask_repeats=False, exclude_background_sites=False, dcaps='off',
                   specificity='off')
 PROFILES = {
@@ -207,6 +207,8 @@ def build_cases(args, work):
         for profile in profiles:
             params = dict(BASE_PARAMS, **PROFILES[profile], fasta=str(fasta),
                           input_file=str(variants), names2_file=str(names_file))
+            if args.no_double_digest:
+                params['double_digest'] = False
             cases.append(dict(name=f'{name}.{profile}', params=params))
     return cases
 
@@ -224,6 +226,7 @@ def main():
     parser.add_argument('--random', type=int, default=0, help='Also test N random SNPs per genome')
     parser.add_argument('--profile', action='append', choices=list(PROFILES),
                         help='Parameter profiles to run (default: all)')
+    parser.add_argument('--no-double-digest', action='store_true', help='Compare single-enzyme legacy profiles')
     parser.add_argument('--copy-fasta', action='store_true',
                         help='Copy small FASTA files into --work (their .fai is written there)')
     parser.add_argument('--jobs', type=int, default=1, help='Parallel processes (timings then overlap)')

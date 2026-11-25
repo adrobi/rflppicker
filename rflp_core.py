@@ -23,7 +23,7 @@ APP_VERSION = "1.6.0"
 # from the validation on published assays.
 DEFAULT_PARAMS = dict(
     names2_file='', flank=300, min_frag=80, max_frag=800, delta=25, max_cuts=3,
-    gain_loss_only=False, suppliers=[], use_primer3=True, prod_min=250, prod_max=600,
+    gain_loss_only=False, double_digest=True, suppliers=[], use_primer3=True, prod_min=250, prod_max=600,
     tm_min=58.0, tm_max=62.0, primer_pairs=10, top_results=10,
     gel_resolution_bp=10.0, gel_resolution_pct=3.0, gel_stress_factor=1.5,
     skip_norm=False, no_save_norm=True,
@@ -38,7 +38,7 @@ DEFAULT_PARAMS = dict(
 )
 # Parameters a caller may leave out: run_rflp_gui_mode() takes them from DEFAULT_PARAMS.
 OPTIONAL_PARAMS = (
-    'enzyme_mode', 'lab_enzymes', 'primer_pairs', 'top_results', 'gel_resolution_bp', 'gel_resolution_pct',
+    'double_digest', 'enzyme_mode', 'lab_enzymes', 'primer_pairs', 'top_results', 'gel_resolution_bp', 'gel_resolution_pct',
     'gel_stress_factor', 'commercial_only', 'group_isoschizomers', 'snp_end_distance',
     'exclude_primer_sites', 'mask_repeats', 'background_vcf', 'exclude_background_sites', 'dcaps',
     'dcaps_mismatches', 'dcaps_tm_max', 'dcaps_prod_min', 'dcaps_prod_max', 'dcaps_delta',
@@ -940,9 +940,17 @@ def site_key(enzyme) -> str:
     return min(site, site.translate(_IUPAC_COMPLEMENT)[::-1])
 
 
+def _hit_enzymes(hit):
+    return (hit['_enz'], hit['_enz2']) if '_enz2' in hit else (hit['_enz'],)
+
+
+def _hit_sites(hit):
+    return tuple(sorted(site_key(enzyme) for enzyme in _hit_enzymes(hit)))
+
+
 def _inventory_priority(hit, preferred):
     if preferred:
-        return (hit['genotype_quality'] != 'robust', hit['enzyme'] not in preferred)
+        return (hit['genotype_quality'] != 'robust', not all(e.__name__ in preferred for e in _hit_enzymes(hit)))
     return ()
 
 
@@ -957,12 +965,12 @@ def group_by_site(hits: list, preferred=frozenset()) -> list:
     """
     groups = {}
     for hit in hits:
-        groups.setdefault((hit.get('design'), site_key(hit['_enz'])), []).append(hit)
+        groups.setdefault((hit.get('design'), _hit_sites(hit)), []).append(hit)
     grouped = []
     for members in groups.values():
         keep = min(members, key=lambda h: (*_inventory_priority(h, preferred), _flagged(h),
-                                           not h['_enz'].suppl, rank_key(h)[:4],
-                                           -len(h['_enz'].suppl), rank_key(h)[4:]))
+                                           not all(e.suppl for e in _hit_enzymes(h)), rank_key(h)[:4],
+                                           -sum(len(e.suppl) for e in _hit_enzymes(h)), rank_key(h)[4:]))
         others = sorted({h['enzyme'] for h in members} - {keep['enzyme']})
         grouped.append(dict(keep, isoschizomers='; '.join(others)))
     return sorted(grouped, key=lambda h: _order(h, preferred))
@@ -1087,7 +1095,8 @@ V12_HEADER = ['isoschizomers', 'primer_site', 'repeat_pct', 'background_variants
               'background_site_variants', 'design', 'primer_mismatches']
 # Added in 1.6: where else the primers anneal and what the pair amplifies there.
 V16_HEADER = ['primer_sites_left', 'primer_sites_right', 'offtarget_products', 'offtarget_sizes']
-RESULT_HEADER = BASE_HEADER + ASSAY_HEADER + V12_HEADER + V16_HEADER
+DOUBLE_HEADER = ['enzyme_1', 'enzyme_2', 'site_1', 'site_2', 'reaction_compatibility']
+RESULT_HEADER = BASE_HEADER + ASSAY_HEADER + V12_HEADER + V16_HEADER + DOUBLE_HEADER
 # SNPs whose assays are held in memory for one pass over the genome (about 0.25 MB each).
 SPECIFICITY_BATCH = 2000
 
@@ -1131,7 +1140,7 @@ class _Run:
     report: dict
     counters: dict
     enzymes: list
-    dcaps_enzymes: list          # with a known cut position: the fragment lengths are defined
+    known_cut_enzymes: list          # with a known cut position: the fragment lengths are defined
     use_primer3: bool
     mode: str                    # 'joint' (primer pairs and the enzyme together) or 'window'
     dcaps: str                   # 'off' without Primer3
@@ -1291,16 +1300,30 @@ def _amplicon_record(window: _Window, pair: dict, a: int, b: int, **extra) -> di
     return record
 
 
-def _evaluate(run: _Run, window: _Window, enz, refamp: str, altamp: str, record: dict, a: int, b: int):
-    """The assay of one enzyme on one amplicon, or None if it fails a filter."""
-    params, model, counters = run.params, run.model, run.counters
+def _enzyme_cuts(run, window, enzyme, seq):
+    run.counters['digest_searches'] += 1
     try:
-        cr, ca = cut_positions(enz, refamp), cut_positions(enz, altamp)
+        return cut_positions(enzyme, seq)
     except Exception as exc:
         window.errors += 1
         if window.errors <= 3:
-            run.log(f'[WARN] {window.base["variant"]} / {enz.__name__}: {exc}')
+            run.log(f'[WARN] {window.base["variant"]} / {enzyme.__name__}: {exc}')
         return None
+
+
+def _evaluate(run, window, enz, refamp, altamp, record, a, b):
+    cr = _enzyme_cuts(run, window, enz, refamp)
+    if cr is None:
+        return None
+    ca = _enzyme_cuts(run, window, enz, altamp)
+    if ca is None:
+        return None
+    return _score_digest(run, window, (enz,), cr, ca, refamp, altamp, record, a, b)
+
+
+def _score_digest(run, window, enzymes, cr, ca, refamp, altamp, record, a, b):
+    """Apply the same visibility, genotype and background rules to the final digest."""
+    params, model, counters = run.params, run.model, run.counters
     if max(len(cr), len(ca)) - 2 > params['max_cuts']:
         return None
     fr, fal = frag_lengths(cr), frag_lengths(ca)
@@ -1328,8 +1351,12 @@ def _evaluate(run: _Run, window: _Window, enz, refamp: str, altamp: str, record:
     if dcaps_design:
         allele = 'REF' if len(cr) > len(ca) else 'ALT'
         reason = f'dCAPS: несовпадение в праймере создаёт сайт в аллеле {allele}. ' + reason
-    primer_site = primer_site_label(enz, refamp, record.get('primer_left_len'),
-                                    record.get('primer_right_len'))
+    primer_sites = [primer_site_label(enz, refamp, record.get('primer_left_len'), record.get('primer_right_len'))
+                    for enz in enzymes]
+    if len(enzymes) == 1:
+        primer_site = primer_sites[0]
+    else:
+        primer_site = '; '.join(f'{enz.__name__}: {label}' for enz, label in zip(enzymes, primer_sites) if label)
     # In a mismatch primer such a site is a design error: every allele is cut.
     if primer_site and (params['exclude_primer_sites'] or dcaps_design):
         counters['excluded_primer_site'] += 1
@@ -1337,16 +1364,26 @@ def _evaluate(run: _Run, window: _Window, enz, refamp: str, altamp: str, record:
     inside = [(q - a, r, alts) for q, r, alts in window.known if a <= q and q + len(r) <= b]
     changing = sorted({f'{window.start + a + q} {r}>{x}' for q, r, alts in inside for x in alts
                        if any(variant_changes_sites(enz, amp, q, r, x, model.resolution_bp)
-                              for amp in (refamp, altamp))},
+                              for enz in enzymes for amp in (refamp, altamp))},
                       key=lambda text: int(text.split()[0]))
     if changing and params['exclude_background_sites']:
         counters['excluded_background_site'] += 1
         return None
-    return dict(record, **scores, enzyme=enz.__name__, _enz=enz,
-                site=enzyme_site_string(enz),
+    first = enzymes[0]
+    names = [enz.__name__ for enz in enzymes]
+    sites = [enzyme_site_string(enz) for enz in enzymes]
+    suppliers = enzyme_suppliers_human(first)
+    extra = {}
+    if len(enzymes) == 2:
+        extra = dict(_enz2=enzymes[1], enzyme_1=names[0], enzyme_2=names[1], site_1=sites[0], site_2=sites[1],
+                     reaction_compatibility='unconfirmed')
+        reason += '. Совместимость условий не подтверждена'
+        suppliers = '; '.join(f'{enz.__name__}: {enzyme_suppliers_human(enz)}' for enz in enzymes)
+    return dict(record, **scores, **extra, enzyme=' + '.join(names), _enz=first,
+                site=' + '.join(sites),
                 pattern='gain/loss' if len(cr) != len(ca) else 'shift',
                 frags_ref=frags_to_str(fr), frags_alt=frags_to_str(fal),
-                diag_delta_bp=actual_delta, suppliers=enzyme_suppliers_human(enz),
+                diag_delta_bp=actual_delta, suppliers=suppliers,
                 primer_site=primer_site,
                 background_variants=len(inside) if run.background is not None else None,
                 background_site_variants='; '.join(changing),
@@ -1376,13 +1413,77 @@ def _natural_hits(run: _Run, window: _Window, pairs: list) -> list:
     return hits
 
 
+def _double_cut_maps(run, window, ref, alt, potential):
+    """Keep usable cuts, resolving allele-dependent maps before common partners."""
+    maps, diagnostic = {}, {}
+    limit = run.params['max_cuts']
+    for enzyme in potential:
+        run.check_cancel()
+        cr = _enzyme_cuts(run, window, enzyme, ref)
+        if cr is None or len(cr) - 2 > limit:
+            continue
+        ca = _enzyme_cuts(run, window, enzyme, alt)
+        if ca is None or len(ca) - 2 > limit:
+            continue
+        if len(cr) > 2 or len(ca) > 2:
+            maps[enzyme] = frozenset(cr), frozenset(ca)
+            if cr != ca:
+                diagnostic[enzyme] = maps[enzyme]
+    if diagnostic:
+        for enzyme in run.known_cut_enzymes:
+            if enzyme in potential:
+                continue
+            run.check_cancel()
+            cuts = _enzyme_cuts(run, window, enzyme, ref)
+            if cuts is not None and 0 < len(cuts) - 2 <= limit:
+                common = frozenset(cuts)
+                maps[enzyme] = common, common
+    return maps, diagnostic
+
+
+def _double_hits(run, window, pairs):
+    """Try SNP-dependent cut maps with every productive partner on the same amplicon."""
+    counters = run.counters
+    counters['double_snps'] += 1
+    enzymes = run.known_cut_enzymes
+    # Preserve catalog order when logging errors, with constant-time membership.
+    potential = dict.fromkeys(snp_site_enzymes(enzymes, window.seq, window.altseq, window.off))
+    hits = []
+    for pair in pairs:
+        run.check_cancel()
+        a, b = pair['start0'], pair['end0']
+        ref, alt = window.seq[a:b], window.altseq[a:b]
+        if set(ref + alt) - set('ACGT'):
+            continue
+        counters['double_amplicons'] += 1
+        counters['double_pairs_possible'] += len(enzymes) * (len(enzymes) - 1) // 2
+        record = _amplicon_record(window, pair, a, b, design='double_digest')
+        maps, diagnostic = _double_cut_maps(run, window, ref, alt, potential)
+        for first, (r1, a1) in diagnostic.items():
+            for second, (r2, a2) in maps.items():
+                run.check_cancel()
+                if second in diagnostic and first.__name__ >= second.__name__:
+                    continue
+                if (r1 <= r2 and a1 <= a2) or (r2 <= r1 and a2 <= a1):
+                    continue
+                cr, ca = r1 | r2, a1 | a2
+                if cr == ca or max(len(cr), len(ca)) - 2 > run.params['max_cuts']:
+                    continue
+                counters['double_pairs_scored'] += 1
+                members = tuple(sorted((first, second), key=str))
+                hit = _score_digest(run, window, members, sorted(cr), sorted(ca), ref, alt, record, a, b)
+                if hit is not None:
+                    hits.append(hit)
+    return hits
+
+
 def _dcaps_hits(run: _Run, window: _Window) -> list:
     """dCAPS assays: a mismatch primer next to the SNP creates the site in one allele."""
     params, counters, seq, off = run.params, run.counters, window.seq, window.off
     mask, raw, excluded = params['mask_repeats'], window.raw, window.excluded
     hits = []
     counters['dcaps_snps'] += 1
-    designs = dcaps_mismatch_sets(run.dcaps_enzymes, seq, off, window.ref, window.alt, params['dcaps_mismatches'])
+    designs = dcaps_mismatch_sets(run.known_cut_enzymes, seq, off, window.ref, window.alt, params['dcaps_mismatches'])
     ordered = sorted(designs.items(), key=lambda item: (len(item[0][1]), -len(item[1]), item[0]))
     for (side, changes), design_enzymes in ordered[:DCAPS_MAX_DESIGNS]:
         run.check_cancel()
@@ -1443,7 +1544,7 @@ def _snp_records(run: _Run, window: _Window, hits: list, failure: Optional[dict]
     preferred = set(params['lab_enzymes']) if params.get('enzyme_mode') == 'prefer' else set()
     hits.sort(key=lambda h: _order(h, preferred))
     counters['candidates'] += len(hits)
-    counters['candidate_sites'] += len({site_key(h['_enz']) for h in hits})
+    counters['candidate_sites'] += len({_hit_sites(h) for h in hits})
     if params['group_isoschizomers']:
         hits = group_by_site(hits, preferred)
     counters['variants_with_candidates'] += bool(hits)
@@ -1475,6 +1576,8 @@ class _Search:
     records: Optional[list] = None   # final rows of an SNP that ended early
     hits: list = field(default_factory=list)
     failure: Optional[dict] = None
+    pairs: list = field(default_factory=list)
+    double_tried: bool = False
     dcaps_tried: bool = False
     unspecific: int = 0              # assays removed by the specificity check
 
@@ -1495,6 +1598,11 @@ def _search_snp(run: _Run, fa, chrom: str, mapped_id: str, pos: int, ref: str, a
     window.base['pairs_evaluated'] = len(pairs) if run.use_primer3 else 0
     run.counters['pairs_evaluated'] += window.base['pairs_evaluated']
     search.hits = _natural_hits(run, window, pairs)
+    if run.params['double_digest'] and pairs and len(run.known_cut_enzymes) >= 2:
+        search.pairs = pairs
+        if not any(h['genotype_quality'] == 'robust' for h in search.hits):
+            search.hits += _double_hits(run, window, pairs)
+            search.double_tried = True
     if run.dcaps == 'always' or (run.dcaps == 'fallback'
                                  and not any(h['genotype_quality'] == 'robust' for h in search.hits)):
         search.hits += _dcaps_hits(run, window)
@@ -1502,12 +1610,26 @@ def _search_snp(run: _Run, fa, chrom: str, mapped_id: str, pos: int, ref: str, a
     return search
 
 
-def _scan_genome(run: _Run, hits: list) -> None:
+def _specificity_key(hit):
+    return (hit['primers_left'].upper(), hit['primers_right'].upper(),
+            (hit['mapped_id'], hit['amplicon_start'] - 1, hit['amplicon_end']))
+
+
+def _scan_genome(run: _Run, hits: list, checked: dict) -> None:
     """Look up the primers of the assays in the whole genome and write the result into each assay.
 
     Sets primer_sites_left/right, offtarget_products, offtarget_sizes and the private
     '_unspecific' (a product elsewhere, or a primer inside a repeat)."""
     params = run.params
+    pending = []
+    for hit in hits:
+        run.check_cancel()
+        key = _specificity_key(hit)
+        if key in checked:
+            hit.update(checked[key])
+        else:
+            pending.append(hit)
+    hits = pending
     primers = sorted({hit[key].upper() for hit in hits for key in ('primers_left', 'primers_right')})
     if not primers:
         return
@@ -1533,11 +1655,9 @@ def _scan_genome(run: _Run, hits: list) -> None:
         # "More than the limit" for a primer inside a repeat: its list of sites is cut.
         return specificity.MAX_SITES + 1 if entry.saturated else len(entry.sites)
 
-    checked = {}        # the assays of one primer pair share the answer
     for hit in hits:
         run.check_cancel()
-        left, right = ((hit.get(key) or '').upper() for key in ('primers_left', 'primers_right'))
-        intended = (hit['mapped_id'], hit['amplicon_start'] - 1, hit['amplicon_end'])
+        left, right, intended = _specificity_key(hit)
         answer = checked.get((left, right, intended))
         if answer is None:
             if left not in sites or right not in sites:
@@ -1570,12 +1690,26 @@ def _drop_unspecific(run: _Run, search: _Search) -> None:
 
 
 def _check_specificity(run: _Run, searches: list) -> None:
-    """One pass over the genome for the primers of all assays; a second one for the dCAPS
-    assays of SNPs whose robust assays with a natural site were all removed."""
+    """Scan in batches and reopen each fallback stage if exclusion removed its predecessor."""
     pending = [search for search in searches if search.records is None]
-    _scan_genome(run, [hit for search in pending for hit in search.hits])
+    checked = {}
+    _scan_genome(run, [hit for search in pending for hit in search.hits], checked)
     for search in pending:
         _drop_unspecific(run, search)
+    # A robust single may have been excluded. An explicitly requested dCAPS
+    # hit is independent of the decision to try the natural double digest.
+    retry_double = [s for s in pending if s.pairs and not s.double_tried and
+                    not any(h.get('design') == 'natural' and h['genotype_quality'] == 'robust' for h in s.hits)]
+    added = []
+    for search in retry_double:
+        extra = _double_hits(run, search.window, search.pairs)
+        search.double_tried = True
+        search.hits.extend(extra)
+        added.extend(extra)
+    if added:
+        _scan_genome(run, added, checked)
+        for search in retry_double:
+            _drop_unspecific(run, search)
     retry = [search for search in pending if run.dcaps == 'fallback' and not search.dcaps_tried
              and not any(hit['genotype_quality'] == 'robust' for hit in search.hits)]
     added = []
@@ -1588,7 +1722,7 @@ def _check_specificity(run: _Run, searches: list) -> None:
         search.hits += extra
         added += extra
     if added:
-        _scan_genome(run, added)
+        _scan_genome(run, added, checked)
         for search in retry:
             _drop_unspecific(run, search)
     if run.specificity == 'exclude':
@@ -1614,7 +1748,8 @@ def run_analysis(params, status_cb=None, progress_cb=None, cancel_cb=None, repor
     report['parameters'] = dict(params)
     report['scoring_model'] = MODEL_VERSION
     counters = report.setdefault('summary', {})
-    counters.update(pairs_evaluated=0, enzyme_evaluations=0, enzyme_errors=0,
+    counters.update(pairs_evaluated=0, enzyme_evaluations=0, enzyme_errors=0, digest_searches=0,
+                    double_snps=0, double_amplicons=0, double_pairs_possible=0, double_pairs_scored=0,
                     ambiguous_templates=0, genotype_rejected=0, candidates=0,
                     variants_with_candidates=0, variants_with_robust_candidates=0,
                     candidate_sites=0, pairs_near_end=0, excluded_primer_site=0,
@@ -1648,7 +1783,7 @@ def run_analysis(params, status_cb=None, progress_cb=None, cancel_cb=None, repor
     enzymes.sort(key=lambda e: e.__name__)
     run = _Run(params=params, model=model, report=report, counters=counters, enzymes=enzymes,
                # Without a known cut position the fragment lengths are unknown.
-               dcaps_enzymes=[e for e in enzymes if not e.is_unknown()],
+               known_cut_enzymes=[e for e in enzymes if not e.is_unknown()],
                use_primer3=use_primer3,
                # Primer pairs and the enzyme are chosen together; without Primer3 the whole window is the amplicon.
                mode='joint' if use_primer3 else 'window',

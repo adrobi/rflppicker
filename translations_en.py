@@ -7,6 +7,12 @@ phrases come before the shorter ones they contain.
 """
 
 EN = {
+    'Двойная рестрикция': 'Double digest',
+    'Совместимость условий не подтверждена': 'Reaction compatibility unconfirmed',
+    'Подбирать два фермента, если один не дал надёжной схемы': 'Try enzyme pairs when no single-enzyme assay is robust',
+    'Первый фермент': 'First enzyme', 'Второй фермент': 'Second enzyme',
+    'Сайт первого фермента': 'First recognition site', 'Сайт второго фермента': 'Second recognition site',
+    'Совместимость условий реакции': 'Reaction compatibility',
     'низкая': 'low',
     'чувствителен': 'sensitive',
     'нет данных': 'no data',
@@ -641,6 +647,7 @@ Download a reference genome from NCBI into the genoms folder next to the program
 }
 
 CORE = [
+    (r'Совместимость условий не подтверждена', 'Reaction compatibility unconfirmed'),
     (r'Неизвестные ферменты:', 'Unknown enzymes:'),
     (r'Список ферментов пуст', 'The enzyme list is empty'),
     (r'список ферментов пуст', 'the enzyme list is empty'),

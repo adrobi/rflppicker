@@ -55,6 +55,8 @@ def build_parser():
     search.add_argument('--delta', type=int, help=t('Диагностическая дельта, п.н.'))
     search.add_argument('--max-cuts', dest='max_cuts', type=int, metavar='N',
                         help=t('Макс. число разрезов в ампликоне'))
+    search.add_argument('--double-digest', action=argparse.BooleanOptionalAction,
+                        help=t('Подбирать два фермента, если один не дал надёжной схемы'))
     search.add_argument('--gain-loss-only', dest='gain_loss_only', action=argparse.BooleanOptionalAction,
                         help=t('Только появление/исчезновение сайта'))
     search.add_argument('--suppliers', type=lambda s: [part.strip() for part in s.split(',') if part.strip()],

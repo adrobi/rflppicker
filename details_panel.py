@@ -139,10 +139,12 @@ class DetailsPanel(QWidget):
         self.card_details = QLabel()
         self.card_details.setWordWrap(True)
         layout.addWidget(self.card_details)
-        self.product_picker = QComboBox()
-        self.product_picker.setAccessibleName(t('Препарат фермента'))
-        self.product_picker.currentIndexChanged.connect(self._choose_product)
-        layout.addWidget(self.product_picker)
+        self.product_picker, self.second_product_picker = QComboBox(), QComboBox()
+        for picker in (self.product_picker, self.second_product_picker):
+            picker.setAccessibleName(t('Препарат фермента'))
+            picker.currentIndexChanged.connect(self._choose_product)
+            layout.addWidget(picker)
+        self.second_product_picker.hide()
         self.product_details = self._label('product_details')
         self.product_details.setWordWrap(True)
         layout.addWidget(self.product_details)
@@ -328,16 +330,17 @@ class DetailsPanel(QWidget):
     def _fill_card(self):
         viewed = self._viewed_summary()
         scheme = viewed.scheme
-        products = PRODUCTS.get(scheme.get('enzyme'), ())
-        self.product_picker.blockSignals(True)
-        self.product_picker.clear()
-        self.product_picker.addItem(t('Выберите препарат'), None)
-        for product in products:
-            self.product_picker.addItem(product.label, product.number)
-        index = self.product_picker.findData(scheme.get('enzyme_product'))
-        self.product_picker.setCurrentIndex(max(0, index))
-        self.product_picker.setVisible(len(products) > 1)
-        self.product_picker.blockSignals(False)
+        for picker, name, key in ((self.product_picker, scheme.get('enzyme_1') or scheme.get('enzyme'), 'enzyme_product'),
+                                  (self.second_product_picker, scheme.get('enzyme_2'), 'enzyme_product_2')):
+            products = PRODUCTS.get(name, ())
+            picker.blockSignals(True)
+            picker.clear()
+            picker.addItem(t('Выберите препарат'), None)
+            for product in products:
+                picker.addItem(product.label, product.number)
+            picker.setCurrentIndex(max(0, picker.findData(scheme.get(key))))
+            picker.setVisible(len(products) > 1)
+            picker.blockSignals(False)
         self._show_product(scheme)
         for (name, sequence, info), side, primer, tm in zip(
                 self._card_rows, ('F', 'R'), ('primers_left', 'primers_right'), ('tm_left', 'tm_right')):
@@ -349,6 +352,10 @@ class DetailsPanel(QWidget):
                          if text and tm_value is not None else '')
         details = [t('Продукт {size} п.н. · {enzyme} ({site})', size=scheme.get('product_size'),
                      enzyme=scheme.get('enzyme'), site=scheme.get('site'))]
+        if scheme.get('enzyme_2'):
+            details.extend(f"{label}: {scheme.get(key) or '—'}" for label, key in
+                           [('REF/REF', 'bands_ref_ref'), ('REF/ALT', 'bands_ref_alt'), ('ALT/ALT', 'bands_alt_alt')])
+            details.append(t('Совместимость условий не подтверждена'))
         if scheme.get('suppliers'):
             details.append(t('Поставщики: {suppliers}', suppliers=scheme['suppliers']))
         if scheme.get('design') == 'dCAPS':
@@ -369,6 +376,8 @@ class DetailsPanel(QWidget):
     def _choose_product(self):
         scheme = self._viewed_summary().scheme
         scheme['enzyme_product'] = self.product_picker.currentData()
+        if scheme.get('enzyme_2'):
+            scheme['enzyme_product_2'] = self.second_product_picker.currentData()
         self._show_product(scheme)
 
     def _copy_order(self):

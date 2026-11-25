@@ -23,7 +23,7 @@ ADVANCED_PARAMS = ('min_frag', 'max_frag', 'delta', 'gel_resolution_bp', 'gel_re
                    'exclude_primer_sites', 'mask_repeats', 'exclude_background_sites',
                    'specificity_mismatches', 'specificity_max_product', 'dcaps_mismatches',
                    'dcaps_tm_max', 'dcaps_prod_min', 'dcaps_prod_max', 'dcaps_delta',
-                   'use_primer3', 'gain_loss_only', 'skip_norm', 'no_save_norm')
+                   'use_primer3', 'double_digest', 'gain_loss_only', 'skip_norm', 'no_save_norm')
 PANEL_ERROR_KEYS = ('input_file', 'fasta', 'background_vcf', 'prod_min', 'tm_min', 'lab_enzymes')
 SUPPLIER_TITLES = {'A': 'Agilent', 'E': 'Thermo Fisher', 'F': 'Promega', 'H': 'Minotech', 'I': 'SibEnzyme',
                    'J': 'Nippon Gene', 'K': 'Takara', 'M': 'Roche', 'N': 'NEB',
@@ -248,6 +248,7 @@ _ADVANCED_FIELDS = {
     'dcaps_delta': (N_('Порог Δ, п.н.'), 'int', 1, 1000, 1,
                     N_('Только для схем dCAPS: наименьшее различие видимых полос REF и ALT; заменяет общий порог Δ.')),
     'use_primer3': ('Primer3', 'bool', 0, 0, 0, N_('Без Primer3 анализируется окно вокруг SNP.')),
+    'double_digest': (N_('Двойная рестрикция'), 'bool', 0, 0, 0, ''),
     'gain_loss_only': (N_('Только gain/loss'), 'bool', 0, 0, 0, ''),
     'skip_norm': (N_('Пропускать нормализацию'), 'bool', 0, 0, 0, N_('Отключает только перестановку REF/ALT.')),
     'no_save_norm': (N_('Не сохранять нормализацию'), 'bool', 0, 0, 0, ''),
@@ -256,7 +257,7 @@ _ADVANCED_FIELDS = {
 _ADVANCED_COLUMNS = (
     ((N_('Гель'), ('min_frag', 'max_frag', 'delta', 'gel_resolution_bp', 'gel_resolution_pct', 'gel_stress_factor')),
      (N_('Поиск'), ('flank', 'primer_pairs', 'top_results', 'max_cuts')),
-     (N_('Особые случаи'), ('use_primer3', 'gain_loss_only', 'skip_norm', 'no_save_norm'))),
+     (N_('Особые случаи'), ('use_primer3', 'double_digest', 'gain_loss_only', 'skip_norm', 'no_save_norm'))),
     ((N_('Проверки'), ('group_isoschizomers', 'snp_end_distance', 'exclude_primer_sites', 'mask_repeats',
                        'exclude_background_sites', 'specificity_mismatches', 'specificity_max_product')),
      (N_('dCAPS (праймер с несовпадением)'), ('dcaps_mismatches', 'dcaps_tm_max', 'dcaps_prod_min',

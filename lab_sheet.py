@@ -10,7 +10,7 @@ from typing import List, Tuple
 from PyQt6.QtCore import QMarginsF, QRectF, Qt
 from PyQt6.QtGui import QColor, QFont, QPageLayout, QPageSize, QPainter, QPdfWriter, QPen
 
-from enzyme_catalog import property_lines
+from enzyme_catalog import product_sections
 import palette
 import rflp_core as core
 from i18n import fmt, t
@@ -29,12 +29,17 @@ def sheet_fields(summary: SnpSummary, dcaps_mode: str) -> List[Tuple[str, str]]:
     scheme = summary.scheme or {}
     design = scheme.get('design')
     mismatches = scheme.get('primer_mismatches')
+    suppliers = scheme.get('suppliers')
+    if scheme.get('enzyme_2') and suppliers:
+        # The narrow printed column should leave room for suppliers of both enzymes.
+        suppliers = '\n'.join(part if len(part) <= 60 else part[:59].rstrip() + '…'
+                              for part in suppliers.split('; '))
     rows = [
         (t('Статус'), status_title(summary.status)),
         (t('Фермент'), scheme.get('enzyme')),
         (t('Сайт'), scheme.get('site')),
         (t('Изошизомеры'), scheme.get('isoschizomers')),
-        (t('Поставщики'), scheme.get('suppliers')),
+        (t('Поставщики'), suppliers),
         (t('Тип схемы'), t(_DESIGN_TITLES[design]) if design in _DESIGN_TITLES else design),
         (t('Несовпадения в праймере'), mismatches),
         (t('Продукт, п.н.'), scheme.get('product_size')),
@@ -153,8 +158,15 @@ def draw_sheet(page: _Page, summary: SnpSummary, payload, message: str, dcaps_mo
     page.y = max(left_bottom, top + gel_height) + 8
     page.rule()
 
-    for line in property_lines(summary.scheme, map_panel.allele_sequences() if payload else None):
-        page.text(line, 8.5)
+    sections = product_sections(summary.scheme, map_panel.allele_sequences() if payload else None)
+    top = bottom = page.y
+    column = page.width / len(sections)
+    for index, lines in enumerate(sections):
+        page.y = top
+        for line in lines:
+            page.text(line, 8.5, x=index * column, width=column - (8 if len(sections) == 2 else 0))
+        bottom = max(bottom, page.y)
+    page.y = bottom
     page.gap(4)
     page.rule()
 

@@ -253,6 +253,13 @@ line: `python rflp_cli.py --download-genome GCF_016772045.1`.
 
 ## Parameters
 
+In the 2.0.0 development version, **Double digest** is enabled by default.
+When no single natural enzyme gives a robust assay after the enabled checks,
+the program tries pairs on the same amplicons before fallback dCAPS.
+Results include both enzymes and the expected bands for all three genotypes.
+Reaction compatibility is unconfirmed. Use `--no-double-digest` or clear
+**Double digest** under **Advanced** to reproduce the single-enzyme search.
+
 The flank is the number of bases on each side of the SNP. The fragment range
 sets the limits of band visibility: fragments outside the range are hidden in
 the model but kept in the full fragment lists.

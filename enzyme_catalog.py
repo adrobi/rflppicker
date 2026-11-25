@@ -51,9 +51,22 @@ PRODUCTS = {
 
 def property_lines(scheme, sequences):
     """Identical localized product data for the card and its printed sheet."""
-    name = scheme.get('enzyme')
+    return [line for group in product_sections(scheme, sequences) for line in group]
+
+
+def product_sections(scheme, sequences):
+    names = (scheme['enzyme_1'], scheme['enzyme_2']) if scheme.get('enzyme_2') else (scheme.get('enzyme'),)
+    sections = []
+    for name, key in zip(names, ('enzyme_product', 'enzyme_product_2')):
+        lines = _product_lines(name, scheme.get(key), sequences, scheme.get('status'))
+        if len(names) == 2 and not lines[0].startswith(name):
+            lines[0] = f'{name} · {lines[0]}'
+        sections.append(lines)
+    return sections
+
+
+def _product_lines(name, selected, sequences, status):
     products = PRODUCTS.get(name, ())
-    selected = scheme.get('enzyme_product')
     product = next((p for p in products if p.number == selected), None)
     if len(products) == 1 and selected is None:
         product = products[0]
@@ -76,7 +89,7 @@ def property_lines(scheme, sequences):
         enzyme = next((e for e in AllEnzymes if e.__name__ == name), None)
         if enzyme and any('CG' in seq[max(0, match.start()-1):match.start()+enzyme.size+1]
                           for seq in sequences if seq for match in enzyme.compsite.finditer(seq)):
-            if scheme.get('status') == 'window_only':
+            if status == 'window_only':
                 lines.append(t('Сайт перекрывает CpG. Для геномной ДНК учитывайте метилирование образца.'))
             else:
                 lines.append(t('Сайт перекрывает CpG. Обычный ПЦР-продукт не сохраняет метилирование матрицы.'))

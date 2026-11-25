@@ -2,6 +2,9 @@
 from i18n import N_
 
 LABELS = {
+    'enzyme_1': N_('Первый фермент'), 'enzyme_2': N_('Второй фермент'),
+    'site_1': N_('Сайт первого фермента'), 'site_2': N_('Сайт второго фермента'),
+    'reaction_compatibility': N_('Совместимость условий реакции'),
     'assay_rank': N_('Ранг для SNP'), 'primer_pair_index': N_('Пара Primer3 №'),
     'primer_pair_penalty': N_('Штраф Primer3'), 'pairs_evaluated': N_('Проверено пар'),
     'genotype_quality': N_('Различимость генотипов'),

@@ -241,7 +241,7 @@ class PrimerGraphicPanel(QWidget):
                primer_left_start: Optional[int] = None, primer_left_len: Optional[int] = None,
                primer_right_start: Optional[int] = None, primer_right_len: Optional[int] = None,
                variant_str: str = "", enzyme_name: str = "", pattern: str = "",
-               frags_ref: str = "", frags_alt: str = ""):
+               frags_ref: str = "", frags_alt: str = "", enzyme_names=()):
         payload = dict(locals())
         payload.pop("self")
         self._last_payload = payload
@@ -317,18 +317,26 @@ class PrimerGraphicPanel(QWidget):
         alt_sequence, alt_error = self._make_alt_seq(sequence, offset, ref, alt)
         left, right = ((payload[key] or "").upper().strip() for key in ("primer_left", "primer_right"))
         left_pos, right_pos = self._map_primer_positions(sequence, left, right, payload["primer_left_start"], payload["primer_left_len"], payload["primer_right_start"], payload["primer_right_len"])
-        enzyme = self._enzyme_by_name(payload["enzyme_name"])
+        names = payload["enzyme_names"] or (payload["enzyme_name"],)
+        enzymes = [self._enzyme_by_name(name) for name in names]
+        self._digest_available = all(enzymes)
+
+        def digest(seq):
+            if not self._digest_available:
+                return [0, len(seq)]
+            return sorted({cut for enzyme in enzymes for cut in cut_positions(enzyme, seq)})
+
         self._seq_ref, self._seq_alt = sequence, alt_sequence
         self._primers = left, right
         self._primer_positions = left_pos, right_pos
-        self._cuts_ref = cut_positions(enzyme, sequence) if enzyme else [0, length]
-        self._cuts_alt = cut_positions(enzyme, alt_sequence) if enzyme and alt_sequence is not None else ([0, length] if alt_sequence else [])
+        self._cuts_ref = digest(sequence)
+        self._cuts_alt = digest(alt_sequence) if alt_sequence else []
         self._warnings = [alt_error] if alt_error else []
         if left and left_pos < 0:
             self._warnings.append(t("Левый праймер не найден в ампликоне."))
         if right and right_pos < 0:
             self._warnings.append(t("Сайт посадки правого праймера не найден в ампликоне."))
-        if payload["enzyme_name"] and enzyme is None:
+        if payload["enzyme_name"] and not self._digest_available:
             self._warnings.append(t("Фермент не найден в базе Biopython; разрезы не показаны."))
         if payload["genome_end"] - payload["genome_start"] + 1 != length:
             self._warnings.append(t("Длина последовательности не совпадает с геномными координатами."))
@@ -413,7 +421,7 @@ class PrimerGraphicPanel(QWidget):
                 if right_x - left_x > text_width + 12:
                     self._draw_text((left_x + right_x - text_width) / 2, y + 7, value, 10, True, color=color)
             detail = " + ".join(str(value) for value in fragments)
-            summary = (t("Фрагменты: {detail} п.н.", detail=detail) if enzyme
+            summary = (t("Фрагменты: {detail} п.н.", detail=detail) if self._digest_available
                        else t("Разрезы не рассчитаны: фермент не выбран или неизвестен."))
             summary_item = self._draw_text(x0, y + 36, summary, 9, color=c["muted"], width=1040)
             summary_item.setToolTip(summary)
@@ -480,7 +488,7 @@ class PrimerGraphicPanel(QWidget):
         if left or right:
             lines.append("<pre>" + t("Левый  5′→3′: {left}\nПравый 5′→3′: {right}", left=html.escape(left) or '—',
                                      right=html.escape(right) or '—') + "</pre>")
-        if payload["enzyme_name"] and self._enzyme_by_name(payload["enzyme_name"]):
+        if self._digest_available:
             for label, cuts in (("REF", self._cuts_ref), ("ALT", self._cuts_alt)):
                 if cuts:
                     fragments = " + ".join(str(b - a) for a, b in zip(cuts, cuts[1:]))
@@ -886,6 +894,7 @@ def payload_for_scheme(scheme: dict, fasta_path: str, params: dict, fasta=None) 
         primer_right_start=_safe_int(scheme.get("primer_right_start")),
         primer_right_len=_safe_int(scheme.get("primer_right_len")),
         variant_str=str(scheme.get("variant") or "").strip(), enzyme_name=str(scheme.get("enzyme") or "").strip(),
+        enzyme_names=(scheme["enzyme_1"], scheme["enzyme_2"]) if scheme.get("enzyme_2") else (),
         pattern=str(scheme.get("pattern") or "").strip(), frags_ref=str(scheme.get("frags_ref") or "").strip(),
         frags_alt=str(scheme.get("frags_alt") or "").strip(),
         gel=dict(min_visible=params.get("min_frag", 80), max_visible=params.get("max_frag", 800)),
