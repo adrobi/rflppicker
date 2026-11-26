@@ -15,10 +15,14 @@ ROOT = Path(__file__).resolve().parent.parent
 REPOSITORY = 'https://github.com/adrobi/rflppicker'
 
 
+def app_version() -> str:
+    source = (ROOT / 'rflp_core.py').read_text(encoding='utf-8')
+    return re.search(r'^APP_VERSION = "([^"]+)"', source, re.MULTILINE).group(1)
+
+
 def version_of_tag(tag: str) -> str:
     """'1.5.0' for the tag 'v1.5.0'; exits when the program has another version."""
-    source = (ROOT / 'rflp_core.py').read_text(encoding='utf-8')
-    version = re.search(r'^APP_VERSION = "([^"]+)"', source, re.MULTILINE).group(1)
+    version = app_version()
     if tag != 'v' + version:
         sys.exit(f'The tag {tag} does not match APP_VERSION {version} in rflp_core.py')
     return version
@@ -50,6 +54,15 @@ def notes(changelog: str, version: str, checksums: dict) -> str:
 
 def main(argv) -> int:
     tag, *archives = argv
+    if tag == '--check':
+        version = version_of_tag(archives[0]) if archives else app_version()
+        if not section((ROOT / 'CHANGELOG.md').read_text(encoding='utf-8'), version):
+            sys.exit(f'CHANGELOG.md section for {version} is empty')
+        for name in ('README.md', 'README.ru.md'):
+            with (ROOT / name).open(encoding='utf-8') as readme:
+                if readme.readline().strip() != f'# RFLP Picker {version}':
+                    sys.exit(f'{name} does not describe release {version}')
+        return 0
     version = version_of_tag(tag)
     checksums = {Path(name).name: hashlib.sha256(Path(name).read_bytes()).hexdigest() for name in archives}
     sys.stdout.reconfigure(encoding='utf-8')

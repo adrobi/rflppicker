@@ -78,6 +78,7 @@ class RsidLookupTests(unittest.TestCase):
         result = self.lookup(names={})
         resolved = self.root / 'resolved.vcf'
         write_rsid_target(resolved, result, self.fasta, self.vcf)
+        self.assertIn(f'##taxid={result.match.taxid}\n', resolved.read_text(encoding='utf-8'))
         params = dict(core.DEFAULT_PARAMS, fasta=str(self.fasta), input_file=str(resolved), use_primer3=False)
         header, rows = core.run_analysis(params)
         row = dict(zip(header, rows[0]))

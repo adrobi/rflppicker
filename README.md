@@ -1,4 +1,4 @@
-# RFLP Picker 1.6
+# RFLP Picker 2.0.0
 
 English | [Русский](README.ru.md)
 
@@ -9,6 +9,19 @@ list of SNPs and a reference genome it designs Primer3 primer pairs, finds
 restriction enzymes that tell the three genotypes apart and shows the expected
 bands on a virtual gel. The program compares REF and ALT on the reference FASTA,
 reports fragment sizes and draws a map of the amplicon.
+
+## What's new in 2.0.0
+
+- Read VCF targets with region and sample filters, including indels and records
+  with multiple ALT alleles. Look up rsIDs in EVA or a local VCF and save
+  matches verified against the reference genome.
+- Search double digests and, for biallelic SNPs, fallback allele-specific PCR.
+  The gel model supports agarose concentration, size markers and partial digestion.
+- Use a lab enzyme list and select preparations for which the catalog records
+  reaction conditions. Save an analysis as a `.rflp` project to reopen its results
+  and export laboratory sheets without the original FASTA.
+- Read BGZF FASTA and use a current tabix index for the background VCF. When the
+  available indices are older than the VCF, the program reads it sequentially.
 
 ## What's new in 1.6
 
@@ -225,15 +238,16 @@ Both archives are built by GitHub Actions from the version tag
 
 In the window, choose:
 
-- a variants file (CSV, TSV or TXT) with the columns `chrom`, `pos`, `ref`, `alt`;
+- a VCF (plain or compressed) or a CSV, TSV or TXT with the columns `chrom`, `pos`, `ref`, `alt`;
 - a reference genome FASTA: the “Genome” list holds recent genomes and FASTA files
   from the `genoms/` folder next to the program, “Choose a file…” opens any other
   and “Download a genome…” fetches one from NCBI (see [Downloading a genome](#downloading-a-genome));
 - if needed, a chromosome name mapping file: the program takes
   `names/<genome name>.txt` by itself, another file is chosen with the “change” link.
 
-Single-base SNPs are supported: one character in `REF` and one in `ALT`, only
-`A`, `C`, `G`, `T`. Positions in the file start at 1. Quoted CSV and UTF-8 with
+SNPs, indels and multiple ALT alleles are supported when their sequences are
+given in `A`, `C`, `G`, `T`. The results flag symbolic ALT alleles omitted
+from an analysis. Positions start at 1. Quoted CSV and UTF-8 with
 BOM are supported. Invalid lines are saved to `results/normalize/*.rejected.tsv`
 with the original line number and the reason when saving of normalization is on;
 in any case the reasons are shown in the log and in the SNP list.
@@ -275,7 +289,7 @@ Use `--local-vcf` for an offline lookup, and `--assembly-report` if it is needed
 to match sequence accessions. A VCF without build or species metadata is treated
 as a source selected by the user for the specified assembly and species.
 
-In the 2.0.0 development version, **Double digest** is enabled by default.
+**Double digest** is enabled by default.
 When no single natural enzyme gives a robust assay after the enabled checks,
 the program tries pairs on the same amplicons before fallback dCAPS.
 Results include both enzymes and the expected bands for all three genotypes.
@@ -399,8 +413,9 @@ and the search) to the `results/` folder. Excel sheets:
 an assay: the enzyme, the primers, the expected bands, the virtual gel, the
 amplicon map and fields to fill in by hand (date, operator, gel number, a frame
 for the gel photo). The “PDF sheet” button of the primer card makes the sheet of
-the assay on screen. Reaction conditions are not printed: the program does not
-know them.
+the assay on screen. The sheet includes any reaction conditions recorded in the
+catalog for the selected preparation. Compatibility of double-digest conditions
+remains unconfirmed.
 
 ## Project structure
 

@@ -572,6 +572,7 @@ def normalize_variants_for_rflp(
     cancel_cb=None,
     vcf_region='',
     vcf_samples=(),
+    accepted_lines=None,
 ) -> Tuple[List[Tuple[str, int, str, str]], List[str], str, str]:
     """
     Нормализация вариантов:
@@ -625,6 +626,8 @@ def normalize_variants_for_rflp(
                         report.setdefault('rejected', []).append({'line': line_no, 'chrom': chrom, 'pos': pos, 'ref': ref, 'alt': alt, 'reason': reason, 'details': details})
                 else:
                     valid.append((chrom, pos, ref, alt))
+                    if accepted_lines is not None:
+                        accepted_lines.append(line_no)
                 if progress_cb:
                     progress_cb(index, max(1, total))
         finally:
@@ -700,6 +703,8 @@ def normalize_variants_for_rflp(
 
         if ref_matches(mapped_chrom, pos, ref):
             cleaned.append((orig_chrom, pos, ref, alt))
+            if accepted_lines is not None:
+                accepted_lines.append(line_no)
             stats["kept"] += 1
             continue
 
@@ -712,6 +717,8 @@ def normalize_variants_for_rflp(
         alt_base = alt.replace(",", "")   # "G," is read as G, as before
         if alt_base == refbase:
             cleaned.append((orig_chrom, pos, alt_base, ref))
+            if accepted_lines is not None:
+                accepted_lines.append(line_no)
             stats["kept_swapped_snp"] += 1
             continue
 
@@ -843,8 +850,8 @@ def primer_site_label(enzyme, amplicon: str, left_len, right_len) -> str:
 
 
 def load_background_variants(path: str, regions: Dict[str, list], names: Optional[dict] = None,
-                             cancel_cb=None) -> Tuple[Dict[str, list], int]:
-    """Known variants of a VCF that lie inside ``regions``, using tabix when present.
+                             cancel_cb=None, *, fasta_contigs=None) -> Tuple[Dict[str, list], int]:
+    """Known variants of a VCF that lie inside ``regions``, using a current tabix index when present.
 
     ``regions`` maps FASTA contigs to 1-based inclusive ``(start, end)``
     windows. VCF contig names are translated with ``names`` (the chromosome
@@ -865,11 +872,11 @@ def load_background_variants(path: str, regions: Dict[str, list], names: Optiona
     found = {contig: [] for contig in regions}
     records = 0
     contigs = {}  # VCF contig name -> FASTA contig
+    has_contig = (fasta_contigs if fasta_contigs is not None else regions).__contains__
 
     def map_contig(name):
         if name not in contigs:
-            contigs[name] = next(
-                (c for c in (names.get(name, name), 'chr' + name, name.removeprefix('chr')) if c in merged), '')
+            contigs[name] = resolve_input_contig(name, names, has_contig, from_vcf=True)
         return contigs[name]
 
     def windows(name):
@@ -1846,6 +1853,7 @@ class _Search:
     """One SNP after its assays were found and before they are ranked."""
     window: _Window
     masked: bool                     # the window has soft-masked bases
+    source_line: int = 0
     records: Optional[list] = None   # final rows of an SNP that ended early
     hits: list = field(default_factory=list)
     failure: Optional[dict] = None
@@ -2131,6 +2139,8 @@ def run_analysis(params, status_cb=None, progress_cb=None, cancel_cb=None, repor
                     dcaps_no_primer=0, dcaps_pairs=0, dcaps_candidates=0,
                     specificity_scans=0, specificity_primers=0, excluded_offtarget=0)
 
+    accepted_lines = []
+    row_lines = report['result_source_lines'] = []
     cleaned, _, _, _ = normalize_variants_for_rflp(
         fasta_path=params['fasta'], input_path=params['input_file'],
         names2_path=params.get('names2_file', ''), block_bp=100_000,
@@ -2138,7 +2148,7 @@ def run_analysis(params, status_cb=None, progress_cb=None, cancel_cb=None, repor
         skip_norm=params.get('skip_norm', False),
         save_files=not params.get('no_save_norm', True), report=report,
         progress_cb=progress_cb, cancel_cb=cancel_cb,
-        vcf_region=params['vcf_region'], vcf_samples=params['vcf_samples'],
+        vcf_region=params['vcf_region'], vcf_samples=params['vcf_samples'], accepted_lines=accepted_lines,
     )
     header = RESULT_HEADER
     out_rows = []
@@ -2180,7 +2190,8 @@ def run_analysis(params, status_cb=None, progress_cb=None, cancel_cb=None, repor
             for chrom, pos, ref, _ in cleaned:
                 regions.setdefault(contig_of(chrom), []).append(
                     (pos - params['flank'], pos + len(ref) - 1 + params['flank']))
-            run.background, records = load_background_variants(params['background_vcf'], regions, names, cancel_cb)
+            run.background, records = load_background_variants(
+                params['background_vcf'], regions, names, cancel_cb, fasta_contigs=fa)
             counters['background_variants_loaded'] = sum(map(len, run.background.values()))
             run.log(f"[INFO] Фоновые варианты: {counters['background_variants_loaded']} в окнах SNP "
                     f"из {records} записей VCF")
@@ -2191,11 +2202,13 @@ def run_analysis(params, status_cb=None, progress_cb=None, cancel_cb=None, repor
             if records is None:
                 records = _snp_records(run, search.window, search.hits, search.failure, search.unspecific)
             out_rows.extend([record.get(key) for key in header] for record in records)
+            row_lines.extend([search.source_line] * len(records))
 
         searches = []
         for vi, (chrom, pos, ref, alt) in enumerate(cleaned, 1):
             run.check_cancel()
             search = _search_snp(run, fa, chrom, contig_of(chrom), pos, ref, alt)
+            search.source_line = accepted_lines[vi - 1]
             masked_windows += search.masked
             if run.specificity == 'off':
                 emit(search)             # nothing to wait for

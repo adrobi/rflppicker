@@ -257,6 +257,29 @@ def rsid_command(argv):
         return 2
 
 
+def check_output_paths(parser, args):
+    protected = {flag: Path(value).resolve() for flag, value in (
+        ('--variants', args.variants), ('--fasta', args.fasta), ('--names', args.names2_file),
+        ('--background-vcf', args.background_vcf), ('--enzyme-list', args.enzyme_list),
+    ) if value}
+    for key, target in (('--out', args.out), ('--rejected', args.rejected)):
+        if not target:
+            continue
+        target = Path(target).expanduser().absolute()
+        if not target.parent.is_dir():
+            parser.error(t('{key}: папка не существует: {folder}', key=key, folder=target.parent))
+        if target.is_dir():
+            parser.error(t('{key}: это папка, а не файл: {path}', key=key, path=target))
+        if not os.access(target.parent, os.W_OK):
+            parser.error(t('{key}: нет права записи в папку: {folder}', key=key, folder=target.parent))
+        resolved = target.resolve()
+        for flag, path in protected.items():
+            if resolved == path or (resolved.exists() and path.exists() and resolved.samefile(path)):
+                parser.error(t('{key}: указан тот же файл, что и в {flag}: {path}',
+                               key=key, flag=flag, path=target))
+        protected[key] = resolved
+
+
 def main(argv=None):
     # A redirected Windows console uses a legacy code page without "×", "′" etc.
     for stream in (sys.stdout, sys.stderr):
@@ -271,20 +294,11 @@ def main(argv=None):
         return rsid_command(argv)
     parser = build_parser()
     args = parser.parse_args(argv)
-    out = Path(args.out)
+    out = Path(args.out).expanduser()
     if out.suffix.lower() not in ('.csv', '.xlsx'):
         parser.error(t('--out: требуется расширение .csv или .xlsx'))
     # Before the analysis: a mistyped folder must not cost a finished run.
-    for key, target in (('--out', args.out), ('--rejected', args.rejected)):
-        if not target:
-            continue
-        target = Path(target).expanduser().absolute()
-        if not target.parent.is_dir():
-            parser.error(t('{key}: папка не существует: {folder}', key=key, folder=target.parent))
-        if target.is_dir():
-            parser.error(t('{key}: это папка, а не файл: {path}', key=key, path=target))
-        if not os.access(target.parent, os.W_OK):
-            parser.error(t('{key}: нет права записи в папку: {folder}', key=key, folder=target.parent))
+    check_output_paths(parser, args)
     try:
         params = params_from_args(args)
     except (OSError, ValueError) as exc:
@@ -333,8 +347,8 @@ def save_results(args, out, params, report, header, rows, started) -> None:
     summary = report.get('summary', {})
     # One summary per line of the variants file; the best scheme is the chosen one.
     records, _ = read_input_records(params['input_file'], vcf_region=params['vcf_region'], vcf_samples=params['vcf_samples'])
-    summaries = build_summaries(records, header, rows, report.get('rejected', []))
-    table_header, table_rows = results_table(summaries, header, rows)
+    summaries = build_summaries(records, header, rows, report.get('rejected', []), report=report)
+    table_header, table_rows = results_table(summaries, header, rows, row_lines=report.get('result_source_lines'))
     if out.suffix.lower() == '.xlsx':
         export_excel(out, table_header, table_rows, metadata={
             'app_version': core.APP_VERSION, 'scoring_model': report.get('scoring_model', core.MODEL_VERSION),
@@ -350,7 +364,7 @@ def save_results(args, out, params, report, header, rows, started) -> None:
         for item in rejected:
             names += [key for key in item if key not in names]
         names = names or ['line', 'chrom', 'pos', 'ref', 'alt', 'reason', 'details']
-        export_csv(args.rejected, names, [[item.get(name) for name in names] for item in rejected])
+        export_csv(Path(args.rejected).expanduser(), names, [[item.get(name) for name in names] for item in rejected])
 
 
 if __name__ == '__main__':

@@ -23,9 +23,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
-      - name: The tag must equal the program version and have a CHANGELOG section
-        if: github.event_name == 'push'
-        run: python tools/release_notes.py "$BUILD_NAME" > /dev/null
+      - name: Verify the version, changelog and READMEs
+        run: |
+          if [[ "$BUILD_NAME" == trial ]]; then
+            python tools/release_notes.py --check
+          else
+            python tools/release_notes.py --check "$BUILD_NAME"
+          fi
 
   windows:
     needs: check
@@ -49,16 +53,21 @@ jobs:
       - name: Build
         shell: pwsh
         run: .\build_windows.ps1
-      - name: The built program starts and reaches NCBI
+      - name: Verify the packaged program and NCBI access
         shell: pwsh
+        timeout-minutes: 5
         run: |
           $exe = 'dist\RFLP-Picker\RFLP-Picker.exe'
           $window = Start-Process $exe -PassThru
           Start-Sleep -Seconds 10
           if ($window.HasExited) { throw "The program exited with code $($window.ExitCode)" }
           Stop-Process -Id $window.Id
-          $check = Start-Process $exe -ArgumentList '--check-ncbi' -Wait -PassThru
-          if ($check.ExitCode -ne 0) { throw "--check-ncbi failed with code $($check.ExitCode)" }
+          foreach ($checkArg in @('--check-runtime', '--check-ncbi')) {
+            $log = Join-Path $PWD "$checkArg.log"
+            $check = Start-Process $exe -ArgumentList $checkArg, ('"--check-log={0}"' -f $log) -Wait -PassThru
+            if (Test-Path $log) { Get-Content -Encoding utf8 $log }
+            if ($check.ExitCode -ne 0) { throw "$checkArg failed with code $($check.ExitCode)" }
+          }
       - name: Pack
         shell: pwsh
         run: Compress-Archive -Path dist\RFLP-Picker -DestinationPath "RFLP-Picker-$env:BUILD_NAME-windows-x64.zip"
@@ -81,7 +90,7 @@ jobs:
       - name: Install Qt runtime libraries
         run: |
           sudo apt-get update
-          sudo apt-get install -y libegl1 libgl1 libxkbcommon-x11-0 libxcb-cursor0
+          sudo apt-get install -y libegl1 libgl1 libxkbcommon-x11-0 libxcb-cursor0 xvfb xauth
       # build_linux.sh prefers the project environment .venv.
       - name: Install the pinned build dependencies
         run: |
@@ -93,12 +102,15 @@ jobs:
         run: .venv/bin/python -X faulthandler -m unittest discover
       - name: Build
         run: ./build_linux.sh
-      - name: The built program starts and reaches NCBI
+      - name: Verify the packaged program and NCBI access
+        timeout-minutes: 5
         env:
-          QT_QPA_PLATFORM: offscreen
+          QT_QPA_PLATFORM: xcb
         run: |
-          code=0; timeout 10 dist/RFLP-Picker/RFLP-Picker || code=$?
-          test "$code" -eq 124    # still running when stopped
+          code=0
+          xvfb-run -a timeout 10 dist/RFLP-Picker/RFLP-Picker || code=$?
+          test "$code" -eq 124
+          xvfb-run -a dist/RFLP-Picker/RFLP-Picker --check-runtime
           dist/RFLP-Picker/RFLP-Picker --check-ncbi
       - name: Pack
         run: tar -C dist -czf "RFLP-Picker-$BUILD_NAME-linux-x86_64.tar.gz" RFLP-Picker

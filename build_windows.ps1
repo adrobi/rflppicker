@@ -16,8 +16,16 @@ foreach ($candidate in @(
 }
 
 if (-not $pythonExe -and (Get-Command py -ErrorAction SilentlyContinue)) {
-  & py -3.13 -c "import sys" 2>$null
-  if ($LASTEXITCODE -eq 0) {
+  $previousPreference = $ErrorActionPreference
+  try {
+    # Windows PowerShell 5.1 can turn redirected native stderr into an error.
+    $ErrorActionPreference = 'Continue'
+    & py -3.13 -c "import sys" 2>$null
+    $launcherAvailable = $LASTEXITCODE -eq 0
+  } finally {
+    $ErrorActionPreference = $previousPreference
+  }
+  if ($launcherAvailable) {
     $pythonExe = 'py'
     $pythonArgs = @('-3.13')
   }

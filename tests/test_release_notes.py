@@ -26,6 +26,9 @@ CHANGELOG = '''# Изменения
 
 
 class ReleaseNotesTests(unittest.TestCase):
+    def test_release_documents_match_the_current_version(self):
+        self.assertEqual(release_notes.main(['--check']), 0)
+
     def test_section_of_the_version(self):
         self.assertEqual(release_notes.section(CHANGELOG, '1.5.0'), '**Убрано**\n\n- режим одной пары')
         self.assertEqual(release_notes.section(CHANGELOG, '1.4.0'), '- старое')

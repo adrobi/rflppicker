@@ -105,6 +105,7 @@ class SnpSummary:
     chosen: int = 0
     primer_base: str = ''
     swapped: bool = False   # normalization swapped REF and ALT: bands follow the genome's REF
+    skipped_alts: Tuple[str, ...] = ()
 
     @property
     def label(self) -> str:
@@ -144,11 +145,14 @@ class SnpSummary:
         """The «Примечание» text of the spec, §6.6."""
         if self.rejection is not None:
             return _rejection_text(self.rejection)
+        parts = [self.swap_text()] if self.swapped else []
+        if self.skipped_alts:
+            parts.append(t('ALT без явной последовательности пропущены: {alleles}',
+                           alleles=', '.join(self.skipped_alts)))
         scheme = self.scheme
         if scheme is None:
-            return '; '.join(text for text in (self.swap_text(), self._failure_note(dcaps_mode)) if text)
+            return '; '.join(filter(None, (*parts, self._failure_note(dcaps_mode))))
         quality = scheme.get('genotype_quality')
-        parts = [self.swap_text()] if self.swapped else []
         if quality not in _QUALITY_STATUS:
             parts.append(t('Три генотипа неразличимы по присутствию полос'))
         if self.manual:
@@ -199,37 +203,45 @@ class SnpSummary:
 
 
 def build_summaries(records: List[InputRecord], header: List[str], rows: List[list],
-                    rejected: List[dict]) -> List[SnpSummary]:
-    # Parse errors have no coordinates and match by the file line. Entries with
-    # coordinates match by value: reports written before 1.4.0 numbered them
-    # 1, 2, ... (with skip_norm) or carried no line at all.
+                    rejected: List[dict], *, report=None) -> List[SnpSummary]:
+    report = report or {}
+    row_lines = report.get('result_source_lines')
+    skipped_alts = {entry['line']: tuple(entry['alleles']) for entry in report.get('vcf_skipped_alts', ())}
+    # Older reports sometimes assigned a synthetic line number to coordinate errors.
     by_line = {item['line']: item for item in rejected
-               if item.get('line') is not None and item.get('chrom') is None}
+               if item.get('line') is not None and (row_lines is not None or item.get('chrom') is None)}
     by_values = {}
     for item in rejected:
         if item.get('chrom') is not None and item.get('pos') is not None:
             by_values.setdefault((str(item['chrom']), int(item['pos']), item.get('ref'), item.get('alt')), item)
-    # The core does not deduplicate variants: a repeated line (or the same SNP
-    # with REF/ALT swapped) yields an identical block of rows. Keep one copy.
-    groups: Dict[str, List[dict]] = {}
+    # Older reports stored no input line per result. Group those by variant.
+    groups = {}
     seen = set()
     for index, row in enumerate(rows):
-        key = tuple(row)
-        if key in seen:
-            continue
-        seen.add(key)
+        if row_lines is None:
+            key = tuple(row)
+            if key in seen:
+                continue
+            seen.add(key)
         values = dict(zip(header, row), _index=index)
-        groups.setdefault(values.get('variant'), []).append(values)
+        groups.setdefault(values.get('variant') if row_lines is None else row_lines[index], []).append(values)
 
     summaries = []
     for r in records:
-        rejection = by_line.get(r.line) or by_values.get((r.chrom, r.pos, r.ref, r.alt))
+        rejection = by_line.get(r.line)
+        if rejection is None and row_lines is None:
+            rejection = by_values.get((r.chrom, r.pos, r.ref, r.alt))
         found, swapped = [], False
         if rejection is None and r.pos is not None:
-            found = groups.get(f'{r.chrom}:{r.pos} {r.ref}>{r.alt}') or []
-            if not found:
-                found = groups.get(f'{r.chrom}:{r.pos} {r.alt}>{r.ref}') or []
-                swapped = bool(found)
+            reverse = f'{r.chrom}:{r.pos} {r.alt}>{r.ref}'
+            if row_lines is not None:
+                found = groups.get(r.line, [])
+                swapped = bool(found and found[0].get('variant') == reverse)
+            else:
+                found = groups.get(f'{r.chrom}:{r.pos} {r.ref}>{r.alt}') or []
+                if not found:
+                    found = groups.get(reverse, [])
+                    swapped = bool(found)
         schemes, failure = [], None
         for values in found:
             if values.get('enzyme') or values.get('design') in ('amplicon_length', 'allele_specific'):
@@ -242,6 +254,7 @@ def build_summaries(records: List[InputRecord], header: List[str], rows: List[li
             failure=failure,
             rejection=rejection,
             swapped=swapped,
+            skipped_alts=skipped_alts.get(r.line, ()),
         ))
     assign_primer_bases(summaries)
     return summaries
@@ -255,13 +268,19 @@ def _clean_name(text: str) -> Tuple[str, int]:
 
 def assign_primer_bases(summaries: List[SnpSummary]) -> None:
     """Unique primer name stems: the SNP ID, or the coordinate when the ID is empty or mostly unusable."""
-    seen: Dict[str, int] = {}
+    seen = set()
+    suffixes: Dict[str, int] = {}
     for s in summaries:
         base, replaced = _clean_name(s.record.snp_id)
         if not s.record.snp_id or replaced > len(re.findall(r'[A-Za-z0-9]', base)):
             base = _clean_name(f'{s.record.chrom}_{s.record.pos}')[0]
-        seen[base] = seen.get(base, 0) + 1
-        s.primer_base = base if seen[base] == 1 else f'{base}_{seen[base]}'
+        serial, candidate = suffixes.get(base, 1), base
+        while candidate in seen:
+            serial += 1
+            candidate = f'{base}_{serial}'
+        suffixes[base] = serial
+        seen.add(candidate)
+        s.primer_base = candidate
 
 
 def order_lines(summary: SnpSummary) -> str:
@@ -424,16 +443,25 @@ def excel_sheets(summaries: List[SnpSummary], dcaps_mode: str) -> List[ExtraShee
     return sheets
 
 
-def results_table(summaries: List[SnpSummary], header: List[str], rows: List[list]) -> Tuple[List[str], List[list]]:
+def results_table(summaries: List[SnpSummary], header: List[str], rows: List[list], *,
+                  row_lines=None) -> Tuple[List[str], List[list]]:
     """Core rows of these SNPs in core order, with the SNP ID and whether the row is the chosen scheme."""
-    owner: Dict[str, SnpSummary] = {}
+    show_skipped = any(s.skipped_alts for s in summaries)
+    owner = {}
     selected = set()
     for s in summaries:
         for values in s.schemes + ([s.failure] if s.failure else []):
-            owner.setdefault(values.get('variant'), s)
+            key = values.get('variant') if row_lines is None else s.record.line
+            owner.setdefault(key, s)
         if s.scheme is not None:
             selected.add(s.scheme['_index'])
     variant = header.index('variant')
-    table = [list(row) + [owner[row[variant]].record.snp_id, index in selected]
-             for index, row in enumerate(rows) if row[variant] in owner]
-    return list(header) + ['snp_id', 'selected'], table
+    table = []
+    for index, row in enumerate(rows):
+        s = owner.get(row[variant] if row_lines is None else row_lines[index])
+        if s is not None:
+            exported = [*row, s.record.snp_id, index in selected]
+            if show_skipped:
+                exported.append(','.join(s.skipped_alts))
+            table.append(exported)
+    return [*header, 'snp_id', 'selected', *(['vcf_skipped_alts'] if show_skipped else [])], table

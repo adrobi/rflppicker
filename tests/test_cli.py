@@ -112,6 +112,41 @@ class CliTests(unittest.TestCase):
                 self.assertIn(message, stderr.getvalue())
                 run.assert_not_called()
 
+    def test_colliding_output_paths_are_rejected_before_analysis(self):
+        source = self.root / 'variants.csv'
+        original = self.variants.read_bytes()
+        source.write_bytes(original)
+        linked = self.root / 'linked.csv'
+        os.link(source, linked)
+        output = self.root / 'result.csv'
+        cases = [
+            ('--variants', str(source), '--out', str(source)),
+            ('--variants', str(source), '--out', str(linked)),
+            ('--out', str(output), '--rejected', str(output)),
+        ]
+        for args in cases:
+            with self.subTest(args=args), patch.object(core, 'run_rflp_gui_mode') as run:
+                with self.assertRaises(SystemExit) as error:
+                    self.run_cli(*args)
+                self.assertEqual(error.exception.code, 2)
+                run.assert_not_called()
+                self.assertEqual(source.read_bytes(), original)
+                self.assertFalse(output.exists())
+
+    def test_vcf_export_keeps_ids_and_reports_skipped_symbolic_alts_by_line(self):
+        source = self.root / 'variants.vcf'
+        source.write_text('##fileformat=VCFv4.3\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n'
+                          '1\t200\trs1\tA\tG,<DEL>\t.\tPASS\t.\n'
+                          '1\t200\trs2\tA\tG\t.\tPASS\t.\n')
+        out = self.root / 'out.csv'
+        code, log = self.run_cli('--variants', str(source), '--out', str(out), '--no-primer3', '--min-frag', '20')
+        self.assertEqual(code, 0, log)
+        with out.open(encoding='utf-8-sig', newline='') as stream:
+            written = list(csv.DictReader(stream))
+        self.assertEqual({row['snp_id'] for row in written}, {'rs1', 'rs2'})
+        self.assertEqual({(row['snp_id'], row['vcf_skipped_alts']) for row in written},
+                         {('rs1', '<DEL>'), ('rs2', '')})
+
     def test_warns_when_the_file_has_no_snps(self):
         self.variants.write_text('chrom\tpos\tref\talt\n')
         code, log = self.run_cli('--out', str(self.root / 'out.csv'), '-q')

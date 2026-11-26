@@ -2,6 +2,7 @@
 import os
 import sys
 import traceback
+from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime
 from functools import partial
 from typing import List, Optional
@@ -333,7 +334,8 @@ class RFLPPickerGUI(QMainWindow):
         self._project_payloads = None
         records, self._has_ids = read_input_records(self.params['input_file'], vcf_region=self.params.get('vcf_region', ''),
                                                    vcf_samples=self.params.get('vcf_samples', ()))
-        self.summaries = build_summaries(records, self.header, self.rows, self.report.get('rejected', []))
+        self.summaries = build_summaries(records, self.header, self.rows, self.report.get('rejected', []),
+                                         report=self.report)
         self._show_run()
 
     def _show_run(self) -> None:
@@ -443,7 +445,8 @@ class RFLPPickerGUI(QMainWindow):
                 if interactive:
                     QMessageBox.information(self, t('Выгрузка'), t('Результаты сохранены:\n{path}', path=path))
                 return path
-            table_header, table_rows = results_table(summaries, self.header, self.rows)
+            table_header, table_rows = results_table(summaries, self.header, self.rows,
+                                                    row_lines=self.report.get('result_source_lines'))
             if kind == 'csv':
                 reporting.export_csv(path, table_header, table_rows)
             else:
@@ -502,9 +505,28 @@ def check_ncbi() -> int:
     return 0
 
 
+def run_startup_check(check, log_path=None) -> int:
+    def run():
+        try:
+            return check()
+        except Exception:
+            traceback.print_exc()
+            return 1
+
+    if log_path is None:
+        return run()
+    with open(log_path, 'w', encoding='utf-8') as log, redirect_stdout(log), redirect_stderr(log):
+        return run()
+
+
 def main() -> None:
-    if '--check-ncbi' in sys.argv[1:]:
-        sys.exit(check_ncbi())
+    args = sys.argv[1:]
+    log_path = next((arg.split('=', 1)[1] for arg in args if arg.startswith('--check-log=')), None)
+    if '--check-ncbi' in args:
+        sys.exit(run_startup_check(check_ncbi, log_path))
+    if '--check-runtime' in args:
+        from tools.check_runtime import check_runtime
+        sys.exit(run_startup_check(check_runtime, log_path))
     if not core._PRIMER3_AVAILABLE:
         core.logger.warning(f'primer3 недоступен, ошибка импорта: {core._PRIMER3_IMPORT_ERROR}')
     app = QApplication(sys.argv)

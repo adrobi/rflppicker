@@ -2,15 +2,21 @@
 
 import gzip
 import os
+import stat
 import struct
 
 from Bio.bgzf import BgzfReader
 
 
 def index_path(path):
+    source_mtime = os.stat(path).st_mtime_ns
     for extension in ('.csi', '.tbi'):
         candidate = str(path) + extension
-        if os.path.isfile(candidate):
+        try:
+            info = os.stat(candidate)
+        except FileNotFoundError:
+            continue
+        if stat.S_ISREG(info.st_mode) and info.st_mtime_ns >= source_mtime:
             return candidate
     return None
 

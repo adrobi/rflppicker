@@ -429,6 +429,8 @@ Download a reference genome from NCBI into the genoms folder next to the program
     'Геном: {fasta}\nХромосомы: {names}': 'Genome: {fasta}\nChromosomes: {names}',
     '{key}: это папка, а не файл: {path}': '{key}: this is a folder, not a file: {path}',
     '{key}: нет права записи в папку: {folder}': '{key}: no permission to write to the folder: {folder}',
+    '{key}: указан тот же файл, что и в {flag}: {path}': '{key}: same file as {flag}: {path}',
+    'ALT без явной последовательности пропущены: {alleles}': 'ALT alleles without an explicit sequence were skipped: {alleles}',
     '[WARN] В файле нет SNP.': '[WARN] The file has no SNPs.',
     '[WARN] Ни один SNP не принят: проверьте геном и файл соответствий названий хромосом.':
         '[WARN] No SNP was accepted: check the genome and the chromosome name mapping file.',

@@ -121,6 +121,20 @@ class ProjectFileTests(unittest.TestCase):
         warning.assert_called_once()
         self.assertEqual(self.window.summaries[0].record.snp_id, 'EcoRI_test')
 
+    def test_invalid_cached_alleles_and_nan_are_rejected(self):
+        self.analyze()
+        self.assertEqual(self.window.save_project(str(self.project)), str(self.project))
+        original = self.project.read_text(encoding='utf-8')
+        key = str(self.window.summaries[0].scheme['_index'])
+        for field, value in (('locus_products', [{'allele': 'REF', 'sequence': 'A'}]),
+                             ('snp_offset', float('nan'))):
+            with self.subTest(field=field), patch.object(QMessageBox, 'warning') as warning:
+                document = json.loads(original)
+                document['payloads'][key][field] = value
+                self.project.write_text(json.dumps(document), encoding='utf-8')
+                self.assertIsNone(self.window.open_project(str(self.project)))
+                warning.assert_called_once()
+
     def test_bad_launch_parameters_leave_current_run_and_inputs_intact(self):
         fasta, _ = self.analyze()
         launch = self.window.launch

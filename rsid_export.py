@@ -36,6 +36,6 @@ def write_rsid_target(path, result, *sources):
         raise ValueError('Выберите выходной файл отдельно от источника rsID и FASTA')
     with _atomic_destination(path) as temporary:
         with temporary.open('w', encoding='utf-8', newline='\n') as stream:
-            stream.write(f'##fileformat=VCFv4.3\n##reference={item.assembly}\n'
+            stream.write(f'##fileformat=VCFv4.3\n##reference={item.assembly}\n##taxid={item.taxid}\n'
                          f'#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n'
                          f'{item.contig}\t{item.position}\t{result.rsid}\t{item.ref}\t{",".join(item.alts)}\t.\t.\t.\n')

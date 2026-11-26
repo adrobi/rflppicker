@@ -127,8 +127,22 @@ def _check_payload(payload) -> None:
     _check(isinstance(payload, dict) and isinstance(payload.get('gel'), dict))
     _check(all(isinstance(payload.get(key), str) for key in ('mapped_id', 'amplicon_seq', 'primer_left', 'primer_right')))
     _check(all(type(payload.get(key)) is int for key in ('genome_start', 'genome_end')))
-    _check(all(key in payload and (payload[key] is None or isinstance(payload[key], (int, float)))
+    _check(1 <= payload['genome_start'] <= payload['genome_end'])
+    _check(all(key in payload and (payload[key] is None or
+               (type(payload[key]) in (int, float) and math.isfinite(payload[key])))
                for key in ('snp_offset', 'tm_left', 'tm_right')))
+    _check(all(isinstance(payload.get(key, ''), str) for key in
+               ('variant_str', 'enzyme_name', 'pattern', 'frags_ref', 'frags_alt')))
+    enzymes, alleles = payload.get('enzyme_names', ()), payload.get('locus_products', ())
+    _check(isinstance(enzymes, (list, tuple)) and all(isinstance(item, str) for item in enzymes))
+    _check(isinstance(alleles, (list, tuple)) and (not alleles or len(alleles) >= 2))
+    for allele in alleles:
+        _check(isinstance(allele, dict) and all(isinstance(allele.get(key), str) and allele[key]
+                                                for key in ('allele', 'sequence')))
+        _check(type(allele.get('length')) is int and allele['length'] > 0)
+        fragments = allele.get('fragments')
+        _check(isinstance(fragments, list) and all(type(value) is int and value > 0 for value in fragments))
+        _check(sum(fragments) == allele['length'])
     gel = dict(payload['gel'])
     _check(gel.pop('marker', DEFAULT_GEL_MARKER) in GEL_MARKERS)
     digest_probability(gel.pop('digest_pct', DEFAULT_DIGEST_PCT))
@@ -149,13 +163,19 @@ def _restore(document: dict) -> OpenProject:
         _check(isinstance(rows, list) and all(isinstance(row, list) and len(row) == len(header) for row in rows))
         _check(isinstance(has_ids, bool) and isinstance(records, list) and isinstance(choices, list))
         _check(len(records) == len(choices))
+        row_lines = report.get('result_source_lines')
+        if row_lines is not None:
+            _check(isinstance(row_lines, list) and len(row_lines) == len(rows) and
+                   all(type(line) is int and line > 0 for line in row_lines))
         for payload in payloads.values():
             _check_payload(payload)
         input_records = [InputRecord(**record) for record in records]
         _check(all(isinstance(record.line, int) and (record.pos is None or isinstance(record.pos, int))
                    and all(isinstance(value, str) for value in (record.snp_id, record.chrom, record.ref,
                                                                record.alt, record.raw)) for record in input_records))
-        summaries = build_summaries(input_records, header, rows, report.get('rejected', []))
+        if row_lines is not None:
+            _check(set(row_lines) <= {record.line for record in input_records})
+        summaries = build_summaries(input_records, header, rows, report.get('rejected', []), report=report)
         for summary, index in zip(summaries, choices):
             _check(type(index) is int and 0 <= index < max(1, len(summary.schemes)))
             if summary.schemes:
@@ -173,9 +193,13 @@ def _restore(document: dict) -> OpenProject:
     return OpenProject(header, rows, report, params, metadata, has_ids, summaries, payloads)
 
 
+def _reject_json_constant(_value):
+    _check(False)
+
+
 def open_project(path) -> OpenProject:
     with Path(path).open(encoding='utf-8') as stream:
-        document = json.load(stream)
+        document = json.load(stream, parse_constant=_reject_json_constant)
     _check(isinstance(document, dict))
     if document.get('format') != FORMAT or type(document.get('version')) is not int or document['version'] != VERSION:
         raise ValueError(t('Неподдерживаемый формат проекта.'))

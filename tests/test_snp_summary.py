@@ -258,6 +258,11 @@ class ExportTests(unittest.TestCase):
     def test_build_assigns_primer_bases(self):
         self.assertEqual([s.primer_base for s in self.summaries], ['HOXB13', 'OLFML3'])
 
+    def test_generated_primer_base_does_not_duplicate_a_literal_id(self):
+        summaries = [summary(snp_id=name) for name in ('rs1', 'rs1', 'rs1_2')]
+        snp_summary.assign_primer_bases(summaries)
+        self.assertEqual(len({s.primer_base for s in summaries}), 3)
+
     def test_order_lines_and_text(self):
         hox = self.summaries[0]
         self.assertEqual(snp_summary.order_lines(hox),
