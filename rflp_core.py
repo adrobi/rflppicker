@@ -23,7 +23,7 @@ import specificity
 from tabix_index import index_path as tabix_path, vcf_chunks
 from variant_input import VCF_COLUMNS, VCF_REJECTION_TEXT, is_vcf_path, parse_region, vcf_targets
 
-APP_VERSION = "2.0.1"
+APP_VERSION = "2.0.2"
 
 # Analysis defaults of the window and the command line; the checks were chosen
 # from the validation on published assays.
@@ -1669,8 +1669,8 @@ def _natural_hits(run: _Run, window: _Window, pairs: list) -> list:
         return _multiallelic_hits(run, window, pairs, 'natural')
     # The remaining enzymes give equal REF/ALT fragments in every amplicon,
     # i.e. Δ = 0, which is below any threshold (delta >= 1).
-    site_enzymes = (run.known_cut_enzymes if window.indel else
-                    snp_site_enzymes(run.enzymes, window.seq, window.altseq, window.off))
+    enzymes = run.known_cut_enzymes
+    site_enzymes = enzymes if window.indel else snp_site_enzymes(enzymes, window.seq, window.altseq, window.off)
     hits = []
     for pair in pairs:
         run.check_cancel()
@@ -1680,7 +1680,7 @@ def _natural_hits(run: _Run, window: _Window, pairs: list) -> list:
             window.ambiguous += 1
             continue
         record = _amplicon_record(window, pair, a, b, design='natural')
-        run.counters['enzyme_evaluations'] += len(run.enzymes)
+        run.counters['enzyme_evaluations'] += len(enzymes)
         for enz in site_enzymes:
             run.check_cancel()
             hit = _evaluate(run, window, enz, refamp, altamp, record, a, b)

@@ -167,10 +167,10 @@ class DoubleDigestTests(unittest.TestCase):
         self.assertEqual(row['status'], 'no_discriminating_assay')
         self.assertEqual(self.report['summary']['enzyme_errors'], 1)
 
-    def test_unresolved_enzyme_cannot_be_a_partner(self):
-        from Bio.Restriction import AllEnzymes
-        unresolved = next(e for e in AllEnzymes if e.is_unknown())
-        rows = self.search(lab_enzymes=['EcoRI', 'MspI', str(unresolved)])
+    def test_unresolved_enzyme_cannot_supply_a_single_digest_or_partner(self):
+        # Cco11366VI recognizes an allele-dependent site in the fixture, but
+        # Biopython cannot predict its cleavage coordinates.
+        rows = self.search(lab_enzymes=['EcoRI', 'MspI', 'Cco11366VI'])
         self.assertEqual([r['enzyme'] for r in rows], ['EcoRI + MspI'])
         self.assertEqual(self.report['summary']['double_pairs_possible'], 1)
 

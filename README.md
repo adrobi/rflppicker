@@ -1,4 +1,4 @@
-# RFLP Picker 2.0.1
+# RFLP Picker 2.0.2
 
 English | [Русский](README.ru.md)
 
@@ -9,6 +9,10 @@ list of SNPs and a reference genome it designs Primer3 primer pairs, finds
 restriction enzymes that tell the three genotypes apart and shows the expected
 bands on a virtual gel. The program compares REF and ALT on the reference FASTA,
 reports fragment sizes and draws a map of the amplicon.
+
+## What's new in 2.0.2
+
+Single-enzyme SNP assay design excludes enzymes with unknown cleavage positions.
 
 ## What's new in 2.0.1
 

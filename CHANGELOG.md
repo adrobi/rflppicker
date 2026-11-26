@@ -1,5 +1,15 @@
 # Изменения
 
+## 2.0.2
+
+### Русский
+
+- Подбор одиночной рестрикции для SNP исключает ферменты с неизвестной позицией разреза. Такие ферменты больше не дают ошибочных размеров фрагментов и не вытесняют подходящую двойную рестрикцию.
+
+### English
+
+- Single-enzyme SNP assay design excludes enzymes with unknown cleavage positions. These enzymes can no longer produce incorrect fragment sizes or displace a valid double digest.
+
 ## 2.0.1
 
 ### Русский
