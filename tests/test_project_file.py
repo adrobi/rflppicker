@@ -54,6 +54,13 @@ class ProjectFileTests(unittest.TestCase):
         self.window.list.table.selectRow(0)
         return fasta, variants
 
+    def test_closing_window_releases_fasta(self):
+        fasta, _ = self.analyze()
+        self.assertIsNotNone(self.window.details._fasta)
+        self.window.close()
+        self.assertIsNone(self.window.details._fasta)
+        Path(fasta).unlink()
+
     def test_project_restores_choices_gel_and_exports_without_sources(self):
         fasta, variants = self.analyze()
         summary = self.window.summaries[0]

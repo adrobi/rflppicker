@@ -253,6 +253,7 @@ class RFLPPickerGUI(QMainWindow):
                 self.status_message.setText(t('Останавливаю расчёт…'))
                 event.ignore()
                 return
+        self.details.close_fasta()
         self.log.close()
         super().closeEvent(event)
 
