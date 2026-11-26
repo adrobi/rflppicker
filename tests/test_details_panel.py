@@ -59,7 +59,7 @@ class DetailsPanelTests(unittest.TestCase):
             self.assertIn('+2 isoschizomers', rows[0])
             self.assertIn('best', rows[0])
             tabs = panel.findChild(QTabWidget, 'tabs')
-            self.assertEqual([tabs.tabText(i) for i in range(tabs.count())], ['Gel', 'Map', 'Primers'])
+            self.assertEqual([tabs.tabText(i) for i in range(tabs.count())], ['Gel', 'Map', 'Primers', 'Prices'])
             self.assertEqual(panel.findChild(QPushButton, 'copy_order_button').text(), 'Copy for ordering')
             panel.view_scheme(1)
             self.assertEqual(cyrillic_texts(panel), [])

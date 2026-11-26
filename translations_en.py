@@ -7,6 +7,14 @@ phrases come before the shorter ones they contain.
 """
 
 EN = {
+    'Цены': 'Prices',
+    'Обновить цены': 'Refresh prices',
+    'Клонинг Фасилити': 'Cloning Facility',
+    'Публичная цена не найдена': 'No public price found',
+    'Проверено {time}': 'Checked {time}',
+    'Проверяем цены…': 'Checking prices…',
+    'Не удалось обновить': 'Could not refresh prices',
+    'Цена ещё не проверена': 'Price not checked yet',
     'Аллель-специфичная ПЦР · ожидаемые полосы реакций': 'Allele-specific PCR · expected reaction bands',
     '{label}: {length} п.н.': '{label}: {length} bp',
     'Поиск по rsID…': 'Look up an rsID…',

@@ -1,5 +1,15 @@
 # Изменения
 
+## 2.0.1
+
+### Русский
+
+- Во вкладке «Цены» доступны публичные цены СибЭнзайм и «Клонинг Фасилити» по артикулам и фасовкам, ссылки на карточки и время последней проверки. При недоступности сайта отображаются последние успешно полученные цены с датой проверки.
+
+### English
+
+- The Prices tab shows public prices from SibEnzyme and Cloning Facility by SKU and pack size, with manufacturer links and the last check time. If a refresh fails, the tab shows the last successfully retrieved prices and when they were checked.
+
 ## 2.0.0
 
 **Новое**

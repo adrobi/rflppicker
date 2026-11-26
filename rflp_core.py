@@ -23,7 +23,7 @@ import specificity
 from tabix_index import index_path as tabix_path, vcf_chunks
 from variant_input import VCF_COLUMNS, VCF_REJECTION_TEXT, is_vcf_path, parse_region, vcf_targets
 
-APP_VERSION = "2.0.0"
+APP_VERSION = "2.0.1"
 
 # Analysis defaults of the window and the command line; the checks were chosen
 # from the validation on published assays.

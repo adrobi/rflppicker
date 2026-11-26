@@ -16,6 +16,7 @@ from aspcr_display import (
 from enzyme_catalog import PRODUCTS, property_lines
 import icons
 import palette
+from prices_panel import PricesPanel
 from i18n import N_, fmt, language, t
 from snp_summary import SnpSummary, locus_bands, order_lines, product_size_text, scheme_label, status_title, summary_text, weakest_text
 from theme import mono_font
@@ -108,6 +109,10 @@ class DetailsPanel(QWidget):
         self.map_tab.addWidget(self.allele_specific_gel)
         self.tabs.addTab(self.map_tab, t('Карта'))
         self.tabs.addTab(self._build_primer_card(), t('Праймеры'))
+        self.prices = PricesPanel()
+        self._prices_tab = self.tabs.addTab(self.prices, t('Цены'))
+        self.tabs.setTabVisible(self._prices_tab, False)
+        self.tabs.currentChanged.connect(self._on_tab_changed)
         self.large_button = QToolButton()
         self.large_button.setObjectName('large_button')
         self.large_button.setText(t('⤢ Крупно'))
@@ -324,6 +329,10 @@ class DetailsPanel(QWidget):
         if row >= 0:
             self.view_scheme(row)
 
+    def _on_tab_changed(self, index):
+        if index == self._prices_tab:
+            self.prices.refresh()
+
     def view_scheme(self, index: int) -> None:
         s = self._summary
         if s is None or not s.schemes:
@@ -333,6 +342,12 @@ class DetailsPanel(QWidget):
         self.schemes_list.setCurrentRow(index)
         self.schemes_list.blockSignals(False)
         scheme = s.schemes[index]
+        names = ((scheme.get('enzyme_1'), scheme.get('enzyme_2')) if scheme.get('enzyme_2')
+                 else (scheme.get('enzyme'),))
+        changed = self.prices.set_enzymes(names)
+        self.tabs.setTabVisible(self._prices_tab, any(names))
+        if changed and self.tabs.currentIndex() == self._prices_tab:
+            self.prices.refresh()
         aspcr = scheme.get('design') == 'allele_specific'
         self.gel.setVisible(not aspcr)
         self.weakest_label.setVisible(not aspcr)
