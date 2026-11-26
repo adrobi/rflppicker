@@ -75,7 +75,7 @@ class DetailsPanelTests(unittest.TestCase):
         from enzyme_catalog import property_lines
         self.panel.show_summary(self.hoxb13, 'off')
         picker = self.panel.product_picker
-        self.assertEqual(picker.count(), 3)  # unspecified, standard, HF
+        self.assertEqual(picker.count(), 6)  # unspecified plus five sourced products
         picker.setCurrentIndex(2)
         viewed = self.panel._viewed_summary()
         self.assertIn('R3101', self.panel.product_details.text())

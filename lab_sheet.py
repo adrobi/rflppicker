@@ -10,13 +10,16 @@ from typing import List, Tuple
 from PyQt6.QtCore import QMarginsF, QRectF, Qt
 from PyQt6.QtGui import QColor, QFont, QPageLayout, QPageSize, QPainter, QPdfWriter, QPen
 
+from allele_specific import reaction_table
+from aspcr_display import genotype_bands, genotype_headings, genotype_rows, tube_bands, tube_heading, unresolved_text
 from enzyme_catalog import product_sections
 import palette
 import rflp_core as core
+import snp_summary
 from i18n import fmt, t
 from reporting import _atomic_destination
 from snp_summary import _DESIGN_TITLES, SnpSummary, allele_products, locus_bands, status_title
-from visualization import GelPanel, PrimerGraphicPanel, payload_for_scheme, render_payload
+from visualization import GelPanel, PrimerGraphicPanel, gel_view_options, payload_for_scheme, render_payload
 
 DPI = 150
 MARGIN_MM = 14
@@ -55,8 +58,11 @@ def sheet_fields(summary: SnpSummary, dcaps_mode: str) -> List[Tuple[str, str]]:
 
 
 def primer_rows(summary: SnpSummary) -> List[Tuple[str, str, str, str]]:
-    """(name, sequence, length, Tm) of the two primers."""
+    """(name, sequence, length, Tm) of the primers."""
     scheme = summary.scheme or {}
+    if scheme.get('design') == 'allele_specific':
+        return [(name, sequence, str(len(sequence)), fmt(tm))
+                for name, sequence, tm in snp_summary.aspcr_primer_rows(summary)]
     rows = []
     for side, primer, tm in (('F', 'primers_left', 'tm_left'), ('R', 'primers_right', 'tm_right')):
         sequence = scheme.get(primer) or ''
@@ -145,6 +151,11 @@ def draw_sheet(page: _Page, summary: SnpSummary, payload, message: str, dcaps_mo
     page.rule()
     page.gap(4)
 
+    if summary.scheme.get('design') == 'allele_specific':
+        _draw_aspcr(page, summary, dcaps_mode, gel_panel, payload or {})
+        _finish_page(page, footer)
+        return
+
     # Left: the assay; right: the virtual gel.
     render_payload(map_panel, gel_panel, payload, message)
     top = page.y
@@ -169,12 +180,31 @@ def draw_sheet(page: _Page, summary: SnpSummary, payload, message: str, dcaps_mo
         for index, lines in enumerate(sections):
             page.y = top
             for line in lines:
-                page.text(line, 8.5, x=index * column, width=column - (8 if len(sections) == 2 else 0))
+                page.text(line, 8.5, mono=line.startswith('https://'), x=index * column,
+                          width=column - (8 if len(sections) == 2 else 0))
             bottom = max(bottom, page.y)
         page.y = bottom
         page.gap(4)
         page.rule()
 
+    _draw_primers(page, summary)
+
+    footer_height = 48 if '\n' in footer else 30
+    page.text(t('Карта ампликона'), 10, bold=True)
+    page.gap(3)
+    if payload:
+        # Reserve the footer, photo caption and a writable photo frame on crowded sheets.
+        map_height = min(95 * mm, page.height - page.y - 40 * mm - footer_height - 8)
+        page.gap(page.scene(map_panel.scene, 0, page.y, page.width, max(1, map_height)) + 8)
+    else:
+        page.text(message, 9, color=MUTED)
+        page.gap(8)
+
+    _finish_page(page, footer)
+
+
+def _draw_primers(page: _Page, summary: SnpSummary) -> None:
+    mm = DPI / 25.4
     primers = primer_rows(summary)
     if primers:                                   # a window-search assay has none
         page.text(t('Праймеры'), 10, bold=True)
@@ -192,18 +222,39 @@ def draw_sheet(page: _Page, summary: SnpSummary, payload, message: str, dcaps_mo
         page.gap(4)
         page.rule()
 
-    page.text(t('Карта ампликона'), 10, bold=True)
-    page.gap(3)
-    if payload:
-        # Reserve the footer, photo caption and a writable photo frame on crowded sheets.
-        map_height = min(95 * mm, page.height - page.y - 40 * mm - 38)
-        page.gap(page.scene(map_panel.scene, 0, page.y, page.width, max(1, map_height)) + 8)
-    else:
-        page.text(message, 9, color=MUTED)
-        page.gap(8)
 
+def _draw_aspcr(page: _Page, summary: SnpSummary, dcaps_mode: str, gel_panel: GelPanel, options: dict) -> None:
+    scheme = summary.scheme
+    for title, value in sheet_fields(summary, dcaps_mode):
+        page.text(f'{title} · {value}', 9.5)
+    page.gap(8)
+    _draw_primers(page, summary)
+    tubes = reaction_table(scheme)
+    if not tubes:
+        return
+    names = {sequence: name for name, sequence, _, _ in primer_rows(summary)}
+    for tube in tubes:
+        page.text(tube_heading(tube), 10, bold=True)
+        page.text(tube_bands(tube), 9.5)
+        page.text(' · '.join(names[primer['sequence']] for primer in tube['primers']), 9.5, mono=True)
+        page.gap(6)
+    column = page.width / 3
+    for index, row in enumerate([genotype_headings(), *genotype_rows(tubes)]):
+        height = max(page.text(value, 9.5, bold=index == 0, x=i * column, width=column - 6, advance=False)
+                     for i, value in enumerate(row))
+        page.gap(height + 3)
+    page.gap(8)
+    page.text(unresolved_text(), 9.5, bold=True)
+    page.gap(8)
+    gel_panel.render_aspcr(genotype_bands(tubes), scheme.get('variant', ''), **options)
+    page.gap(page.scene(gel_panel.scene, 0, page.y, page.width, 60 * DPI / 25.4))
+    page.gap(8)
+
+
+def _finish_page(page: _Page, footer: str) -> None:
+    mm = DPI / 25.4
+    footer_height = 48 if '\n' in footer else 30
     # The rest of the page: a frame for the photo of the gel.
-    footer_height = 30
     box_bottom = page.height - footer_height - 8
     if box_bottom - page.y > 30 * mm:
         page.text(t('Фото геля'), 10, bold=True)
@@ -215,15 +266,24 @@ def draw_sheet(page: _Page, summary: SnpSummary, payload, message: str, dcaps_mo
     page.text(footer, 7.5, color=MUTED)
 
 
-def footer_text(fasta_path: str, params: dict) -> str:
+def footer_text(fasta_path: str, params: dict, metadata: dict | None = None, *, show_digest=True) -> str:
     """The program version, the genome and the search settings that applied."""
-    parts = [f'RFLP Picker {core.APP_VERSION}', t('геном {genome}', genome=os.path.basename(fasta_path or '—'))]
+    metadata = metadata or {}
+    genome = metadata.get('assembly_accession') or metadata.get('genome_name') or os.path.basename(fasta_path or '—')
+    parts = [f"RFLP Picker {metadata.get('app_version', core.APP_VERSION)}", t('геном {genome}', genome=genome)]
     if params.get('use_primer3', True):           # the window search has no product and no Tm
         parts.append(t('продукт {prod_min}–{prod_max} п.н., Tm {tm_min}–{tm_max} °C',
                        prod_min=params.get('prod_min'), prod_max=params.get('prod_max'),
                        tm_min=fmt(params.get('tm_min')), tm_max=fmt(params.get('tm_max'))))
     parts.append(t('лист создан {date}', date=datetime.now().strftime('%Y-%m-%d')))
-    return ' · '.join(parts)
+    text = ' · '.join(parts)
+    model = metadata.get('scoring_model') or params.get('gel_model_version')
+    if model and 'gel_agarose_pct' in params:
+        text += '\n' + t('Гель {model} · агароза {agarose}% · маркер {marker}',
+                         model=model, agarose=fmt(params['gel_agarose_pct']), marker=params.get('gel_marker', '—'))
+        if show_digest:
+            text += t(' · вероятность разреза {digest}%', digest=fmt(params.get('gel_digest_pct', 100)))
+    return text
 
 
 def _draw_locus_tables(writer, painter, area, summary):
@@ -278,7 +338,8 @@ def _draw_locus_tables(writer, painter, area, summary):
     return pages
 
 
-def export_lab_sheets(path: str, summaries: List[SnpSummary], fasta_path: str, params: dict, dcaps_mode: str) -> int:
+def export_lab_sheets(path: str, summaries: List[SnpSummary], fasta_path: str, params: dict, dcaps_mode: str,
+                      *, payload_lookup=None, metadata=None) -> int:
     """Write sheets for loci with an assay; return the number of pages.
 
     Without such SNPs no file is written. The destination is replaced only after
@@ -288,10 +349,12 @@ def export_lab_sheets(path: str, summaries: List[SnpSummary], fasta_path: str, p
     if not printable:
         return 0
     fasta = None
-    if fasta_path and os.path.isfile(fasta_path):
+    if (payload_lookup is None and fasta_path and os.path.isfile(fasta_path) and
+            any(summary.scheme.get('design') != 'allele_specific' for summary in printable)):
         from pyfaidx import Fasta
         fasta = Fasta(fasta_path, as_raw=True, sequence_always_upper=True)
-    footer = footer_text(fasta_path, params)
+    footer = footer_text(fasta_path, params, metadata)
+    pcr_footer = footer_text(fasta_path, params, metadata, show_digest=False)
     # Drawn on paper: the light palette whatever the theme of the window.
     panels = PrimerGraphicPanel(compact=True), GelPanel(compact=True)
     panels[0].apply_colors(palette.colors(False))
@@ -314,9 +377,15 @@ def export_lab_sheets(path: str, summaries: List[SnpSummary], fasta_path: str, p
                 for index, summary in enumerate(printable):
                     if index:
                         writer.newPage()
-                    payload, message = payload_for_scheme(summary.scheme, fasta_path, params, fasta)
+                    if summary.scheme.get('design') == 'allele_specific':
+                        payload, message = gel_view_options(summary.scheme, params), ''
+                        payload.pop('digest_pct', None)
+                    elif payload_lookup is None:
+                        payload, message = payload_for_scheme(summary.scheme, fasta_path, params, fasta)
+                    else:
+                        payload, message = payload_lookup(summary.scheme)
                     draw_sheet(_Page(painter, area.width(), area.height()), summary, payload, message, dcaps_mode,
-                               footer, panels)
+                               pcr_footer if summary.scheme.get('design') == 'allele_specific' else footer, panels)
                     if summary.scheme.get('genotype_bands'):
                         pages += _draw_locus_tables(writer, painter, area, summary)
             finally:

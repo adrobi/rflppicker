@@ -40,7 +40,11 @@ def build_parser():
                         help=t('Язык справки, сообщений и листов Сводка/Праймеры (по умолчанию — язык системы)'))
     data = parser.add_argument_group(t('данные'))
     data.add_argument('--fasta', required=True, help=t('Референсный геном FASTA (рядом создаётся .fai)'))
+    data.add_argument('--assembly-accession', help=t('Идентификатор сборки генома для проекта и поиска по rsID'))
     data.add_argument('--variants', required=True, help=t('CSV/TSV/TXT с колонками chrom, pos, ref, alt'))
+    data.add_argument('--vcf-region', help=t('Регион входного VCF, например chr1:1000-2000'))
+    data.add_argument('--vcf-sample', action='append', dest='vcf_samples',
+                      help=t('Образец входного VCF. Для нескольких образцов повторите ключ.'))
     data.add_argument('--names', dest='names2_file', metavar='FILE',
                       help=t('Файл соответствий названий хромосом'))
     data.add_argument('--out', required=True, help=t('Файл результата: .csv или .xlsx'))
@@ -57,6 +61,8 @@ def build_parser():
                         help=t('Макс. число разрезов в ампликоне'))
     search.add_argument('--double-digest', action=argparse.BooleanOptionalAction,
                         help=t('Подбирать два фермента, если один не дал надёжной схемы'))
+    search.add_argument('--allele-specific', action=argparse.BooleanOptionalAction,
+                        help=t('Запасная аллель-специфичная ПЦР'))
     search.add_argument('--gain-loss-only', dest='gain_loss_only', action=argparse.BooleanOptionalAction,
                         help=t('Только появление/исчезновение сайта'))
     search.add_argument('--suppliers', type=lambda s: [part.strip() for part in s.split(',') if part.strip()],
@@ -118,6 +124,11 @@ def build_parser():
     primers.add_argument('--tm-max', dest='tm_max', type=float, metavar='C', help=t('Макс. Tm, °C'))
 
     gel = parser.add_argument_group(t('модель геля'))
+    gel.add_argument('--gel-model', dest='gel_model_version', choices=(core.MODEL_VERSION, core.AGAROSE_MODEL_VERSION),
+                     help=t('Модель геля'))
+    gel.add_argument('--agarose', dest='gel_agarose_pct', type=float, help=t('Концентрация агарозы от 0.5 до 4%%'))
+    gel.add_argument('--marker', dest='gel_marker', choices=core.GEL_MARKERS, help=t('Маркер длин'))
+    gel.add_argument('--digest-pct', dest='gel_digest_pct', type=float, help=t('Разрез на сайт для виртуального геля, %%'))
     gel.add_argument('--resolution-bp', dest='gel_resolution_bp', type=float, metavar='BP',
                      help=t('Разрешение, п.н.'))
     gel.add_argument('--resolution-pct', dest='gel_resolution_pct', type=float, metavar='PCT',
@@ -214,6 +225,38 @@ def download_command(argv) -> int:
     return 0
 
 
+def rsid_command(argv):
+    from rsid_export import describe_lookup, write_rsid_target
+    from rsid_lookup import lookup_rsid
+
+    parser = argparse.ArgumentParser(prog='rflp_cli', description=t('Поиск по rsID…'))
+    parser.add_argument('--lookup-rsid', required=True)
+    parser.add_argument('--fasta', required=True)
+    parser.add_argument('--assembly-accession', required=True)
+    parser.add_argument('--taxid', required=True)
+    parser.add_argument('--local-vcf')
+    parser.add_argument('--assembly-report')
+    parser.add_argument('--names')
+    parser.add_argument('--out')
+    parser.add_argument('--lang', choices=LANGS)
+    args = parser.parse_args(argv)
+    if args.out and Path(args.out).suffix.lower() != '.vcf':
+        parser.error(t('--out: требуется расширение .vcf'))
+    try:
+        result = lookup_rsid(args.lookup_rsid, fasta=args.fasta, taxid=args.taxid, assembly=args.assembly_accession,
+                             local_vcf=args.local_vcf, assembly_report=args.assembly_report,
+                             names=core.load_names2(args.names))
+        print(describe_lookup(result))
+        if result.match is None:
+            return 1
+        if args.out:
+            write_rsid_target(args.out, result, args.fasta, args.local_vcf)
+        return 0
+    except (OSError, ValueError, FastaIndexingError) as exc:
+        print(t('Ошибка: {error}', error=core_text(str(exc))), file=sys.stderr)
+        return 2
+
+
 def main(argv=None):
     # A redirected Windows console uses a legacy code page without "×", "′" etc.
     for stream in (sys.stdout, sys.stderr):
@@ -221,8 +264,11 @@ def main(argv=None):
             stream.reconfigure(errors='replace')
     choose_language(argv)
     translate_core_log()
-    if any(str(arg).split('=')[0] == '--download-genome' for arg in (sys.argv[1:] if argv is None else argv)):
+    actions = {str(arg).split('=')[0] for arg in (sys.argv[1:] if argv is None else argv)}
+    if '--download-genome' in actions:
         return download_command(argv)
+    if '--lookup-rsid' in actions:
+        return rsid_command(argv)
     parser = build_parser()
     args = parser.parse_args(argv)
     out = Path(args.out)
@@ -286,14 +332,15 @@ def main(argv=None):
 def save_results(args, out, params, report, header, rows, started) -> None:
     summary = report.get('summary', {})
     # One summary per line of the variants file; the best scheme is the chosen one.
-    records, _ = read_input_records(params['input_file'])
+    records, _ = read_input_records(params['input_file'], vcf_region=params['vcf_region'], vcf_samples=params['vcf_samples'])
     summaries = build_summaries(records, header, rows, report.get('rejected', []))
     table_header, table_rows = results_table(summaries, header, rows)
     if out.suffix.lower() == '.xlsx':
         export_excel(out, table_header, table_rows, metadata={
-            'app_version': core.APP_VERSION, 'scoring_model': core.MODEL_VERSION,
+            'app_version': core.APP_VERSION, 'scoring_model': report.get('scoring_model', core.MODEL_VERSION),
             'run_timestamp': started.isoformat(timespec='seconds'), 'genome_path': params['fasta'],
             'parameters': report.get('parameters', params), 'status_summary': summary,
+            **({'vcf_skipped_alts': report['vcf_skipped_alts']} if report.get('vcf_skipped_alts') else {}),
         }, rejected=report.get('rejected', []), extra_sheets=excel_sheets(summaries, params['dcaps']))
     else:
         export_csv(out, table_header, table_rows)

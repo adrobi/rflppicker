@@ -19,8 +19,11 @@ from PyQt6.QtWidgets import (
 )
 
 import palette
-from assay_scoring import diploid_genotypes
-from i18n import N_, t
+from assay_scoring import MODEL_VERSION, GelModel, band_clusters, diploid_genotypes
+from gel_model import (
+    DEFAULT_AGAROSE_PCT, DEFAULT_DIGEST_PCT, DEFAULT_GEL_MARKER, GEL_MARKERS, digest_mass, digest_probability,
+)
+from i18n import N_, fmt, t
 from rflp_core import cut_positions, revcomp
 from snp_summary import allele_products
 from theme import mono_font
@@ -615,29 +618,48 @@ class PrimerGraphicPanel(QWidget):
             self.status_label.setText(t("Сохранено: {path}", path=path))
 
 
-LADDER_BP = (50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 800, 1000, 1500, 2000)
+LADDER_BP = GEL_MARKERS[DEFAULT_GEL_MARKER]
+NO_ENZYME_LANE = N_("Без фермента")
 
 
-def _gel_lane(mass, *alleles):
+def _gel_lane(mass, *alleles, probability=1.0):
     amounts = {}
     for fragments in alleles:
-        for length in fragments:
-            amounts[length] = amounts.get(length, 0.0) + length / mass
+        for length, expected_mass in digest_mass(fragments, probability):
+            amounts[length] = amounts.get(length, 0.0) + expected_mass / mass
     return sorted(amounts.items(), reverse=True)
 
 
-def gel_lanes(frags_ref, frags_alt, product, product_alt=None, uncut=False):
+def gel_lanes(frags_ref, frags_alt, product, product_alt=None, uncut=False, *, digest_pct=DEFAULT_DIGEST_PCT):
     """Lanes of the virtual gel as ``(label, [(length, amount), ...])``.
 
-    Equal-length fragments contribute to the same band. Intensity is relative
-    to the total DNA length for that genotype, assuming complete digestion.
+    Equal-length fragments contribute to the same band. Intensity is the
+    expected fraction of lane DNA mass, with one copy per allele in a heterozygote.
+    Fragment arrays must be in order along their respective products.
     """
     product_alt = product if product_alt is None else product_alt
+    probability = 1.0 if uncut else digest_probability(digest_pct)
+    control = [] if uncut else [(NO_ENZYME_LANE, _gel_lane(product + product_alt, [product], [product_alt]))]
+    return control + [("REF/REF", _gel_lane(product, frags_ref, probability=probability)),
+                      ("REF/ALT", _gel_lane(product + product_alt, frags_ref, frags_alt, probability=probability)),
+                      ("ALT/ALT", _gel_lane(product_alt, frags_alt, probability=probability))]
 
-    control = [] if uncut else [(N_("Без фермента"), _gel_lane(product + product_alt, [product], [product_alt]))]
-    return control + [("REF/REF", _gel_lane(product, frags_ref)),
-                      ("REF/ALT", _gel_lane(product + product_alt, frags_ref, frags_alt)),
-                      ("ALT/ALT", _gel_lane(product_alt, frags_alt))]
+
+def _gel_band_ranges(lanes, model):
+    if model.version == MODEL_VERSION:
+        return {}
+    sizes = {size for label, bands in lanes if label != NO_ENZYME_LANE for size, _ in bands
+             if model.min_visible <= size <= model.max_visible}
+    return {size: (cluster[0], cluster[-1])
+            for cluster in band_clusters(sizes, model, 1.0) for size in cluster}
+
+
+def _gel_display_bands(bands, ranges):
+    masses = {}
+    for size, amount in bands:
+        bounds = ranges.get(size, (size, size))
+        masses[bounds] = masses.get(bounds, 0.0) + amount
+    return masses.items()
 
 
 def save_scene_png(scene, path, background, hints, scale=2.0):
@@ -682,11 +704,10 @@ def save_scene_svg(scene, path, title, description, hints):
 
 
 class GelPanel(QWidget):
-    """Virtual agarose gel of the three genotypes, drawn from the band model.
+    """Virtual agarose gel of diploid genotypes, drawn at nominal resolution.
 
-    Migration is linear in log(length); brightness follows the DNA amount of
-    each band. Fragments outside the visible range of the model are faint.
-    This illustrates the prediction; it does not simulate a particular gel.
+    Migration is linear in log(length). Brightness follows expected DNA mass.
+    Fragments outside the visible range of the model are faint.
     """
 
     def __init__(self, parent=None, compact: bool = False):
@@ -751,77 +772,133 @@ class GelPanel(QWidget):
         self.view.fit_diagram()
 
     def render(self, frags_ref, frags_alt, product, variant="", enzyme="", min_visible=80, max_visible=800,
-               product_alt=None, uncut=False, locus_products=()):
+               product_alt=None, uncut=False, locus_products=(), *, model_version=MODEL_VERSION,
+               agarose_pct=DEFAULT_AGAROSE_PCT, resolution_bp=10.0, resolution_pct=3.0, stress_factor=1.5,
+               marker=DEFAULT_GEL_MARKER, digest_pct=DEFAULT_DIGEST_PCT):
         if not product or product <= 0:
             self.show_message(t("Длина продукта неизвестна."))
             return
         self._message = ""
+        model = GelModel(min_visible, max_visible, resolution_bp, resolution_pct, stress_factor,
+                         version=model_version, agarose_pct=agarose_pct)
         if locus_products:
+            probability = 1.0 if uncut else digest_probability(digest_pct)
             self._lanes = [(label, _gel_lane(locus_products[i]['length'] + locus_products[j]['length'],
-                                            locus_products[i]['fragments'], locus_products[j]['fragments']))
+                                            locus_products[i]['fragments'], locus_products[j]['fragments'],
+                                            probability=probability))
                            for label, i, j in diploid_genotypes(len(locus_products))]
         else:
-            self._lanes = gel_lanes(frags_ref, frags_alt, product, product_alt, uncut)
+            self._lanes = gel_lanes(frags_ref, frags_alt, product, product_alt, uncut, digest_pct=digest_pct)
         variant_title = variant.partition(' ')[0] if locus_products else variant
         self._title = f"{variant_title} · {enzyme}".strip(" ·")
-        self.scene.clear()
-        scene_width = max(900, 150 + 108 * (len(self._lanes) + 1))
-        self.scene.setSceneRect(0, 0, scene_width, 700)
-        lengths = [length for _, bands in self._lanes for length, _ in bands]
-        low = max(10.0, min(min(lengths), 50) * 0.8)
+        scene_width = self._prepare_scene()
         max_product = max((item['length'] for item in locus_products), default=max(product, product_alt or product))
-        high = max(600.0, max_product * 1.3)
-        top, bottom, left, right = 95.0, 560.0, 110.0, scene_width - 40
-
-        def y_at(length):
-            return top + (math.log10(high) - math.log10(length)) / (math.log10(high) - math.log10(low)) * (bottom - top)
+        partial = not uncut and digest_pct < DEFAULT_DIGEST_PCT
 
         self._text(30, 12, self._title or t("Виртуальный гель"), 16, True, width=scene_width - 60)
         size = product if product_alt is None else f'REF {product} / ALT {product_alt}'
         caption = (N_("Продукт {product} п.н. · видимые фрагменты {low}–{high} п.н. · без рестрикции") if uncut else
                    N_("Продукт {product} п.н. · видимые фрагменты {low}–{high} п.н. · полная рестрикция"))
         subtitle = (t("Дорожки диплоидных генотипов · видимые фрагменты {low}–{high} п.н.",
-                      low=min_visible, high=max_visible) if locus_products else
+                      low=min_visible, high=max_visible) if locus_products or partial else
                     t(caption, product=size, low=min_visible, high=max_visible))
-        self._text(30, 44, subtitle, 10, width=scene_width - 60)
+        self._text(30, 43, subtitle, 10, width=scene_width - 60)
+        self._text(30, 64, self._model_caption(model), 9, width=scene_width - 60)
+        if partial:
+            self._text(30, 85, t("Вероятность разреза на сайт: {completion}",
+                                 completion=f"{fmt(digest_pct, 2)}%"), 9, width=scene_width - 60)
+        self._draw_band_lanes(marker, scene_width, 136.0 if partial else 115.0, max_product, model)
+        self._text(30, 665, t("Доля массы ДНК определяет яркость полосы. В скобках и бледно показаны "
+                              "фрагменты вне видимого диапазона."), 9, width=840)
+        self._set_enabled(True)
+        self.view.fit_diagram()
+
+    @staticmethod
+    def _model_caption(model):
+        return t("Модель: {model} · агароза {agarose} · разрешение {bp} п.н. / {percent} · ухудшение ×{stress}",
+                 model=model.version, agarose=f"{fmt(model.agarose_pct, 2)}%", bp=fmt(model.resolution_bp, 2),
+                 percent=f"{fmt(model.resolution_pct, 2)}%", stress=fmt(model.stress_factor, 2))
+
+    def render_aspcr(self, expected_bands, variant="", *, marker=DEFAULT_GEL_MARKER,
+                     min_visible=80, max_visible=800, model_version=MODEL_VERSION, agarose_pct=DEFAULT_AGAROSE_PCT,
+                     resolution_bp=10.0, resolution_pct=3.0, stress_factor=1.5):
+        """Draw two predicted PCR reactions per genotype, using band presence."""
+        heading = t("Аллель-специфичная ПЦР · ожидаемые полосы реакций")
+        self._title = f"{variant} · {heading}" if variant else heading
+        self._message = ""
+        self._lanes = [(f"{genotype} · {tube}", [(size, None) for size in sorted(tubes[tube], reverse=True)])
+                       for genotype, tubes in expected_bands.items() for tube in ("REF", "ALT")]
+        scene_width = self._prepare_scene()
+        max_product = max(size for _, lane in self._lanes for size, _ in lane)
+        self._text(30, 14, self._title, 16, True, width=scene_width - 60)
+        model = GelModel(min_visible, max_visible, resolution_bp, resolution_pct, stress_factor,
+                         version=model_version, agarose_pct=agarose_pct)
+        self._text(30, 45, self._model_caption(model), 9, width=scene_width - 60)
+        self._draw_band_lanes(marker, scene_width, 95.0, max_product)
+        self._set_enabled(True)
+        self.view.fit_diagram()
+
+    def _prepare_scene(self):
+        self.scene.clear()
+        width = max(900, 150 + 108 * (len(self._lanes) + 1))
+        self.scene.setSceneRect(0, 0, width, 700)
+        return width
+
+    def _draw_band_lanes(self, marker, scene_width, top, max_product, model=None):
+        ladder = GEL_MARKERS[marker]
+        lengths = [length for _, bands in self._lanes for length, _ in bands]
+        low = max(1.0, min(min(lengths, default=ladder[0]), ladder[0]) * 0.8)
+        high = max(ladder[-1] * 1.05, max_product * 1.3)
+        bottom, left, right = 550.0, 110.0, scene_width - 40
+
+        def y_at(length):
+            return top + (math.log10(high) - math.log10(length)) / (math.log10(high) - math.log10(low)) * (bottom - top)
+
         gel = palette.GEL
-        lanes = [("M", [(size, None) for size in LADDER_BP if low <= size <= high])] + self._lanes
+        marker_label = f"M · {marker.replace('-', ' ')}"
+        lanes = [(marker_label, [(size, None) for size in ladder])] + self._lanes
+        ranges = _gel_band_ranges(self._lanes, model) if model else {}
         width = (right - left) / len(lanes)
         band = QtGui.QColor(gel["band"])
         for index, (label, bands) in enumerate(lanes):
+            lane_ranges = {} if label == NO_ENZYME_LANE else ranges
             label = t(label)
             x = left + index * width + width * 0.14
             w = width * 0.72
             self.scene.addRect(x, top - 18, w, 7, QtGui.QPen(QtGui.QColor(gel["well"])),
                                QtGui.QBrush(QtGui.QColor(gel["background"])))
-            caption = self._text(x - 8, bottom + 24, label, 10, True, width=w + 16)
+            caption_label = label.replace(" · ", "\n") if index and model is None else label
+            caption = self._text(x - 8, bottom + 24, caption_label, 10, True, width=w + 16)
             caption.setToolTip(label)
             listed = []
-            for length, amount in bands:
-                y = y_at(length)
-                if amount is None:  # ladder
+            display_bands = (_gel_display_bands(bands, lane_ranges) if index and model else
+                             [((size, size), None) for size, _ in bands])
+            for (lo, hi), amount in display_bands:
+                y = y_at(math.sqrt(lo * hi))
+                fragment = str(lo) if lo == hi else f"{lo}–{hi}"
+                if index == 0:  # ladder
                     color = QtGui.QColor(gel["marker"])
-                    self._text(left - 58, y - 11, str(length), 9, color=None)
-                    tip = t("Маркер: {length} п.н.", length=length)
+                    self._text(left - 58, y - 11, fragment, 9)
+                    tip = t("Маркер: {length} п.н.", length=fragment)
                 else:
-                    visible = min_visible <= length <= max_visible
+                    visible = model is None or model.min_visible <= lo <= hi <= model.max_visible
                     color = QtGui.QColor(band if visible else QtGui.QColor(gel["faint"]))
-                    color.setAlpha(int(70 + 185 * min(1.0, amount * 1.6)) if visible else 160)
-                    tip = t("{label}: {length} п.н., доля ДНК {share}", label=label, length=length,
-                            share=f"{amount:.0%}")
+                    if amount is None:
+                        tip = t("{label}: {length} п.н.", label=label, length=fragment)
+                    else:
+                        color.setAlpha(max(1, round((255 if visible else 160) * min(1.0, amount))))
+                        tip = t("{label}: {length} п.н., доля ДНК {share}", label=label, length=fragment,
+                                share=f"{amount:.0%}" if amount >= .005 else "<1%")
                     if not visible:
                         tip += t(" — вне видимого диапазона")
-                    listed.append(str(length) if visible else f"({length})")
+                    listed.append(fragment if visible else f"({fragment})")
                 item = self.scene.addRect(x, y - 3, w, 6, QtGui.QPen(Qt.PenStyle.NoPen), QtGui.QBrush(color))
                 item.setToolTip(tip)
             if listed:
-                summary = self._text(x - 8, bottom + 66, " + ".join(listed), 9, width=w + 16)
+                summary = self._text(x - 8, bottom + 62, " + ".join(listed), 9, width=w + 16)
                 summary.setToolTip(t("{fragments} п.н.", fragments=" + ".join(listed)))
-        self._text(30, 650, t("Схема по модели программы: яркость пропорциональна массе фрагмента, у гетерозиготы — "
-                              "по половине каждого аллеля; в скобках и бледно — фрагменты вне видимого диапазона."),
-                   9, width=840)
-        self._set_enabled(True)
-        self.view.fit_diagram()
+                if summary.boundingRect().height() > 42:
+                    summary.setPlainText(f"{listed[0]} + …")
 
     def export_png(self, path, scale=2.0):
         if not self._lanes:
@@ -915,6 +992,31 @@ def overlay_primers(amplicon: str, left: str, right: str) -> str:
     return product
 
 
+def _finite_number(value):
+    try:
+        number = float(value)
+        return number if math.isfinite(number) else None
+    except (TypeError, ValueError):
+        return None
+
+
+def gel_view_options(scheme, params):
+    """Use explicit viewing options, falling back to the settings saved with a row."""
+    gel = dict(min_visible=params.get("min_frag", _safe_int(scheme.get("gel_min_visible")) or 80),
+               max_visible=params.get("max_frag", _safe_int(scheme.get("gel_max_visible")) or 800))
+    for setting in ("resolution_bp", "resolution_pct", "stress_factor", "agarose_pct", "digest_pct"):
+        key = f"gel_{setting}"
+        value = params.get(key, _finite_number(scheme.get(key)))
+        if value is not None:
+            gel[setting] = value
+    for setting, row_key in (("model_version", "scoring_model"), ("marker", "gel_marker")):
+        value = params.get(f"gel_{setting}", scheme.get(row_key))
+        if value:
+            gel[setting] = value
+
+    return gel
+
+
 def payload_for_scheme(scheme: dict, fasta_path: str, params: dict, fasta=None) -> Tuple[Optional[dict], str]:
     """Drawing data for one scheme (a core result row as a dict), or (None, reason).
 
@@ -945,19 +1047,12 @@ def payload_for_scheme(scheme: dict, fasta_path: str, params: dict, fasta=None) 
         if own:
             fasta.close()
 
-    def number(key):
-        try:
-            value = float(scheme.get(key))
-            return value if math.isfinite(value) else None
-        except (TypeError, ValueError):
-            return None
-
     return dict(
         mapped_id=mapped_id, genome_start=amp_start, genome_end=amp_end, amplicon_seq=amplicon,
         snp_offset=_safe_int(scheme.get("snp_offset_in_amplicon")),
         primer_left=str(scheme.get("primers_left") or "").strip(),
         primer_right=str(scheme.get("primers_right") or "").strip(),
-        tm_left=number("tm_left"), tm_right=number("tm_right"),
+        tm_left=_finite_number(scheme.get("tm_left")), tm_right=_finite_number(scheme.get("tm_right")),
         primer_left_start=_safe_int(scheme.get("primer_left_start")),
         primer_left_len=_safe_int(scheme.get("primer_left_len")),
         primer_right_start=_safe_int(scheme.get("primer_right_start")),
@@ -967,5 +1062,5 @@ def payload_for_scheme(scheme: dict, fasta_path: str, params: dict, fasta=None) 
         locus_products=allele_products(scheme),
         pattern=str(scheme.get("pattern") or "").strip(), frags_ref=str(scheme.get("frags_ref") or "").strip(),
         frags_alt=str(scheme.get("frags_alt") or "").strip(),
-        gel=dict(min_visible=params.get("min_frag", 80), max_visible=params.get("max_frag", 800)),
+        gel=gel_view_options(scheme, params),
     ), ""

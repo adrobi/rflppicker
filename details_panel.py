@@ -1,20 +1,25 @@
 """The «Детали» column: schemes of the selected SNP, the gel, the map and the primer card (spec §7)."""
 import dataclasses
+from html import escape
 from typing import List, Optional
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QApplication, QComboBox, QScrollArea, QGridLayout, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QPushButton, QSizePolicy,
-    QTabWidget, QToolButton, QVBoxLayout, QWidget,
+    QStackedWidget, QTabWidget, QToolButton, QVBoxLayout, QWidget,
 )
 
+from allele_specific import reaction_table
+from aspcr_display import (
+    genotype_bands, genotype_headings, genotype_rows, primer_label, tube_bands, tube_heading, unresolved_text,
+)
 from enzyme_catalog import PRODUCTS, property_lines
 import icons
 import palette
 from i18n import N_, fmt, language, t
 from snp_summary import SnpSummary, locus_bands, order_lines, product_size_text, scheme_label, status_title, summary_text, weakest_text
 from theme import mono_font
-from visualization import GelPanel, PrimerGraphicPanel, RFLPVisualizationDialog, payload_for_scheme, render_payload
+from visualization import GelPanel, PrimerGraphicPanel, RFLPVisualizationDialog, gel_view_options, payload_for_scheme, render_payload
 
 EMPTY_TEXT = N_('Выберите SNP в списке')
 
@@ -47,6 +52,7 @@ class DetailsPanel(QWidget):
         self._fasta_path = ''
         self._params: dict = {}
         self._fasta = None
+        self._payload_lookup = None
         self._payload: Optional[dict] = None
         self._message = ''
         self._dialog: Optional[RFLPVisualizationDialog] = None
@@ -86,12 +92,21 @@ class DetailsPanel(QWidget):
         gel_layout.setContentsMargins(0, 6, 0, 0)
         self.gel = GelPanel(compact=True)
         gel_layout.addWidget(self.gel, 1)
+        self.reaction_details = self._label('reaction_details')
+        self.reaction_details.setWordWrap(True)
+        self.reaction_details.setAlignment(Qt.AlignmentFlag.AlignTop)
+        gel_layout.addWidget(self.reaction_details, 1)
+        self.reaction_details.hide()
         self.weakest_label = self._label('weakest_label', 'muted')
         self.weakest_label.setWordWrap(True)
         gel_layout.addWidget(self.weakest_label)
         self.tabs.addTab(gel_tab, t('Гель'))
         self.map = PrimerGraphicPanel(compact=True)
-        self.tabs.addTab(self.map, t('Карта'))
+        self.allele_specific_gel = GelPanel()
+        self.map_tab = QStackedWidget()
+        self.map_tab.addWidget(self.map)
+        self.map_tab.addWidget(self.allele_specific_gel)
+        self.tabs.addTab(self.map_tab, t('Карта'))
         self.tabs.addTab(self._build_primer_card(), t('Праймеры'))
         self.large_button = QToolButton()
         self.large_button.setObjectName('large_button')
@@ -147,11 +162,11 @@ class DetailsPanel(QWidget):
         self.second_product_picker.hide()
         self.product_details = self._label('product_details')
         self.product_details.setWordWrap(True)
+        self.product_details.setOpenExternalLinks(True)
         layout.addWidget(self.product_details)
         buttons = QHBoxLayout()
         self.copy_order_button = QPushButton(t('Копировать для заказа'))
         self.copy_order_button.setObjectName('copy_order_button')
-        self.copy_order_button.setToolTip(t('Две строки «имя ⇥ последовательность» для бланка заказа синтеза'))
         self.copy_order_button.clicked.connect(self._copy_order)
         self.copy_all_button = QPushButton(t('Копировать всё'))
         self.copy_all_button.setObjectName('copy_all_button')
@@ -174,10 +189,11 @@ class DetailsPanel(QWidget):
         return scroll
 
     # ----- genome -----
-    def set_context(self, fasta_path: str, params: dict) -> None:
+    def set_context(self, fasta_path: str, params: dict, payload_lookup=None) -> None:
         self.close_fasta()
         self._fasta_path = fasta_path or ''
         self._params = dict(params)
+        self._payload_lookup = payload_lookup
 
     def close_fasta(self) -> None:
         if self._fasta is not None:
@@ -270,7 +286,9 @@ class DetailsPanel(QWidget):
             if index == 0:
                 parts.append(t('лучшая'))
             first = ' · '.join(parts)
-            if scheme.get('genotype_bands'):
+            if scheme.get('design') == 'allele_specific':
+                second = t('Различимых генотипов: {count}', count=3)
+            elif scheme.get('genotype_bands'):
                 second = t('Различимых генотипов: {count}', count=len(locus_bands(scheme)))
             else:
                 second = t('{ref_ref} | {alt_alt} · продукт {size}', ref_ref=scheme.get('bands_ref_ref') or '',
@@ -315,8 +333,27 @@ class DetailsPanel(QWidget):
         self.schemes_list.setCurrentRow(index)
         self.schemes_list.blockSignals(False)
         scheme = s.schemes[index]
+        aspcr = scheme.get('design') == 'allele_specific'
+        self.gel.setVisible(not aspcr)
+        self.weakest_label.setVisible(not aspcr)
+        self.reaction_details.setVisible(aspcr)
+        self.tabs.setTabText(0, t('Реакции') if aspcr else t('Гель'))
+        self.tabs.setTabText(1, t('Гель') if aspcr else t('Карта'))
+        self.map_tab.setCurrentWidget(self.allele_specific_gel if aspcr else self.map)
+        self.large_button.setEnabled(not aspcr)
         self.weakest_label.setText(weakest_text(scheme))
-        payload, error = payload_for_scheme(scheme, self._fasta_path, self._params, fasta=self._open_fasta())
+        if aspcr:
+            tubes = reaction_table(scheme)
+            if tubes:
+                options = gel_view_options(scheme, self._params)
+                options.pop('digest_pct', None)
+                self.allele_specific_gel.render_aspcr(genotype_bands(tubes), scheme.get('variant', ''),
+                                                      **options)
+            payload, error = None, ''
+        elif self._payload_lookup is not None:
+            payload, error = self._payload_lookup(scheme)
+        else:
+            payload, error = payload_for_scheme(scheme, self._fasta_path, self._params, fasta=self._open_fasta())
         self._show_payload(payload, error)
         self._fill_card()
 
@@ -333,6 +370,16 @@ class DetailsPanel(QWidget):
     def _fill_card(self):
         viewed = self._viewed_summary()
         scheme = viewed.scheme
+        aspcr = scheme.get('design') == 'allele_specific'
+        self.product_details.setVisible(not aspcr)
+        self.copy_order_button.setToolTip('' if aspcr else
+                                         t('Две строки «имя ⇥ последовательность» для бланка заказа синтеза'))
+        for row in self._card_rows:
+            for label in row:
+                label.setVisible(not aspcr)
+        if aspcr:
+            self._fill_reaction_card(reaction_table(scheme))
+            return
         for picker, name, key in ((self.product_picker, scheme.get('enzyme_1') or scheme.get('enzyme'), 'enzyme_product'),
                                   (self.second_product_picker, scheme.get('enzyme_2'), 'enzyme_product_2')):
             products = PRODUCTS.get(name, ())
@@ -377,9 +424,42 @@ class DetailsPanel(QWidget):
         self.copy_order_button.setEnabled(chosen and bool(scheme.get('primers_left')))
         self.copy_all_button.setEnabled(chosen)
 
+    def _fill_reaction_card(self, tubes):
+        self.product_picker.hide()
+        self.second_product_picker.hide()
+        lines = []
+        primers = []
+        for tube in tubes:
+            heading = tube_heading(tube)
+            lines.extend((heading, tube_bands(tube), ''))
+            primers.append(heading)
+            primers.extend(f"{primer_label(primer['role'])} 5′→3′ – {primer['sequence']}"
+                           for primer in tube['primers'])
+            primers.append('')
+        if tubes:
+            lines.append('  |  '.join(genotype_headings()))
+            lines.extend('  |  '.join(row) for row in genotype_rows(tubes))
+            lines.extend(('', unresolved_text(), '', t('Аллельная специфичность ПЦР не подтверждена')))
+        chosen = self._viewed == self._summary.chosen
+        self.reaction_details.setText('\n'.join(lines))
+        if not chosen:
+            primers.append(t('Эта схема не выбрана: в Excel идёт ★ {enzyme}. Отметьте её звёздочкой, чтобы копировать.',
+                             enzyme=scheme_label(self._summary.scheme)))
+        self.card_details.setText('\n'.join(primers).rstrip())
+        self.copy_order_button.setEnabled(chosen and bool(tubes))
+        self.copy_all_button.setEnabled(chosen)
+
     def _show_product(self, scheme):
         sequences = self.map.allele_sequences() if self._payload else None
-        self.product_details.setText('\n'.join(property_lines(scheme, sequences)))
+        lines = property_lines(scheme, sequences)
+        if any(line.startswith('https://') for line in lines):
+            self.product_details.setTextFormat(Qt.TextFormat.RichText)
+            self.product_details.setText('<br>'.join(
+                f'<a href="{escape(line)}">{t("Карточка производителя")}</a>'
+                if line.startswith('https://') else escape(line) for line in lines))
+        else:
+            self.product_details.setTextFormat(Qt.TextFormat.PlainText)
+            self.product_details.setText('\n'.join(lines))
 
     def _choose_product(self):
         scheme = self._viewed_summary().scheme
@@ -402,7 +482,8 @@ class DetailsPanel(QWidget):
             self._dialog.show_payload(payload, message)
 
     def gel_message(self) -> str:
-        return self.gel.message()
+        gel = self.allele_specific_gel if self.map_tab.currentWidget() is self.allele_specific_gel else self.gel
+        return gel.message()
 
     def open_large(self) -> None:
         if self._dialog is None:

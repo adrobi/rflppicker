@@ -3,17 +3,19 @@ import os
 import sys
 import traceback
 from datetime import datetime
+from functools import partial
 from typing import List, Optional
 
 from PyQt6.QtCore import QByteArray, QLocale, Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import (
-    QApplication, QDialog, QHBoxLayout, QLabel, QMainWindow, QMenu, QMessageBox, QPlainTextEdit, QPushButton,
+    QApplication, QDialog, QFileDialog, QHBoxLayout, QLabel, QMainWindow, QMenu, QMessageBox, QPlainTextEdit, QPushButton,
     QSplitter, QStatusBar, QToolButton, QVBoxLayout, QWidget,
 )
 
 import i18n
 import lab_sheet
+import project_file
 import resources_rc  # noqa: F401  (window icon)
 import reporting
 import rflp_core as core
@@ -112,9 +114,15 @@ class RFLPPickerGUI(QMainWindow):
         self.report: dict = {}
         self.params: dict = {}
         self.summaries = []
+        self.run_metadata: dict = {}
+        self._project_payloads: Optional[dict] = None
         self._has_ids = False
         self.setWindowTitle(f'RFLP Picker {core.APP_VERSION}')
         self.setWindowIcon(QIcon(':/icons/app_icon.ico'))
+        project_menu = self.menuBar().addMenu(t('Проект'))
+        self.open_project_action = project_menu.addAction(t('Открыть проект…'), lambda: self.open_project())
+        self.save_project_action = project_menu.addAction(t('Сохранить проект…'), lambda: self.save_project())
+        self._update_project_actions()
         self.setMinimumSize(1000, 640)
         self.resize(1600, 900)
 
@@ -275,6 +283,7 @@ class RFLPPickerGUI(QMainWindow):
         worker.cancelled.connect(self._on_cancelled)
         worker.finished.connect(self._on_finished)
         self.worker = worker
+        self._update_project_actions()
         worker.start()
 
     def stop_run(self) -> None:
@@ -296,6 +305,7 @@ class RFLPPickerGUI(QMainWindow):
 
     def _on_finished(self):
         self.worker = None
+        self._update_project_actions()
         self.launch.set_running(False)
         if self._close_when_finished:
             self._close_when_finished = False
@@ -318,11 +328,20 @@ class RFLPPickerGUI(QMainWindow):
     def on_succeeded(self, header: list, rows: list, report: dict, params: Optional[dict] = None) -> None:
         self.header, self.rows, self.report = list(header), list(rows), dict(report)
         self.params = dict(params or self.launch.collect_params())
-        records, self._has_ids = read_input_records(self.params['input_file'])
+        self.params.update(report.get('parameters', {}))
+        self.run_metadata = project_file.run_metadata(self.params, self.report)
+        self._project_payloads = None
+        records, self._has_ids = read_input_records(self.params['input_file'], vcf_region=self.params.get('vcf_region', ''),
+                                                   vcf_samples=self.params.get('vcf_samples', ()))
         self.summaries = build_summaries(records, self.header, self.rows, self.report.get('rejected', []))
-        self.details.set_context(self.params['fasta'], self.params)
-        self.details.show_summary(None, self.params['dcaps'])
-        self.list.set_summaries(self.summaries, self.params['dcaps'], self._has_ids)
+        self._show_run()
+
+    def _show_run(self) -> None:
+        dcaps = self.params.get('dcaps', 'off')
+        self.details.set_context(self.params.get('fasta', ''), self.params, self._project_payload_lookup())
+        self.details.show_summary(None, dcaps)
+        self.list.set_summaries(self.summaries, dcaps, self._has_ids)
+        self._update_project_actions()
         if not self.summaries:
             self.list.set_placeholder(t('В файле нет SNP'))
             self.status_message.setText(t('В файле нет SNP'))
@@ -335,6 +354,64 @@ class RFLPPickerGUI(QMainWindow):
             # When every SNP is a data error, the fix (file, genome, names) is in «Запуск»: keep it open.
             self.launch.set_collapsed(True)
             self._on_collapse_toggled(True)
+
+    # ----- projects -----
+    def _update_project_actions(self) -> None:
+        ready = self.worker is None
+        self.open_project_action.setEnabled(ready)
+        self.save_project_action.setEnabled(ready and bool(self.run_metadata))
+
+    def _project_payload_lookup(self):
+        if self._project_payloads is not None:
+            return partial(project_file.cached_payload, self._project_payloads)
+        return None
+
+    def save_project(self, path: Optional[str] = None) -> Optional[str]:
+        if self.worker is not None or not self.run_metadata:
+            return None
+        if path is None:
+            dialog = QFileDialog(self, t('Сохранить проект…'), '', t('Проект RFLP Picker (*.rflp)'))
+            dialog.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
+            dialog.setDefaultSuffix('rflp')
+            if dialog.exec():
+                path = dialog.selectedFiles()[0]
+            dialog.deleteLater()
+        if not path:
+            return None
+        try:
+            payloads = self._project_payloads
+            if payloads is None:
+                payloads = project_file.capture_payloads(self.summaries, self.params)
+            project_file.save_project(path, header=self.header, rows=self.rows, report=self.report, params=self.params,
+                                      metadata=self.run_metadata, has_ids=self._has_ids, summaries=self.summaries,
+                                      payloads=payloads)
+        except (OSError, TypeError, ValueError) as exc:
+            QMessageBox.warning(self, t('Проект'), t('Не удалось сохранить проект: {error}', error=exc))
+            return None
+        self.status_message.setText(t('Сохранено: {path}', path=path))
+        return path
+
+    def open_project(self, path: Optional[str] = None) -> Optional[str]:
+        if self.worker is not None:
+            return None
+        if path is None:
+            path, _ = QFileDialog.getOpenFileName(self, t('Открыть проект…'), '', t('Проект RFLP Picker (*.rflp)'))
+        if not path:
+            return None
+        try:
+            opened = project_file.open_project(path)
+            self.launch.restore_project_params(opened.params)
+        except (OSError, TypeError, ValueError) as exc:
+            QMessageBox.warning(self, t('Проект'), t('Не удалось открыть проект: {error}', error=exc))
+            return None
+        self.header, self.rows, self.report = opened.header, opened.rows, opened.report
+        self.params, self.run_metadata = opened.params, opened.metadata
+        self._has_ids, self.summaries = opened.has_ids, opened.summaries
+        self._project_payloads = opened.payloads
+        self.log.text.clear()
+        self._show_run()
+        self.status_message.setText(t('Проект открыт: {path}', path=path))
+        return path
 
     # ----- export -----
     def _default_path(self, extension: str) -> str:
@@ -358,7 +435,8 @@ class RFLPPickerGUI(QMainWindow):
             if pdf:
                 # One page per SNP with an assay; the chosen assay of each.
                 if not lab_sheet.export_lab_sheets(path, summaries, self.params.get('fasta', ''), self.params,
-                                                   self.params.get('dcaps', 'off')):
+                                                   self.params.get('dcaps', 'off'),
+                                                   payload_lookup=self._project_payload_lookup(), metadata=self.run_metadata):
                     QMessageBox.information(self, t('Выгрузка'), t('Нет SNP со схемой: листы не созданы.'))
                     return None
                 self.status_message.setText(t('Сохранено: {path}', path=path))
@@ -370,10 +448,9 @@ class RFLPPickerGUI(QMainWindow):
                 reporting.export_csv(path, table_header, table_rows)
             else:
                 reporting.export_excel(path, table_header, table_rows, metadata={
-                    'app_version': core.APP_VERSION, 'scoring_model': core.MODEL_VERSION,
-                    'run_timestamp': datetime.now().isoformat(timespec='seconds'),
-                    'genome_path': self.params.get('fasta', ''), 'parameters': self.params,
+                    **self.run_metadata, 'parameters': self.params,
                     'status_summary': self.report.get('summary', {}),
+                    **({'vcf_skipped_alts': self.report['vcf_skipped_alts']} if self.report.get('vcf_skipped_alts') else {}),
                 }, rejected=self.report.get('rejected', []),
                     extra_sheets=excel_sheets(summaries, self.params.get('dcaps', 'off')))
         except PermissionError:

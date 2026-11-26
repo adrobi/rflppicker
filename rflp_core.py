@@ -16,18 +16,25 @@ from datetime import datetime
 from pyfaidx import Fasta
 from Bio.Seq import Seq
 from Bio.Restriction import AllEnzymes
-from assay_scoring import GelModel, MODEL_VERSION, diploid_genotypes, score_genotypes, score_locus, rank_key
+from allele_specific import design_assays as design_allele_specific
+from assay_scoring import AGAROSE_MODEL_VERSION, GelModel, MODEL_VERSION, diploid_genotypes, score_genotypes, score_locus, rank_key
+from gel_model import DEFAULT_AGAROSE_PCT, DEFAULT_DIGEST_PCT, DEFAULT_GEL_MARKER, GEL_MARKERS, digest_probability
 import specificity
+from tabix_index import index_path as tabix_path, vcf_chunks
+from variant_input import VCF_COLUMNS, VCF_REJECTION_TEXT, is_vcf_path, parse_region, vcf_targets
 
-APP_VERSION = "1.6.0"
+APP_VERSION = "2.0.0"
 
 # Analysis defaults of the window and the command line; the checks were chosen
 # from the validation on published assays.
 DEFAULT_PARAMS = dict(
-    names2_file='', flank=300, min_frag=80, max_frag=800, delta=25, max_cuts=3,
-    gain_loss_only=False, double_digest=True, suppliers=[], use_primer3=True, prod_min=250, prod_max=600,
+    names2_file='', assembly_accession='', vcf_region='', vcf_samples=[],
+    flank=300, min_frag=80, max_frag=800, delta=25, max_cuts=3,
+    gain_loss_only=False, double_digest=True, allele_specific=True, suppliers=[], use_primer3=True, prod_min=250, prod_max=600,
     tm_min=58.0, tm_max=62.0, primer_pairs=10, top_results=10,
     gel_resolution_bp=10.0, gel_resolution_pct=3.0, gel_stress_factor=1.5,
+    gel_model_version=AGAROSE_MODEL_VERSION, gel_agarose_pct=DEFAULT_AGAROSE_PCT,
+    gel_marker=DEFAULT_GEL_MARKER, gel_digest_pct=DEFAULT_DIGEST_PCT,
     skip_norm=False, no_save_norm=True,
     enzyme_mode='off', lab_enzymes=[], commercial_only=True, group_isoschizomers=True, snp_end_distance=100,
     exclude_primer_sites=True, mask_repeats=True,
@@ -40,7 +47,9 @@ DEFAULT_PARAMS = dict(
 )
 # Parameters a caller may leave out: run_rflp_gui_mode() takes them from DEFAULT_PARAMS.
 OPTIONAL_PARAMS = (
-    'double_digest', 'enzyme_mode', 'lab_enzymes', 'primer_pairs', 'top_results', 'gel_resolution_bp', 'gel_resolution_pct',
+    'double_digest', 'allele_specific', 'assembly_accession', 'vcf_region', 'vcf_samples', 'enzyme_mode', 'lab_enzymes', 'primer_pairs', 'top_results',
+    'gel_resolution_bp', 'gel_resolution_pct',
+    'gel_model_version', 'gel_agarose_pct', 'gel_marker', 'gel_digest_pct',
     'gel_stress_factor', 'commercial_only', 'group_isoschizomers', 'snp_end_distance',
     'exclude_primer_sites', 'mask_repeats', 'background_vcf', 'exclude_background_sites', 'dcaps',
     'dcaps_mismatches', 'dcaps_tm_max', 'dcaps_prod_min', 'dcaps_prod_max', 'dcaps_delta',
@@ -68,7 +77,7 @@ class AnalysisCancelled(Exception):
     """Raised when a running analysis is cancelled by the caller."""
 
 
-def validate_params(params: dict) -> list[str]:
+def validate_params(params: dict, *, check_files: bool = True) -> list[str]:
     errors = []
     mode = params.get('enzyme_mode', 'off')
     if mode not in ('off', 'only', 'prefer'):
@@ -79,14 +88,23 @@ def validate_params(params: dict) -> list[str]:
             errors.append('lab_enzymes: список ферментов пуст')
         elif any(not isinstance(name, str) or ENZYME_NAMES.get(name.casefold()) != name for name in inventory):
             errors.append('lab_enzymes: список содержит неизвестные ферменты')
-    required = ('fasta', 'input_file')
-    for key in required:
-        if not str(params.get(key, '')).strip():
-            errors.append(f"Не задан параметр: {key}")
-    for key in ('fasta', 'input_file', 'background_vcf'):
-        value = str(params.get(key, '') or '').strip()
-        if value and not os.path.isfile(value):
-            errors.append(f"Файл не найден ({key}): {value}")
+    if check_files:
+        for key in ('fasta', 'input_file'):
+            if not str(params.get(key, '')).strip():
+                errors.append(f"Не задан параметр: {key}")
+        for key in ('fasta', 'input_file', 'background_vcf'):
+            value = str(params.get(key, '') or '').strip()
+            if value and not os.path.isfile(value):
+                errors.append(f"Файл не найден ({key}): {value}")
+    region, samples = params.get('vcf_region', ''), params.get('vcf_samples', ())
+    if region or samples:
+        input_file = params.get('input_file', '')
+        if (check_files or input_file) and not is_vcf_path(input_file):
+            errors.append('input_file: регион и образцы применяются к входному VCF')
+        try:
+            parse_region(region)
+        except ValueError as exc:
+            errors.append(f'input_file: {exc}')
     def positive(*values):
         try:
             numbers = [float(value) for value in values]
@@ -137,8 +155,12 @@ def validate_params(params: dict) -> list[str]:
     integer_in('specificity_max_product', DEFAULT_PARAMS['specificity_max_product'], 100, 20000)
     try:
         gel_model_from_params(params)
+        digest_probability(params.get('gel_digest_pct', DEFAULT_DIGEST_PCT))
     except (ValueError, TypeError) as exc:
         errors.append(str(exc))
+    marker = params.get('gel_marker', DEFAULT_GEL_MARKER)
+    if not isinstance(marker, str) or marker not in GEL_MARKERS:
+        errors.append('gel_marker: неизвестный маркер длин')
     return errors
 
 
@@ -146,7 +168,9 @@ def gel_model_from_params(params):
     return GelModel(params.get('min_frag', 80), params.get('max_frag', 800),
                     params.get('gel_resolution_bp', 10.0),
                     params.get('gel_resolution_pct', 3.0),
-                    params.get('gel_stress_factor', 1.5))
+                    params.get('gel_stress_factor', 1.5),
+                    version=params.get('gel_model_version', MODEL_VERSION),
+                    agarose_pct=params.get('gel_agarose_pct', DEFAULT_AGAROSE_PCT))
 
 
 # ====== primer3 ======
@@ -304,7 +328,7 @@ def detect_delim(header: str) -> str:
 ID_COLUMNS = ("id", "name", "snp_id", "rsid")
 
 
-def read_input_table(path: str) -> Tuple[Dict[str, Optional[int]], List[Tuple[int, List[str]]], str]:
+def read_input_table(path: str, *, vcf_region='', vcf_samples=()) -> Tuple[Dict[str, Optional[int]], List[Tuple[int, List[str]]], str]:
     """Columns, data lines and delimiter of a variants file.
 
     ``columns`` maps chrom/pos/ref/alt/id to a field index, or None when the
@@ -316,6 +340,9 @@ def read_input_table(path: str) -> Tuple[Dict[str, Optional[int]], List[Tuple[in
     if not os.path.isfile(path):
         logger.error(f"Файл с вариантами не найден: {path}")
         return {}, [], ""
+    if is_vcf_path(path):
+        rows = [(line, fields) for line, fields, _, _ in vcf_targets(path, vcf_region, vcf_samples)]
+        return VCF_COLUMNS, rows, '\t'
     with open(path, "r", encoding="utf-8-sig", errors="replace", newline="") as f:
         first = f.readline()
         if not first:
@@ -371,14 +398,24 @@ def resolve_contig(chrom: str, names: Dict[str, str], has_contig) -> str:
     return mapped
 
 
-def parse_fields(parts: List[str], columns: Dict[str, Optional[int]]) -> Tuple[str, int, str, str]:
+def resolve_input_contig(chrom, names, has_contig, from_vcf=False):
+    if from_vcf:
+        if has_contig(chrom):
+            return chrom
+        if chrom in names and has_contig(names[chrom]):
+            return names[chrom]
+        chrom = clean_chrom(chrom)
+    return resolve_contig(chrom, names, has_contig)
+
+
+def parse_fields(parts: List[str], columns: Dict[str, Optional[int]], preserve_chrom=False) -> Tuple[str, int, str, str]:
     """(chrom, pos, ref, alt) of one data line; raises IndexError/ValueError."""
     def field(name, default_index):
         index = columns.get(name)
         return parts[index if index is not None else default_index]
 
     return (
-        clean_chrom(field("chrom", 0)),
+        field("chrom", 0).strip() if preserve_chrom else clean_chrom(field("chrom", 0)),
         int(field("pos", 1)),
         field("ref", 2).strip().upper(),
         ','.join(allele.strip() for allele in field("alt", 3).upper().split(',')),
@@ -389,9 +426,29 @@ def parse_input(path: str, report: Optional[dict] = None) -> List[Tuple[str, int
     return [variant for _, variant in parse_input_lines(path, report)]
 
 
-def parse_input_lines(path: str, report: Optional[dict] = None) -> List[Tuple[int, Tuple[str, int, str, str]]]:
+def parse_input_lines(path: str, report: Optional[dict] = None, *, vcf_region='', vcf_samples=(),
+                      cancel_cb=None) -> List[Tuple[int, Tuple[str, int, str, str]]]:
     """The variants of the input file with the numbers of their lines."""
     rows: List[Tuple[int, Tuple[str, int, str, str]]] = []
+    if is_vcf_path(path):
+        def check_cancel():
+            if cancel_cb and cancel_cb():
+                raise AnalysisCancelled()
+
+        for line, fields, reason, omitted in vcf_targets(path, vcf_region, vcf_samples, check_cancel):
+            if report is not None and omitted:
+                report.setdefault('vcf_skipped_alts', []).append(dict(line=line, alleles=list(omitted)))
+            try:
+                variant = parse_fields(fields, VCF_COLUMNS, preserve_chrom=True) if reason != 'parse_error' else None
+            except (IndexError, ValueError):
+                variant = None
+            if variant and not reason:
+                rows.append((line, variant))
+            elif report is not None:
+                reason = reason or 'parse_error'
+                report.setdefault('rejected', []).append(dict(line=line, reason=reason,
+                                                               details=VCF_REJECTION_TEXT[reason], raw='\t'.join(fields)))
+        return rows
     try:
         columns, lines, delim = read_input_table(path)
         for line_no, parts in lines:
@@ -513,6 +570,8 @@ def normalize_variants_for_rflp(
     report: Optional[dict] = None,
     progress_cb=None,
     cancel_cb=None,
+    vcf_region='',
+    vcf_samples=(),
 ) -> Tuple[List[Tuple[str, int, str, str]], List[str], str, str]:
     """
     Нормализация вариантов:
@@ -526,7 +585,9 @@ def normalize_variants_for_rflp(
       cleaned_path: путь к .cleaned.tsv (или "" если не сохраняли)
       rejected_path: путь к .rejected.tsv (или "" если не сохраняли)
     """
-    variants_raw = parse_input_lines(input_path, report=report)
+    from_vcf = is_vcf_path(input_path)
+    variants_raw = parse_input_lines(input_path, report=report, vcf_region=vcf_region,
+                                     vcf_samples=vcf_samples, cancel_cb=cancel_cb)
     total = len(variants_raw)
 
     if report is not None:
@@ -548,7 +609,7 @@ def normalize_variants_for_rflp(
             for index, (line_no, (chrom, pos, ref, alt)) in enumerate(variants_raw, start=1):
                 if cancel_cb and cancel_cb():
                     raise AnalysisCancelled()
-                mapped = resolve_contig(chrom, names2_skip, check_cache.has_contig)
+                mapped = resolve_input_contig(chrom, names2_skip, check_cache.has_contig, from_vcf)
                 reason = ''
                 details = ''
                 if not (is_simple_snp(ref, alt) or is_indel(ref, alt) or multiallelic_alts(ref, alt)):
@@ -610,7 +671,7 @@ def normalize_variants_for_rflp(
         if progress_cb:
             progress_cb(i, max(1, total))
         orig_chrom = chrom
-        mapped_chrom = resolve_contig(orig_chrom, names2, cache.has_contig)
+        mapped_chrom = resolve_input_contig(orig_chrom, names2, cache.has_contig, from_vcf)
 
         if progress_every and (i % progress_every == 0) and status_cb:
             status_cb(f"[NORMALIZE] {i}/{total} {orig_chrom}:{pos}")
@@ -642,7 +703,7 @@ def normalize_variants_for_rflp(
             stats["kept"] += 1
             continue
 
-        if explicit:
+        if explicit or from_vcf:
             stats['rejected_ref_not_match'] += 1
             rejected.append((line_no, orig_chrom, pos, ref, alt, 'ref_not_match', 'REF не совпадает с FASTA'))
             continue
@@ -783,7 +844,7 @@ def primer_site_label(enzyme, amplicon: str, left_len, right_len) -> str:
 
 def load_background_variants(path: str, regions: Dict[str, list], names: Optional[dict] = None,
                              cancel_cb=None) -> Tuple[Dict[str, list], int]:
-    """Known variants of a VCF (plain or gzip) that lie inside ``regions``.
+    """Known variants of a VCF that lie inside ``regions``, using tabix when present.
 
     ``regions`` maps FASTA contigs to 1-based inclusive ``(start, end)``
     windows. VCF contig names are translated with ``names`` (the chromosome
@@ -802,40 +863,53 @@ def load_background_variants(path: str, regions: Dict[str, list], names: Optiona
         merged[contig] = ([a for a, _ in out], [b for _, b in out])
     names = names or {}
     found = {contig: [] for contig in regions}
-    with open(path, 'rb') as probe:
-        opener = gzip.open if probe.read(2) == b'\x1f\x8b' else open
     records = 0
-    contigs = {}   # VCF contig name -> FASTA contig ('' when it has no SNP window)
-    with opener(path, 'rt', encoding='utf-8', errors='replace') as stream:
-        for line in stream:
-            if line.startswith('#'):
-                continue
-            records += 1
-            if cancel_cb and records % 200_000 == 0 and cancel_cb():
-                raise AnalysisCancelled()
-            fields = line.split('\t', 5)
-            if len(fields) < 5:
-                continue
-            contig = contigs.get(fields[0])
-            if contig is None:
-                # As for the input file: the names file, then with or without "chr".
-                name = fields[0]
-                contig = contigs[name] = next(
-                    (c for c in (names.get(name, name), 'chr' + name, name.removeprefix('chr')) if c in merged), '')
-            spans = merged.get(contig)
-            if spans is None:
-                continue
-            try:
-                pos = int(fields[1])
-            except ValueError:
-                continue
-            i = bisect.bisect_right(spans[0], pos) - 1
-            if i < 0 or pos > spans[1][i]:
-                continue
-            ref = fields[3].upper()
-            alts = tuple(a for a in fields[4].upper().split(',') if a and set(a) <= set('ACGTN'))
-            if alts and set(ref) <= set('ACGTN'):
-                found[contig].append((pos, ref, alts))
+    contigs = {}  # VCF contig name -> FASTA contig
+
+    def map_contig(name):
+        if name not in contigs:
+            contigs[name] = next(
+                (c for c in (names.get(name, name), 'chr' + name, name.removeprefix('chr')) if c in merged), '')
+        return contigs[name]
+
+    def windows(name):
+        left, right = merged.get(map_contig(name), ((), ()))
+        return zip(left, right)
+
+    def lines():
+        indexed = tabix_path(path)
+        if indexed:
+            yield from vcf_chunks(path, indexed, windows)
+        else:
+            with open(path, 'rb') as probe:
+                opener = gzip.open if probe.read(2) == b'\x1f\x8b' else open
+            with opener(path, 'rt', encoding='utf-8', errors='replace') as stream:
+                yield from stream
+
+    for line in lines():
+        if line.startswith('#'):
+            continue
+        records += 1
+        if cancel_cb and (records == 1 or records % 200_000 == 0) and cancel_cb():
+            raise AnalysisCancelled()
+        fields = line.split('\t', 5)
+        if len(fields) < 5:
+            continue
+        contig = map_contig(fields[0])
+        spans = merged.get(contig)
+        if spans is None:
+            continue
+        try:
+            pos = int(fields[1])
+        except ValueError:
+            continue
+        i = bisect.bisect_right(spans[0], pos) - 1
+        if i < 0 or pos > spans[1][i]:
+            continue
+        ref = fields[3].upper()
+        alts = tuple(a for a in fields[4].upper().split(',') if a and set(a) <= set('ACGTN'))
+        if alts and set(ref) <= set('ACGTN'):
+            found[contig].append((pos, ref, alts))
     for items in found.values():
         items.sort()
     return found, records
@@ -1057,6 +1131,8 @@ def primer3_pick(
     fixed_left: Optional[str] = None,
     fixed_right: Optional[str] = None,
     target_length: int = 1,
+    force_left_end: Optional[int] = None,
+    force_right_end: Optional[int] = None,
 ) -> Optional[dict]:
     """Pick PCR primers flanking the reference interval and its target flanks.
 
@@ -1073,6 +1149,10 @@ def primer3_pick(
     _use_c_numeric_locale()
     seq_args = {"SEQUENCE_TEMPLATE": amplicon,
                 "SEQUENCE_TARGET": [snp_off - target_flank, 2 * target_flank + target_length]}
+    if force_left_end is not None:
+        seq_args['SEQUENCE_FORCE_LEFT_END'] = force_left_end
+    if force_right_end is not None:
+        seq_args['SEQUENCE_FORCE_RIGHT_END'] = force_right_end
     if excluded_regions:
         seq_args["SEQUENCE_EXCLUDED_REGION"] = [list(region) for region in excluded_regions]
     global_args = {
@@ -1131,7 +1211,11 @@ V12_HEADER = ['isoschizomers', 'primer_site', 'repeat_pct', 'background_variants
 V16_HEADER = ['primer_sites_left', 'primer_sites_right', 'offtarget_products', 'offtarget_sizes']
 DOUBLE_HEADER = ['enzyme_1', 'enzyme_2', 'site_1', 'site_2', 'reaction_compatibility']
 LOCUS_HEADER = ['allele_products', 'genotype_bands', 'worst_genotype_bands']
-RESULT_HEADER = BASE_HEADER + ASSAY_HEADER + V12_HEADER + V16_HEADER + DOUBLE_HEADER + ['product_size_alt'] + LOCUS_HEADER
+GEL_HEADER = ['gel_agarose_pct', 'gel_marker', 'gel_digest_pct', 'gel_resolution_bp',
+              'gel_resolution_pct', 'gel_stress_factor']
+ASPCR_HEADER = ['aspcr_reactions', 'aspcr_control', 'aspcr_genotypes', 'aspcr_specific_side']
+RESULT_HEADER = (BASE_HEADER + ASSAY_HEADER + V12_HEADER + V16_HEADER + DOUBLE_HEADER + ['product_size_alt']
+                 + LOCUS_HEADER + GEL_HEADER + ['gel_min_visible', 'gel_max_visible'] + ASPCR_HEADER)
 # SNPs whose assays are held in memory for one pass over the genome (about 0.25 MB each).
 SPECIFICITY_BATCH = 2000
 
@@ -1282,7 +1366,9 @@ def _snp_window(run: _Run, fa, chrom: str, mapped_id: str, pos: int, ref: str, a
                 enzyme='', site='', pattern='no_enzyme_found',
                 amplicon_start=start, amplicon_end=end, amplicon_len=len(seq),
                 snp_offset_in_amplicon=off, delta_threshold_bp=params['delta'],
-                search_mode=run.mode, scoring_model=MODEL_VERSION, pairs_evaluated=0)
+                search_mode=run.mode, scoring_model=run.model.version, pairs_evaluated=0,
+                gel_min_visible=run.model.min_visible, gel_max_visible=run.model.max_visible,
+                **{key: params.get(key, DEFAULT_PARAMS[key]) for key in GEL_HEADER})
     return _Window(ref=ref, alt=alt, pos=pos, start=start, end=end, raw=raw, seq=seq, off=off,
                    base=base, indel=is_indel(ref, alt), alternates=multiallelic_alts(ref, alt))
 
@@ -1767,6 +1853,7 @@ class _Search:
     natural_tried: bool = False
     double_tried: bool = False
     dcaps_tried: bool = False
+    aspcr_tried: bool = False
     unspecific: int = 0              # assays removed by the specificity check
 
 
@@ -1803,12 +1890,74 @@ def _search_snp(run: _Run, fa, chrom: str, mapped_id: str, pos: int, ref: str, a
                             and not any(h['genotype_quality'] == 'robust' for h in search.hits))):
         search.hits += _dcaps_hits(run, window)
         search.dcaps_tried = True
+    if can_dcaps and _aspcr_enabled(run, pairs):
+        search.pairs = pairs
+        if not any(h['genotype_quality'] == 'robust' for h in search.hits):
+            search.hits += _aspcr_hits(run, window, pairs)
+            search.aspcr_tried = True
     return search
+
+
+def _aspcr_enabled(run, pairs):
+    return bool(run.use_primer3 and run.params['allele_specific'] and pairs)
+
+
+def _aspcr_hits(run, window, pairs):
+    params = run.params
+    candidates = design_allele_specific(
+        window.raw, window.off, window.ref, window.alt, control_pairs=pairs,
+        pick_primers=primer3_pick, parse_pairs=_primer_candidates, model=run.model,
+        excluded_regions=window.excluded, mask_repeats=params['mask_repeats'], check_cancel=run.check_cancel,
+        **{key: params[key] for key in ('prod_min', 'prod_max', 'tm_min', 'tm_max')})
+    hits = []
+    for candidate in candidates:
+        control = candidate['aspcr_control']
+        record = _amplicon_record(window, control, control['start0'], control['end0'], design='allele_specific')
+        for key in ('aspcr_control', 'aspcr_reactions', 'aspcr_genotypes'):
+            candidate[key] = json.dumps(candidate[key])
+        hits.append(dict(record, **candidate, status='ok', pattern='allele_specific',
+                         reason='Различимость полос рассчитана. Аллельная специфичность ПЦР не подтверждена'))
+    if hits:
+        run.counters['aspcr_candidates'] = run.counters.get('aspcr_candidates', 0) + len(hits)
+    return hits
 
 
 def _specificity_key(hit):
     return (hit['primers_left'].upper(), hit['primers_right'].upper(),
-            (hit['mapped_id'], hit['amplicon_start'] - 1, hit['amplicon_end']))
+            hit.get('_intended', (hit['mapped_id'], hit['amplicon_start'] - 1, hit['amplicon_end'])))
+
+
+def _scan_hits(run, hits, checked):
+    ordinary = []
+    assays = []
+    for hit in hits:
+        if hit.get('design') != 'allele_specific':
+            ordinary.append(hit)
+            continue
+        control = json.loads(hit['aspcr_control'])
+        reactions = json.loads(hit['aspcr_reactions'])
+        side = hit['aspcr_specific_side']
+        origin = hit['amplicon_start'] - control['start0']
+        checks = [hit]
+        for reaction in reactions.values():
+            nested = dict(primers_left=reaction['primers_left'], primers_right=reaction['primers_right'],
+                          amplicon_start=origin + reaction['start0'], amplicon_end=origin + reaction['end0'] - 1,
+                          mapped_id=hit['mapped_id'])
+            # The outer primer on this side also coexists with the inner primer.
+            checks.extend((nested, dict(nested, primers_left=control[f'primers_{side}'],
+                                        primers_right=reaction[f'primers_{side}'], _intended=None)))
+        ordinary.extend(checks)
+        assays.append((hit, checks))
+    _scan_genome(run, ordinary, checked)
+    for hit, checks in assays:
+        hit['_unspecific'] = any(check.get('_unspecific') for check in checks)
+        products = {product for check in checks for product in check.get('_products', ())}
+        sizes = sorted(end - start for _, start, end in products)
+        hit['offtarget_sizes'] = '; '.join(map(str, sizes[:5])) + ('; …' if len(sizes) > 5 else '')
+        hit['offtarget_products'] = None if any(check.get('offtarget_products') is None for check in checks) else len(products)
+        for key in ('primer_sites_left', 'primer_sites_right'):
+            values = [check.get(key) for check in (hit, *checks[1::2])]
+            hit[key] = max((value for value in values if value is not None), default=None)
 
 
 def _scan_genome(run: _Run, hits: list, checked: dict) -> None:
@@ -1870,7 +2019,7 @@ def _scan_genome(run: _Run, hits: list, checked: dict) -> None:
                 answer = dict(primer_sites_left=count(sites[left]), primer_sites_right=count(sites[right]),
                               offtarget_products=len(products),
                               offtarget_sizes='; '.join(map(str, sizes[:5])) + ('; …' if len(sizes) > 5 else ''),
-                              _unspecific=bool(products))
+                              _unspecific=bool(products), _products={product[:3] for product in products})
             checked[left, right, intended] = answer
         hit.update(answer)
 
@@ -1889,7 +2038,7 @@ def _check_specificity(run: _Run, searches: list) -> None:
     """Scan in batches and reopen each fallback stage if exclusion removed its predecessor."""
     pending = [search for search in searches if search.records is None]
     checked = {}
-    _scan_genome(run, [hit for search in pending for hit in search.hits], checked)
+    _scan_hits(run, [hit for search in pending for hit in search.hits], checked)
     for search in pending:
         _drop_unspecific(run, search)
     retry_natural = [s for s in pending if s.pairs and not s.natural_tried
@@ -1936,6 +2085,19 @@ def _check_specificity(run: _Run, searches: list) -> None:
         _scan_genome(run, added, checked)
         for search in retry:
             _drop_unspecific(run, search)
+    aspcr_retry = [search for search in pending if not (search.window.indel or search.window.alternates)
+                   and not search.aspcr_tried and _aspcr_enabled(run, search.pairs)
+                   and not any(hit['genotype_quality'] == 'robust' for hit in search.hits)]
+    added = []
+    for search in aspcr_retry:
+        extra = _aspcr_hits(run, search.window, search.pairs)
+        search.aspcr_tried = True
+        search.hits.extend(extra)
+        added.extend(extra)
+    if added:
+        _scan_hits(run, added, checked)
+        for search in aspcr_retry:
+            _drop_unspecific(run, search)
     if run.specificity == 'exclude':
         run.log(f"[INFO] Специфичность: исключено схем {sum(search.unspecific for search in pending)}")
 
@@ -1957,7 +2119,7 @@ def run_analysis(params, status_cb=None, progress_cb=None, cancel_cb=None, repor
     model = gel_model_from_params(params)
     report = report if report is not None else {}
     report['parameters'] = dict(params)
-    report['scoring_model'] = MODEL_VERSION
+    report['scoring_model'] = model.version
     counters = report.setdefault('summary', {})
     counters.update(pairs_evaluated=0, enzyme_evaluations=0, enzyme_errors=0, digest_searches=0,
                     double_snps=0, double_amplicons=0, double_pairs_possible=0, double_pairs_scored=0,
@@ -1976,6 +2138,7 @@ def run_analysis(params, status_cb=None, progress_cb=None, cancel_cb=None, repor
         skip_norm=params.get('skip_norm', False),
         save_files=not params.get('no_save_norm', True), report=report,
         progress_cb=progress_cb, cancel_cb=cancel_cb,
+        vcf_region=params['vcf_region'], vcf_samples=params['vcf_samples'],
     )
     header = RESULT_HEADER
     out_rows = []
@@ -2009,7 +2172,7 @@ def run_analysis(params, status_cb=None, progress_cb=None, cancel_cb=None, repor
     masked_windows = 0
 
     def contig_of(chrom):
-        return resolve_contig(chrom, names, lambda name: name in fa)
+        return resolve_input_contig(chrom, names, lambda name: name in fa, is_vcf_path(params['input_file']))
 
     try:
         if params['background_vcf']:

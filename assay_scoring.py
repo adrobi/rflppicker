@@ -5,9 +5,12 @@ See docs/assay_design.md for equations, assumptions and ranking rules.
 """
 from dataclasses import dataclass
 from itertools import combinations, combinations_with_replacement
-from math import isfinite
+from math import isfinite, log2
+
+from gel_model import DEFAULT_AGAROSE_PCT, MAX_AGAROSE_PCT, MIN_AGAROSE_PCT
 
 MODEL_VERSION = "band-presence-maximin-v1"
+AGAROSE_MODEL_VERSION = "band-presence-maximin-agarose-v2"
 
 
 @dataclass(frozen=True)
@@ -17,6 +20,8 @@ class GelModel:
     resolution_bp: float = 10.0
     resolution_pct: float = 3.0
     stress_factor: float = 1.5
+    version: str = MODEL_VERSION
+    agarose_pct: float = DEFAULT_AGAROSE_PCT
 
     def __post_init__(self):
         values = (self.min_visible, self.max_visible, self.resolution_bp,
@@ -30,13 +35,25 @@ class GelModel:
         if not 1 <= self.stress_factor <= 5:
             raise ValueError("Коэффициент ухудшения разрешения должен быть от 1 до 5")
 
+        if self.version not in (MODEL_VERSION, AGAROSE_MODEL_VERSION):
+            raise ValueError("Неизвестная версия модели геля")
+        if not isfinite(self.agarose_pct) or not MIN_AGAROSE_PCT <= self.agarose_pct <= MAX_AGAROSE_PCT:
+            raise ValueError("Концентрация агарозы должна быть от 0.5 до 4%")
+
     def distance(self, a, b, scale=1.0):
-        return abs(a - b) / (scale * max(self.resolution_bp,
-                                         self.resolution_pct * max(a, b) / 100.0))
+        length = max(a, b)
+        threshold = max(self.resolution_bp, self.resolution_pct * length / 100.0)
+        if self.version == AGAROSE_MODEL_VERSION and self.agarose_pct != DEFAULT_AGAROSE_PCT:
+            # Engineering heuristic. Reference thresholds at 2% are unchanged.
+            # Center the concentration adjustment at 600/c bp.
+            reference_penalty = 1 + 0.5 * abs(log2(length / (600 / DEFAULT_AGAROSE_PCT)))
+            penalty = 1 + 0.5 * abs(log2(length / (600 / self.agarose_pct)))
+            threshold *= penalty / reference_penalty
+        return abs(a - b) / (scale * threshold)
 
 
-def _band_clusters(lengths, model, scale):
-    # All lanes share band bins at a given resolution.
+def band_clusters(lengths, model, scale):
+    """Group unresolved consecutive sizes into bins shared across lanes."""
     clusters = []
     for size in sorted(set(lengths)):
         if clusters and model.distance(clusters[-1][-1], size, scale) <= 1:
@@ -52,7 +69,7 @@ def _band_text(clusters, ids):
 
 
 def _scenario(ref, alt, model, scale):
-    clusters = _band_clusters((*ref, *alt), model, scale)
+    clusters = band_clusters((*ref, *alt), model, scale)
     rset, aset = set(ref), set(alt)
     rids = {i for i, cluster in enumerate(clusters) if rset.intersection(cluster)}
     aids = {i for i, cluster in enumerate(clusters) if aset.intersection(cluster)}
@@ -121,7 +138,7 @@ def diploid_genotypes(count):
 
 
 def _locus_scenario(lanes, model, scale, check_cancel):
-    clusters = _band_clusters((size for _, lengths in lanes for size in lengths), model, scale)
+    clusters = band_clusters((size for _, lengths in lanes for size in lengths), model, scale)
     cluster_ids = {size: i for i, cluster in enumerate(clusters) for size in cluster}
     ids = {label: {cluster_ids[size] for size in lengths} for label, lengths in lanes}
 

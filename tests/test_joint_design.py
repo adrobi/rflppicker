@@ -290,7 +290,7 @@ class DcapsTests(unittest.TestCase):
             self.assertEqual(core.frags_to_str(core.frag_lengths(core.cut_positions(TaqI, product))), hit['frags_ref'])
             self.assertEqual(core.frags_to_str(core.frag_lengths(core.cut_positions(TaqI, alt_product))), hit['frags_alt'])
         with patch.object(core, 'AllEnzymes', [TaqI]):
-            header, rows = core.run_rflp_gui_mode(dict(self.params, dcaps='off'))
+            header, rows = core.run_rflp_gui_mode(dict(self.params, dcaps='off', allele_specific=False))
         self.assertEqual(dict(zip(header, rows[0]))['status'], 'no_discriminating_assay')
 
     def test_dcaps_branch_uses_its_own_tm_and_product_range(self):

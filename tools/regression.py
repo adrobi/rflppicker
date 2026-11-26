@@ -35,9 +35,12 @@ ROOT = Path(__file__).resolve().parent.parent
 # joint_design: up to 1.4.0 it chose the search that is now the only one.
 REMOVED_PARAMS = ('joint_design',)
 # The settings of the program window (rflp_core.DEFAULT_PARAMS), with every assay reported.
-BASE_PARAMS = dict(double_digest=True, names2_file='', flank=300, min_frag=80, max_frag=800, delta=25, max_cuts=3,
+BASE_PARAMS = dict(double_digest=True, allele_specific=True, names2_file='', assembly_accession='', vcf_region='', vcf_samples=[],
+                   flank=300, min_frag=80, max_frag=800, delta=25, max_cuts=3,
                    prod_min=250, prod_max=600, tm_min=58.0, tm_max=62.0,
                    gel_resolution_bp=10.0, gel_resolution_pct=3.0, gel_stress_factor=1.5,
+                   gel_model_version='band-presence-maximin-agarose-v2', gel_agarose_pct=2.0,
+                   gel_marker='50-bp', gel_digest_pct=100.0,
                    gain_loss_only=False, suppliers=[], enzyme_mode='off', lab_enzymes=[], use_primer3=True, joint_design=True,
                    top_results=0, primer_pairs=10, skip_norm=False, no_save_norm=True,
                    commercial_only=True, group_isoschizomers=True, snp_end_distance=100,
@@ -45,7 +48,7 @@ BASE_PARAMS = dict(double_digest=True, names2_file='', flank=300, min_frag=80, m
                    exclude_background_sites=True, dcaps='fallback', dcaps_mismatches=1,
                    dcaps_tm_max=70.0, dcaps_prod_min=120, dcaps_prod_max=300, dcaps_delta=20,
                    specificity='exclude', specificity_mismatches=3, specificity_max_product=2000)
-CHECKS_OFF = dict(double_digest=False, commercial_only=False, group_isoschizomers=False, snp_end_distance=0,
+CHECKS_OFF = dict(double_digest=False, allele_specific=False, commercial_only=False, group_isoschizomers=False, snp_end_distance=0,
                   exclude_primer_sites=False, mask_repeats=False, exclude_background_sites=False, dcaps='off',
                   specificity='off')
 PROFILES = {
@@ -209,6 +212,8 @@ def build_cases(args, work):
                           input_file=str(variants), names2_file=str(names_file))
             if args.no_double_digest:
                 params['double_digest'] = False
+            if args.legacy_16:
+                params.update(double_digest=False, allele_specific=False, gel_model_version='band-presence-maximin-v1')
             cases.append(dict(name=f'{name}.{profile}', params=params))
     return cases
 
@@ -227,6 +232,7 @@ def main():
     parser.add_argument('--profile', action='append', choices=list(PROFILES),
                         help='Parameter profiles to run (default: all)')
     parser.add_argument('--no-double-digest', action='store_true', help='Compare single-enzyme legacy profiles')
+    parser.add_argument('--legacy-16', action='store_true', help='Use the 1.6.0 gel model and search stages')
     parser.add_argument('--copy-fasta', action='store_true',
                         help='Copy small FASTA files into --work (their .fai is written there)')
     parser.add_argument('--jobs', type=int, default=1, help='Parallel processes (timings then overlap)')

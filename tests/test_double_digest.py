@@ -100,6 +100,7 @@ class DoubleDigestTests(unittest.TestCase):
         self.addCleanup(i18n.set_language, i18n.language())
         row, = self.search()
         row['enzyme_product'] = 'R3101'
+        row['enzyme_product_2'] = 'R0106S'
         summary = SnpSummary(read_input_records(str(self.variants))[0][0], schemes=[row])
         payload, message = payload_for_scheme(row, str(self.root / '50.fa'), {})
         panel, gel = PrimerGraphicPanel(), GelPanel()

@@ -1,5 +1,6 @@
 """The «Запуск» column: data files, the key parameters and the run button (spec §5)."""
 import os
+import re
 from typing import Dict, List, Optional, Tuple
 
 from PyQt6.QtCore import Qt, pyqtSignal
@@ -12,18 +13,23 @@ import icons
 import palette
 from app_settings import AppSettings
 from genome_dialog import GenomeDownloadDialog
+from assay_scoring import AGAROSE_MODEL_VERSION, MODEL_VERSION
+from gel_model import GEL_MARKERS
 from i18n import N_, core_text, t
 from rflp_core import (
     DEFAULT_PARAMS, ENZYME_NAMES, read_enzyme_list, _PRIMER3_AVAILABLE, _SUPPLIER_CANON, get_base_dir, validate_params,
 )
+from variant_input import is_vcf_path
 
-KEY_PARAMS = ('prod_min', 'prod_max', 'tm_min', 'tm_max', 'specificity', 'commercial_only', 'suppliers', 'enzyme_mode', 'lab_enzymes', 'dcaps')
+KEY_PARAMS = ('prod_min', 'prod_max', 'tm_min', 'tm_max', 'specificity', 'commercial_only', 'suppliers',
+              'enzyme_mode', 'lab_enzymes', 'dcaps', 'assembly_accession', 'vcf_region', 'vcf_samples')
 ADVANCED_PARAMS = ('min_frag', 'max_frag', 'delta', 'gel_resolution_bp', 'gel_resolution_pct', 'gel_stress_factor',
+                   'gel_model_version', 'gel_agarose_pct', 'gel_marker', 'gel_digest_pct',
                    'flank', 'primer_pairs', 'top_results', 'max_cuts', 'group_isoschizomers', 'snp_end_distance',
                    'exclude_primer_sites', 'mask_repeats', 'exclude_background_sites',
                    'specificity_mismatches', 'specificity_max_product', 'dcaps_mismatches',
                    'dcaps_tm_max', 'dcaps_prod_min', 'dcaps_prod_max', 'dcaps_delta',
-                   'use_primer3', 'double_digest', 'gain_loss_only', 'skip_norm', 'no_save_norm')
+                   'use_primer3', 'double_digest', 'allele_specific', 'gain_loss_only', 'skip_norm', 'no_save_norm')
 PANEL_ERROR_KEYS = ('input_file', 'fasta', 'background_vcf', 'prod_min', 'tm_min', 'lab_enzymes')
 SUPPLIER_TITLES = {'A': 'Agilent', 'E': 'Thermo Fisher', 'F': 'Promega', 'H': 'Minotech', 'I': 'SibEnzyme',
                    'J': 'Nippon Gene', 'K': 'Takara', 'M': 'Roche', 'N': 'NEB',
@@ -201,6 +207,11 @@ class SupplierPicker(QToolButton):
 
 # key -> (label, kind, minimum, maximum, step/decimals, tooltip)
 _ADVANCED_FIELDS = {
+    'allele_specific': (N_('Запасная аллель-специфичная ПЦР'), 'bool', 0, 0, 0, ''),
+    'gel_model_version': (N_('Модель геля'), 'choice', 0, 0, 0, ''),
+    'gel_agarose_pct': (N_('Агароза, %'), 'float', 0.5, 4, 2, ''),
+    'gel_marker': (N_('Маркер длин'), 'choice', 0, 0, 0, ''),
+    'gel_digest_pct': (N_('Разрез на сайт, %'), 'float', 0, 100, 1, N_('Для вида геля. Оценка схемы предполагает полную рестрикцию.')),
     'min_frag': (N_('Видимые фрагменты от, п.н.'), 'int', 10, 5000, 1,
                  N_('Нижняя граница видимых полос: более короткие фрагменты на геле не видны и в модели скрыты.')),
     'max_frag': (N_('до, п.н.'), 'int', 10, 5000, 1,
@@ -253,11 +264,16 @@ _ADVANCED_FIELDS = {
     'skip_norm': (N_('Пропускать нормализацию'), 'bool', 0, 0, 0, N_('Отключает только перестановку REF/ALT.')),
     'no_save_norm': (N_('Не сохранять нормализацию'), 'bool', 0, 0, 0, ''),
 }
+_ADVANCED_CHOICES = {
+    'gel_model_version': ((N_('Агароза'), AGAROSE_MODEL_VERSION), (N_('Модель 1.6.0'), MODEL_VERSION)),
+    'gel_marker': tuple((name, name) for name in GEL_MARKERS),
+}
 # Columns of groups (title, keys); the two columns are of about the same height.
 _ADVANCED_COLUMNS = (
-    ((N_('Гель'), ('min_frag', 'max_frag', 'delta', 'gel_resolution_bp', 'gel_resolution_pct', 'gel_stress_factor')),
+    ((N_('Гель'), ('gel_model_version', 'gel_agarose_pct', 'gel_marker', 'gel_digest_pct',
+                   'min_frag', 'max_frag', 'delta', 'gel_resolution_bp', 'gel_resolution_pct', 'gel_stress_factor')),
      (N_('Поиск'), ('flank', 'primer_pairs', 'top_results', 'max_cuts')),
-     (N_('Особые случаи'), ('use_primer3', 'double_digest', 'gain_loss_only', 'skip_norm', 'no_save_norm'))),
+     (N_('Особые случаи'), ('use_primer3', 'double_digest', 'allele_specific', 'gain_loss_only', 'skip_norm', 'no_save_norm'))),
     ((N_('Проверки'), ('group_isoschizomers', 'snp_end_distance', 'exclude_primer_sites', 'mask_repeats',
                        'exclude_background_sites', 'specificity_mismatches', 'specificity_max_product')),
      (N_('dCAPS (праймер с несовпадением)'), ('dcaps_mismatches', 'dcaps_tm_max', 'dcaps_prod_min',
@@ -307,11 +323,16 @@ class AdvancedDialog(QDialog):
                 widget = QCheckBox(t(text))
                 grid.addWidget(widget, row * 2, 0, 1, 2)
             else:
-                widget = QSpinBox() if kind == 'int' else QDoubleSpinBox()
-                widget.setRange(low, high)
-                if kind == 'float':
-                    widget.setDecimals(step)
-                    widget.setSingleStep(0.1)
+                if kind == 'choice':
+                    widget = QComboBox()
+                    for label, value in _ADVANCED_CHOICES[key]:
+                        widget.addItem(t(label), value)
+                else:
+                    widget = QSpinBox() if kind == 'int' else QDoubleSpinBox()
+                    widget.setRange(low, high)
+                    if kind == 'float':
+                        widget.setDecimals(step)
+                        widget.setSingleStep(0.1)
                 grid.addWidget(QLabel(t(text)), row * 2, 0)
                 grid.addWidget(widget, row * 2, 1)
             widget.setObjectName(f'adv_{key}')
@@ -326,7 +347,10 @@ class AdvancedDialog(QDialog):
     def params(self) -> dict:
         values = {}
         for key, widget in self._widgets.items():
-            values[key] = widget.isChecked() if isinstance(widget, QCheckBox) else widget.value()
+            if isinstance(widget, QComboBox):
+                values[key] = widget.currentData()
+            else:
+                values[key] = widget.isChecked() if isinstance(widget, QCheckBox) else widget.value()
         return values
 
     def set_params(self, params: dict) -> None:
@@ -334,6 +358,10 @@ class AdvancedDialog(QDialog):
             if key in params:
                 if isinstance(widget, QCheckBox):
                     widget.setChecked(bool(params[key]))
+                elif isinstance(widget, QComboBox):
+                    index = widget.findData(params[key])
+                    if index >= 0:
+                        widget.setCurrentIndex(index)
                 else:
                     widget.setValue(params[key])
 
@@ -387,7 +415,8 @@ class LaunchPanel(QWidget):
 
         def field(text, widget, button=None, error_key=None):
             nonlocal row
-            form.addWidget(QLabel(text), row, 0)
+            label = QLabel(text)
+            form.addWidget(label, row, 0)
             form.addWidget(widget, row, 1, 1, 1 if button else 2)
             if button:
                 form.addWidget(button, row, 2)
@@ -395,6 +424,7 @@ class LaunchPanel(QWidget):
             if error_key:
                 form.addWidget(self._errors[error_key], row, 1, 1, 2)
                 row += 1
+            return label
 
         self._errors = {key: _error_label(key) for key in PANEL_ERROR_KEYS}
         caption(t('Данные'))
@@ -402,11 +432,32 @@ class LaunchPanel(QWidget):
         self.snp_edit.setObjectName('snp_edit')
         self.snp_edit.setPlaceholderText(t('CSV или TSV: chrom, pos, ref, alt'))
         self.snp_edit.textChanged.connect(lambda: self._mark_missing(self.snp_edit))
-        field('SNP', self.snp_edit, self._browse_button(self._browse_snp), 'input_file')
+        field(t('Варианты'), self.snp_edit, self._browse_button(self._browse_snp), 'input_file')
+        self.vcf_region_edit, self.vcf_samples_edit = QLineEdit(), QLineEdit()
+        self.vcf_region_edit.setPlaceholderText('chr1:1000-2000')
+        self.vcf_samples_edit.setPlaceholderText(t('Имена образцов через запятую'))
+        region_label = field(t('Регион VCF'), self.vcf_region_edit)
+        samples_label = field(t('Образцы VCF'), self.vcf_samples_edit)
+
+        def show_vcf_fields(path):
+            for widget in (region_label, samples_label, self.vcf_region_edit, self.vcf_samples_edit):
+                widget.setVisible(is_vcf_path(path.strip()))
+
+        self.snp_edit.textChanged.connect(show_vcf_fields)
+        show_vcf_fields('')
         self.genome_combo = QComboBox()
         self.genome_combo.setObjectName('genome_combo')
         self.genome_combo.activated.connect(self._on_genome_activated)
         field(t('Геном'), self.genome_combo, None, 'fasta')
+        self.assembly_edit = QLineEdit()
+        self.assembly_edit.setPlaceholderText('GCF_016772045.1')
+        self.assembly_edit.setToolTip(t('Идентификатор сборки генома для проекта и поиска по rsID'))
+        field(t('Сборка'), self.assembly_edit)
+        self._assembly_genome = ''
+        lookup = QPushButton(t('Поиск по rsID…'))
+        lookup.clicked.connect(self._lookup_rsid)
+        form.addWidget(lookup, row, 1, 1, 2)
+        row += 1
         names_row = QHBoxLayout()
         self.names_label = _label('', 'muted', 'names_label')
         self.names_label.setWordWrap(True)
@@ -428,7 +479,7 @@ class LaunchPanel(QWidget):
         self.vcf_edit.setPlaceholderText(t('не обязательно'))
         self.vcf_edit.setToolTip(t('VCF или VCF.gz известных вариантов породы или популяции.'))
         self.vcf_edit.textChanged.connect(lambda: self._mark_missing(self.vcf_edit))
-        field('VCF', self.vcf_edit, self._browse_button(self._browse_vcf), 'background_vcf')
+        field(t('Фоновый VCF'), self.vcf_edit, self._browse_button(self._browse_vcf), 'background_vcf')
 
         caption(t('Праймеры'))
         self.prod_min_spin, self.prod_max_spin = self._range_spins('prod', QSpinBox, 50, 2000)
@@ -549,7 +600,7 @@ class LaunchPanel(QWidget):
         if not os.path.isdir(folder):
             return []
         return [os.path.join(folder, f) for f in sorted(os.listdir(folder))
-                if f.lower().endswith(('.fa', '.fasta', '.fna'))]
+                if f.lower().endswith(('.fa', '.fasta', '.fna', '.fa.gz', '.fasta.gz', '.fna.gz', '.fa.bgz', '.fna.bgz'))]
 
     def _fill_genomes(self, current: str = ''):
         self.genome_combo.blockSignals(True)
@@ -582,7 +633,7 @@ class LaunchPanel(QWidget):
             return
         if self.genome_combo.itemData(index) is None:
             path, _ = QFileDialog.getOpenFileName(self, t('Геном FASTA'), '',
-                                                  t('FASTA (*.fa *.fasta *.fna);;Все файлы (*)'))
+                                                  t('FASTA (*.fa *.fasta *.fna *.gz *.bgz);;Все файлы (*)'))
             if path:
                 self._settings.add_recent_genome(path)
             self._fill_genomes(path or self._previous_genome)
@@ -597,6 +648,10 @@ class LaunchPanel(QWidget):
 
     def refresh_names(self) -> None:
         genome = self.genome_path()
+        if genome != self._assembly_genome:
+            accession = re.search(r'GC[AF]_\d+\.\d+', os.path.basename(genome))
+            self.assembly_edit.setText(accession.group() if accession else '')
+            self._assembly_genome = genome
         manual = self._settings.names_for_genome(genome) if genome else None
         if manual is not None:
             self._names_path = manual
@@ -628,10 +683,24 @@ class LaunchPanel(QWidget):
             self._set_names(path)
 
     # ----- files -----
+    def _lookup_rsid(self):
+        if not self.genome_path():
+            QMessageBox.information(self, t('Поиск по rsID…'), t('Выберите геном'))
+            return
+        from rsid_dialog import RsidDialog
+
+        dialog = RsidDialog(self.genome_path(), self.assembly_edit.text().strip(), self._names_path, self)
+        if dialog.exec() and dialog.target_path:
+            self.vcf_region_edit.clear()
+            self.vcf_samples_edit.clear()
+            self.snp_edit.setText(dialog.target_path)
+            self.assembly_edit.setText(dialog.assembly.text().strip())
+        dialog.deleteLater()
+
     def _browse_snp(self):
         start = self._settings.value('last_snp_dir', '') or ''
         path, _ = QFileDialog.getOpenFileName(self, t('Файл SNP'), start,
-                                              t('Таблицы (*.tsv *.csv *.txt);;Все файлы (*)'))
+                                              t('Варианты (*.tsv *.csv *.txt *.vcf *.vcf.gz *.vcf.bgz);;Все файлы (*)'))
         if path:
             self.snp_edit.setText(path)
             self._settings.set_value('last_snp_dir', os.path.dirname(path))
@@ -648,6 +717,15 @@ class LaunchPanel(QWidget):
             self._settings.add_recent_genome(genome)
         self._fill_genomes(genome)
         self.vcf_edit.setText(vcf)
+
+    def restore_project_params(self, params: dict) -> None:
+        self.snp_edit.clear()
+        self.vcf_edit.clear()
+        self._previous_genome = ''
+        self.genome_combo.setCurrentIndex(-1)
+        self.refresh_names()
+        self._mark_missing(self.genome_combo)
+        self.set_params(params)
 
     def _mark_missing(self, widget):
         path = widget.currentData() if isinstance(widget, QComboBox) else widget.text().strip()
@@ -667,7 +745,9 @@ class LaunchPanel(QWidget):
         params = dict(self._advanced)
         params.update(
             input_file=self.snp_edit.text().strip(), fasta=self.genome_path(), names2_file=self._names_path,
+            assembly_accession=self.assembly_edit.text().strip(),
             background_vcf=self.vcf_edit.text().strip(),
+            vcf_region='', vcf_samples=[],
             prod_min=self.prod_min_spin.value(), prod_max=self.prod_max_spin.value(),
             tm_min=self.tm_min_spin.value(), tm_max=self.tm_max_spin.value(),
             enzyme_mode=self.inventory_mode.currentData(), lab_enzymes=list(self.inventory_names),
@@ -675,9 +755,18 @@ class LaunchPanel(QWidget):
             specificity=self.specificity_combo.currentData(),
         )
         params['use_primer3'] = bool(params['use_primer3']) and _PRIMER3_AVAILABLE
+        if is_vcf_path(params['input_file']):
+            params['vcf_region'] = self.vcf_region_edit.text().strip()
+            params['vcf_samples'] = [name.strip() for name in self.vcf_samples_edit.text().split(',') if name.strip()]
         return params
 
     def set_params(self, params: dict) -> None:
+        if 'assembly_accession' in params:
+            self.assembly_edit.setText(params['assembly_accession'])
+        if 'vcf_region' in params:
+            self.vcf_region_edit.setText(params['vcf_region'])
+        if 'vcf_samples' in params:
+            self.vcf_samples_edit.setText(', '.join(params['vcf_samples']))
         for key in ADVANCED_PARAMS:
             if key in params:
                 self._advanced[key] = params[key]

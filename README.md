@@ -264,12 +264,30 @@ CSV. The same primer pair and digest must distinguish every diploid genotype.
 Results include allele products and genotype bands. The Excel and laboratory
 PDF exports include separate tables for the alleles and genotypes.
 
+VCF and compressed VCF can be used as input alongside a separate background
+VCF. Set the input region with `--vcf-region chr1:1000-2000` or select samples
+with repeated `--vcf-sample NAME`. A missing genotype allele contributes no
+evidence. With no sample selection, all explicit ALT alleles are considered.
+
+Use **Look up an rsID** with the reference FASTA, assembly accession and NCBI
+TaxID, or run `--lookup-rsid rs422668280 --fasta genome.fa --assembly-accession GCF_016772045.1 --taxid 9940 --out target.vcf`.
+Use `--local-vcf` for an offline lookup, and `--assembly-report` if it is needed
+to match sequence accessions. A VCF without build or species metadata is treated
+as a source selected by the user for the specified assembly and species.
+
 In the 2.0.0 development version, **Double digest** is enabled by default.
 When no single natural enzyme gives a robust assay after the enabled checks,
 the program tries pairs on the same amplicons before fallback dCAPS.
 Results include both enzymes and the expected bands for all three genotypes.
 Reaction compatibility is unconfirmed. Use `--no-double-digest` or clear
-**Double digest** under **Advanced** to reproduce the single-enzyme search.
+**Double digest** under **Advanced** to skip enzyme pairs. For biallelic SNPs,
+fallback allele-specific PCR uses two separate tubes with a shared control pair.
+Its band-separation score does not establish empirical allele specificity.
+
+Under **Advanced**, select an agarose concentration and size marker. The
+per-site cut setting changes the gel view. The 1.6.0 model remains selectable.
+Save completed analyses as `.rflp` projects to reopen the chosen schemes,
+gel views and exports without the original reference.
 
 The flank is the number of bases on each side of the SNP. The fragment range
 sets the limits of band visibility: fragments outside the range are hidden in

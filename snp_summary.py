@@ -10,10 +10,12 @@ import re
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
+from allele_specific import reaction_table
 from i18n import N_, core_text, t
 from palette import EXCEL_STATUS_FILLS
 from reporting import ExtraSheet
 from rflp_core import clean_chrom, is_simple_snp, parse_fields, read_input_table
+from variant_input import is_vcf_path
 
 
 @dataclass(frozen=True)
@@ -27,7 +29,7 @@ class InputRecord:
     raw: str           # fields joined by the delimiter
 
 
-def _record(line_no: int, parts: List[str], columns: Dict[str, Optional[int]], delim: str) -> InputRecord:
+def _record(line_no: int, parts: List[str], columns: Dict[str, Optional[int]], delim: str, preserve_chrom=False) -> InputRecord:
     def text(name: str, default_index: int) -> str:
         index = columns.get(name)
         index = default_index if index is None else index
@@ -38,7 +40,7 @@ def _record(line_no: int, parts: List[str], columns: Dict[str, Optional[int]], d
     raw = delim.join(parts)
     if len(parts) >= 4:
         try:
-            chrom, pos, ref, alt = parse_fields(parts, columns)
+            chrom, pos, ref, alt = parse_fields(parts, columns, preserve_chrom)
             return InputRecord(line_no, snp_id, chrom, pos, ref, alt, raw)
         except (IndexError, ValueError):
             pass
@@ -47,10 +49,11 @@ def _record(line_no: int, parts: List[str], columns: Dict[str, Optional[int]], d
                        text('ref', 2).strip().upper(), text('alt', 3).strip().upper(), raw)
 
 
-def read_input_records(path: str) -> Tuple[List[InputRecord], bool]:
+def read_input_records(path: str, *, vcf_region='', vcf_samples=()) -> Tuple[List[InputRecord], bool]:
     """Every data line the core reads, in file order, and whether the file has an ID column."""
-    columns, lines, delim = read_input_table(path)
-    return [_record(n, parts, columns, delim) for n, parts in lines], columns.get('id') is not None
+    columns, lines, delim = read_input_table(path, vcf_region=vcf_region, vcf_samples=vcf_samples)
+    preserve_chrom = is_vcf_path(path)
+    return [_record(n, parts, columns, delim, preserve_chrom) for n, parts in lines], columns.get('id') is not None
 
 
 ROBUST, NOMINAL, NONE, ERROR = 'robust', 'nominal', 'none', 'error'
@@ -60,6 +63,9 @@ STATUS_TITLES = {ROBUST: N_('Надёжно'), NOMINAL: N_('Только на х
 
 _QUALITY_STATUS = {'robust': ROBUST, 'nominal_only': NOMINAL}
 _ERROR_TEXTS = {
+    'vcf_symbolic': N_('У ALT нет явной последовательности в VCF'),
+    'vcf_no_selected_alt': N_('В известных генотипах выбранных образцов нет ALT'),
+    'vcf_no_alt': N_('В записи VCF нет ALT'),
     'bad_chrom': N_('Хромосома не найдена в геноме'),
     'pos_oob': N_('Позиция за пределами хромосомы'),
     'bad_ref_chars': N_('Не одиночная замена A/C/G/T'),
@@ -154,6 +160,8 @@ class SnpSummary:
             parts.append(t('Совместимость условий не подтверждена'))
         if scheme.get('design') == 'dCAPS':
             parts.append(f"dCAPS: {scheme.get('primer_mismatches')}")
+        if scheme.get('design') == 'allele_specific':
+            parts.append(t('Аллельная специфичность ПЦР не подтверждена'))
         if scheme.get('primer_site'):
             parts.append(t('Сайт фермента в праймере'))
         if scheme.get('background_site_variants'):
@@ -224,7 +232,7 @@ def build_summaries(records: List[InputRecord], header: List[str], rows: List[li
                 swapped = bool(found)
         schemes, failure = [], None
         for values in found:
-            if values.get('enzyme') or values.get('design') == 'amplicon_length':
+            if values.get('enzyme') or values.get('design') in ('amplicon_length', 'allele_specific'):
                 schemes.append(values)
             elif failure is None:
                 failure = values
@@ -258,6 +266,8 @@ def assign_primer_bases(summaries: List[SnpSummary]) -> None:
 
 def order_lines(summary: SnpSummary) -> str:
     scheme = summary.scheme
+    if scheme is not None and scheme.get('design') == 'allele_specific':
+        return '\n'.join(f'{name}\t{sequence}' for name, sequence, _ in aspcr_primer_rows(summary))
     if scheme is None or not scheme.get('primers_left'):
         return ''
     return (f"{summary.primer_base}_F\t{scheme['primers_left']}\n"
@@ -270,7 +280,14 @@ def summary_text(summary: SnpSummary, dcaps_mode: str) -> str:
     lines = [f'{summary.label} ({snp_id})' if snp_id else summary.label,
              t('Статус: {status}', status=status_title(summary.status))]
     scheme = summary.scheme
-    if scheme is not None:
+    if scheme is not None and scheme.get('design') == 'allele_specific':
+        lines.append(scheme_label(scheme))
+        lines.extend(f'{name}: {sequence}' for name, sequence, _ in aspcr_primer_rows(summary))
+        for tube in reaction_table(scheme):
+            bands = ' / '.join(f'{genotype}: {" + ".join(map(str, sizes))}'
+                               for genotype, sizes in tube['genotype_bands'].items())
+            lines.append(f"{tube['reaction']} · {bands}")
+    elif scheme is not None:
         lines.append(t('Фермент: {enzyme}, сайт {site}', enzyme=scheme.get('enzyme'), site=scheme.get('site'))
                      if scheme.get('enzyme') else scheme_label(scheme))
         for side, primer, tm in (('F', 'primers_left', 'tm_left'), ('R', 'primers_right', 'tm_right')):
@@ -305,14 +322,16 @@ SUMMARY_HEADER = ['ID', 'SNP', N_('Хромосома в геноме'), N_('С�
                   N_('Примечание'), N_('Строка файла')]
 PRIMER_HEADER = [N_('Имя'), N_('Последовательность 5′→3′'), N_('Длина'), 'Tm', 'SNP', N_('Фермент')]
 _DESIGN_TITLES = {'amplicon_length': N_('Без рестрикции'), 'double_digest': N_('Двойная рестрикция'),
-                  'natural': N_('природный сайт'), 'dCAPS': 'dCAPS'}
+                  'natural': N_('природный сайт'), 'dCAPS': 'dCAPS',
+                  'allele_specific': N_('Аллель-специфичная ПЦР')}
 _SCHEME_COLUMNS = ('enzyme', 'site', 'isoschizomers', 'suppliers', 'design', 'primers_left', 'primers_right',
                    'tm_left', 'tm_right', 'product_size', 'bands_ref_ref', 'bands_ref_alt', 'bands_alt_alt',
                    'genotype_margin', 'worst_margin')
 
 
 def scheme_label(scheme: dict) -> str:
-    return t(_DESIGN_TITLES['amplicon_length']) if scheme.get('design') == 'amplicon_length' else scheme.get('enzyme') or ''
+    design = scheme.get('design')
+    return t(_DESIGN_TITLES[design]) if design in ('amplicon_length', 'allele_specific') else scheme.get('enzyme') or ''
 
 
 def product_size_text(scheme: dict) -> str:
@@ -356,11 +375,25 @@ def primer_table(summaries: List[SnpSummary]) -> Tuple[List[str], List[list]]:
         scheme = s.scheme
         if scheme is None or not scheme.get('primers_left'):
             continue
+        if scheme.get('design') == 'allele_specific':
+            rows.extend([name, sequence, len(sequence), tm, s.label, '']
+                        for name, sequence, tm in aspcr_primer_rows(s))
+            continue
         for side, primer, tm in (('F', 'primers_left', 'tm_left'), ('R', 'primers_right', 'tm_right')):
             sequence = scheme.get(primer) or ''
             rows.append([f'{s.primer_base}_{side}', sequence, len(sequence), scheme.get(tm), s.label,
                          scheme.get('enzyme')])
     return [t(title) for title in PRIMER_HEADER], rows
+
+
+def aspcr_primer_rows(summary: SnpSummary):
+    tubes = reaction_table(summary.scheme or {})
+    if not tubes:
+        return []
+    first, second = tubes
+    primers = [first['primers'][0], second['primers'][0], *first['primers'][1:]]
+    return [(f'{summary.primer_base}_{role}', primer['sequence'], primer['tm'])
+            for role, primer in zip(('REF', 'ALT', 'C', 'IC'), primers)]
 
 
 def excel_sheets(summaries: List[SnpSummary], dcaps_mode: str) -> List[ExtraSheet]:
